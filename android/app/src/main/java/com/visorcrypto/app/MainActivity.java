@@ -13,24 +13,27 @@ public class MainActivity extends BridgeActivity {
     
     @Override
     public void onBackPressed() {
-        // Enviar evento para o WebView JavaScript
+        // Enviar evento para o WebView JavaScript e ESPERAR resposta
         WebView webView = getBridge().getWebView();
         if (webView != null) {
-            webView.evaluateJavascript(
-                "(function() { " +
-                "  var event = new CustomEvent('androidBackButton', { detail: {} }); " +
-                "  document.dispatchEvent(event); " +
-                "  return window.backButtonHandled || false; " +
-                "})();",
-                result -> {
-                    // Se o JavaScript não tratou o evento, deixa o comportamento padrão
-                    if (result == null || result.equals("false") || result.equals("null")) {
-                        // Não fazer nada - deixa o JavaScript decidir
-                    }
-                }
-            );
+            webView.post(() -> {
+                webView.evaluateJavascript(
+                    "(function() { " +
+                    "  try { " +
+                    "    if (typeof handleBackButton === 'function') { " +
+                    "      var result = handleBackButton(); " +
+                    "      return result ? 'true' : 'false'; " +
+                    "    } " +
+                    "    return 'false'; " +
+                    "  } catch(e) { " +
+                    "    console.error('Back button error:', e); " +
+                    "    return 'false'; " +
+                    "  } " +
+                    "})();",
+                    null
+                );
+            });
         }
-        // Não chama super.onBackPressed() para evitar fechar o app
-        // O JavaScript vai controlar quando permitir sair
+        // NUNCA chama super.onBackPressed() - o app não deve fechar
     }
 }
