@@ -29,16 +29,21 @@
 
 ---
 
-## 🎯 Versão Atual: v1.0
+## 🎯 Versão Atual: Alpha
 
 ### 📋 Changelog
 
-#### ✅ Novidades v1.0
+#### ✅ Novidades Alpha (v0.1.0)
+- 🔄 **Rotação de tela**: Gráfico fullscreen agora rotaciona para landscape
+- 📅 **Datas otimizadas**: Labels de data/hora ajustadas por período
 - 🎨 Logo aumentado e mais visível (80px)
 - ⚡ Gráficos com atualização em tempo real
-- ⏱️ 4 novos timeframes: 1m, 30m, 7d, 30d
+- ⏱️ Múltiplos timeframes: 1m, 5m, 15m, 30m, 1h, 4h, 24h, 7d, 30d
 - 🔙 Botão voltar do Android corrigido (nunca fecha o app)
 - 📰 Notícias ampliadas para 15 dias de histórico
+- 📊 Indicadores MACRO com gráficos (S&P500, DXY, VIX, Ouro, Petróleo)
+- 🎯 Fear & Greed Index em tempo real
+- 📈 Altseason Index calculado dinamicamente
 
 ---
 

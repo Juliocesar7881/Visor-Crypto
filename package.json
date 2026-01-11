@@ -1,7 +1,7 @@
 {
-  "name": "visor-crypto-apk",
-  "version": "1.0.0",
-  "description": "",
+  "name": "visor-crypto",
+  "version": "0.1.0-alpha",
+  "description": "Visor Crypto - Visualizador de criptomoedas em tempo real",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -16,6 +16,8 @@
     "@capacitor/app": "^8.0.0",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",
+    "@capacitor/screen-orientation": "^8.0.0",
+    "@capacitor/status-bar": "^7.0.0",
     "@capgo/capacitor-screen-recorder": "^8.2.7",
     "@capgo/native-audio": "^8.1.9"
   }

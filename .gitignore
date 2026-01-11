@@ -52,3 +52,23 @@ Thumbs.db
 *~
 .*.swp
 .*.swo
+# Environment & API Keys
+.env
+.env.*
+.env.local
+.env.development
+.env.production
+*.env
+secrets.json
+api-keys.json
+config.local.json
+
+# Google Services
+google-services.json
+GoogleService-Info.plist
+
+# Build outputs
+*.apk
+*.aab
+dist/
+build/

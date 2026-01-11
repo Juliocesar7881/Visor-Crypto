@@ -112,11 +112,13 @@
             background: var(--bg-primary);
             z-index: 1000;
             display: none;
-            animation: slideIn 0.3s ease;
+            opacity: 0;
+            transition: opacity 0.2s ease;
         }
 
         .chart-modal.active {
             display: block;
+            opacity: 1;
         }
 
         .chart-modal-content {
@@ -398,53 +400,58 @@
             right: 0;
             bottom: 0;
             background: #0a0a0f;
-            z-index: 2000;
+            z-index: 9999;
             display: none;
             overflow: hidden;
+            opacity: 0;
+            transition: opacity 0.25s ease-out;
         }
 
         .chart-fullscreen-modal.active {
             display: block;
+            opacity: 1;
         }
 
-        /* Forçar rotação completa incluindo status bar */
-        @media screen and (orientation: portrait) {
-            .chart-fullscreen-modal.active {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100vw;
-                height: 100vh;
-                transform-origin: center center;
-            }
+        /* Quando fullscreen está ativo, esconder tudo atrás */
+        body.fullscreen-active {
+            overflow: hidden !important;
+        }
+
+        body.fullscreen-active .mobile-frame > *:not(.chart-fullscreen-modal) {
+            display: none !important;
         }
 
         .chart-fullscreen-content {
             position: absolute;
             top: 0;
             left: 0;
-            width: 100vh;
-            height: 100vw;
+            width: 100%;
+            height: 100%;
             display: flex;
             flex-direction: column;
-            transform: rotate(90deg);
-            transform-origin: top left;
-            margin-left: 100vw;
             background: #0a0a0f;
-            /* Safe area para status bar rotacionada */
-            padding-top: env(safe-area-inset-left, 0);
-            padding-bottom: env(safe-area-inset-right, 0);
+        }
+
+        /* Modo landscape: usar a tela toda sem rotação CSS */
+        body.fullscreen-active .chart-fullscreen-content {
+            width: 100vw;
+            height: 100vh;
+            max-width: none;
+            max-height: none;
         }
 
         .chart-fullscreen-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 10px 16px;
+            padding: 6px 16px;
+            padding-top: max(6px, env(safe-area-inset-top, 6px));
+            padding-left: max(16px, env(safe-area-inset-left, 16px));
+            padding-right: max(16px, env(safe-area-inset-right, 16px));
             background: rgba(20, 20, 30, 0.95);
             border-bottom: 1px solid rgba(255,255,255,0.1);
             flex-shrink: 0;
-            height: 56px;
+            min-height: 44px;
         }
 
         .chart-fullscreen-close {
@@ -503,27 +510,30 @@
         .chart-fullscreen-body {
             flex: 1;
             padding: 8px;
+            padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
+            padding-left: max(8px, env(safe-area-inset-left, 8px));
+            padding-right: max(8px, env(safe-area-inset-right, 8px));
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            min-height: 0;
         }
 
         .chart-fullscreen-canvas-container {
             flex: 1;
             background: rgba(20, 20, 30, 0.6);
-            border-radius: 12px;
-            padding: 10px;
+            border-radius: 8px;
+            padding: 8px;
             border: 1px solid rgba(255,255,255,0.08);
             position: relative;
-            overflow-x: auto;
-            overflow-y: hidden;
+            overflow: hidden;
             min-height: 0;
-            -webkit-overflow-scrolling: touch;
-            touch-action: pan-x pinch-zoom;
+            touch-action: none;
+            width: 100%;
         }
 
         .chart-fullscreen-canvas-wrapper {
-            min-width: 150%;
+            width: 100%;
             height: 100%;
             position: relative;
         }
@@ -532,12 +542,13 @@
             width: 100%;
             height: 100%;
             display: block;
+            touch-action: none;
         }
 
         .chart-fullscreen-periods {
             display: flex;
-            gap: 6px;
-            padding: 8px 0;
+            gap: 4px;
+            padding: 4px 0;
             overflow-x: auto;
             flex-shrink: 0;
         }
@@ -1751,7 +1762,9 @@
             border-top: 1px solid var(--border-subtle);
             display: flex;
             justify-content: space-around;
-            padding: 8px 0 14px;
+            align-items: center;
+            padding: 8px 0 12px;
+            padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
             z-index: 100;
         }
 
@@ -1759,10 +1772,11 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 2px;
+            justify-content: center;
+            gap: 4px;
             color: var(--text-muted);
             cursor: pointer;
-            padding: 6px 16px;
+            padding: 8px 16px 6px;
             border-radius: 12px;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
@@ -2341,6 +2355,67 @@
             color: var(--text-muted);
         }
 
+        /* Indicator Chart Section */
+        .indicator-chart-section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .indicator-chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .indicator-chart-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent-blue);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .indicator-chart-periods {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .indicator-period-btn {
+            padding: 6px 12px;
+            background: var(--bg-secondary);
+            border: none;
+            border-radius: 8px;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .indicator-period-btn.active {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .indicator-chart-container {
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 8px;
+            height: 200px;
+            position: relative;
+        }
+
+        #indicator-chart-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
         .indicator-info-section {
             background: var(--bg-card);
             border-radius: 16px;
@@ -2617,7 +2692,6 @@
                             <canvas id="fullscreen-chart-canvas"></canvas>
                         </div>
                     </div>
-                    <div class="zoom-hint"><i class="fas fa-hand-pointer"></i> Arraste para o lado para ver histórico</div>
                 </div>
             </div>
         </div>
@@ -2831,6 +2905,26 @@
                         <div class="indicator-detail-value" id="indicator-detail-value">--</div>
                         <div class="indicator-detail-change" id="indicator-detail-change">--</div>
                         <div class="indicator-detail-name" id="indicator-detail-name">--</div>
+                    </div>
+
+                    <!-- Chart Section for Indicator -->
+                    <div class="indicator-chart-section">
+                        <div class="indicator-chart-header">
+                            <div class="indicator-chart-title">
+                                <i class="fas fa-chart-area"></i>
+                                Gráfico
+                            </div>
+                        </div>
+                        <div class="indicator-chart-periods">
+                            <button class="indicator-period-btn active" data-period="5d" onclick="selectIndicatorPeriod('5d')">5D</button>
+                            <button class="indicator-period-btn" data-period="1mo" onclick="selectIndicatorPeriod('1mo')">1M</button>
+                            <button class="indicator-period-btn" data-period="3mo" onclick="selectIndicatorPeriod('3mo')">3M</button>
+                            <button class="indicator-period-btn" data-period="6mo" onclick="selectIndicatorPeriod('6mo')">6M</button>
+                            <button class="indicator-period-btn" data-period="1y" onclick="selectIndicatorPeriod('1y')">1A</button>
+                        </div>
+                        <div class="indicator-chart-container" id="indicator-chart-container">
+                            <canvas id="indicator-chart-canvas"></canvas>
+                        </div>
                     </div>
 
                     <div class="indicator-info-section">
@@ -3238,6 +3332,56 @@
 
     <script>
         // ============================================
+        // CAPACITOR PLUGINS SETUP
+        // ============================================
+        // Função para obter o plugin ScreenOrientation de forma robusta
+        async function getScreenOrientationPlugin() {
+            // Método 1: Via Capacitor.Plugins (Capacitor 3+)
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ScreenOrientation) {
+                console.log('📱 ScreenOrientation via Capacitor.Plugins');
+                return window.Capacitor.Plugins.ScreenOrientation;
+            }
+            // Método 2: Registrar o plugin manualmente
+            if (window.Capacitor && window.Capacitor.registerPlugin) {
+                console.log('📱 Registrando ScreenOrientation manualmente');
+                const ScreenOrientation = window.Capacitor.registerPlugin('ScreenOrientation');
+                return ScreenOrientation;
+            }
+            console.log('⚠️ ScreenOrientation plugin não disponível');
+            return null;
+        }
+        
+        // Função para travar orientação em landscape
+        async function lockLandscape() {
+            try {
+                const plugin = await getScreenOrientationPlugin();
+                if (plugin) {
+                    await plugin.lock({ orientation: 'landscape' });
+                    console.log('✅ Orientação TRAVADA em landscape');
+                    return true;
+                }
+            } catch (e) {
+                console.error('❌ Erro ao travar landscape:', e);
+            }
+            return false;
+        }
+        
+        // Função para travar orientação em portrait
+        async function lockPortrait() {
+            try {
+                const plugin = await getScreenOrientationPlugin();
+                if (plugin) {
+                    await plugin.lock({ orientation: 'portrait' });
+                    console.log('✅ Orientação TRAVADA em portrait');
+                    return true;
+                }
+            } catch (e) {
+                console.error('❌ Erro ao travar portrait:', e);
+            }
+            return false;
+        }
+        
+        // ============================================
         // POLYFILL - AbortSignal.timeout para Android WebView
         // ============================================
         if (!AbortSignal.timeout) {
@@ -3305,6 +3449,9 @@
         let translationCache = {}; // Cache de traduções
         let translationQueue = []; // Fila de traduções
         let isTranslating = false;
+        let newsLastFetch = 0; // Timestamp da última busca de notícias
+        let newsLoaded = false; // Flag para saber se notícias já foram carregadas
+        let macroUpdateInterval = null; // Intervalo para atualização em tempo real do MACRO
 
         // ============================================
         // SECURITY FUNCTIONS
@@ -3404,6 +3551,53 @@
             }
             
             return text; // Retorna original se tudo falhar
+        }
+
+        // Pré-traduzir notícias ANTES de mostrar (para carregar já em português)
+        async function preTranslateNews() {
+            console.log('🌐 Pré-traduzindo notícias para português...');
+            const container = document.getElementById('news-container');
+            
+            // Mostrar loading com progresso de tradução
+            let translatedCount = 0;
+            const totalToTranslate = allNews.filter(n => !n.translatedTitle).length;
+            
+            if (totalToTranslate === 0) {
+                console.log('✅ Todas as notícias já estão traduzidas');
+                return;
+            }
+            
+            // Traduzir as primeiras 20 notícias de forma síncrona (prioritário)
+            const priorityNews = allNews.slice(0, 20);
+            
+            for (let i = 0; i < priorityNews.length; i++) {
+                const news = priorityNews[i];
+                if (!news.translatedTitle) {
+                    try {
+                        news.translatedTitle = await translateText(news.title);
+                        translatedCount++;
+                        
+                        // Atualizar loading com progresso
+                        if (container.querySelector('.loading')) {
+                            container.innerHTML = `
+                                <div class="loading">
+                                    <div class="spinner"></div>
+                                    <p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Traduzindo notícias... ${translatedCount}/${Math.min(20, totalToTranslate)}</p>
+                                </div>
+                            `;
+                        }
+                    } catch (e) {
+                        news.translatedTitle = news.title;
+                    }
+                    // Delay pequeno para não sobrecarregar a API
+                    await new Promise(r => setTimeout(r, 150));
+                }
+            }
+            
+            console.log(`✅ ${translatedCount} notícias pré-traduzidas`);
+            
+            // Traduzir o resto em background depois de renderizar
+            setTimeout(() => translateNewsInBackground(), 1000);
         }
 
         // Traduzir notícias em lote (background)
@@ -4070,8 +4264,14 @@
         async function fetchNews() {
             const container = document.getElementById('news-container');
             
-            // Mostrar loading
-            container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            // Se já tem notícias carregadas, mostrar loading discreto
+            if (newsLoaded && allNews.length > 0) {
+                // Não mostrar loading, manter conteúdo atual enquanto atualiza em background
+                console.log('📰 Atualizando notícias em background...');
+            } else {
+                // Primeira vez - mostrar loading
+                container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            }
             
             let totalFetched = 0;
             let successfulSources = 0;
@@ -4182,6 +4382,11 @@
             
             if (allNews.length > 0) {
                 newsRetryCount = 0; // Reset contador de retentativas
+                newsLastFetch = Date.now(); // Marcar timestamp da última busca
+                newsLoaded = true; // Marcar que notícias foram carregadas
+                
+                // Pré-traduzir notícias ANTES de renderizar para carregar já em português
+                await preTranslateNews();
                 renderNews();
             } else {
                 newsRetryCount++;
@@ -4747,7 +4952,19 @@
             currentSection = sectionId;
             console.log('📍 Seção atual:', currentSection);
             
-            if (sectionId === 'news') fetchNews();
+            // News: usar cache se já carregou e não passou 5 minutos
+            if (sectionId === 'news') {
+                const now = Date.now();
+                const fiveMinutes = 5 * 60 * 1000;
+                if (newsLoaded && allNews.length > 0 && (now - newsLastFetch) < fiveMinutes) {
+                    // Usar cache - apenas renderizar o que já tem
+                    console.log('📰 Usando cache de notícias');
+                    renderNews();
+                } else {
+                    // Recarregar notícias
+                    fetchNews();
+                }
+            }
             if (sectionId === 'macro') loadMacroData();
             if (sectionId === 'analysis') {
                 fetchOrderBook();
@@ -5516,8 +5733,8 @@
                             </div>
                         </div>
                         <div class="indicator-value">
-                            <div class="indicator-price">${ind.value}</div>
-                            <div class="indicator-change ${ind.change >= 0 ? 'pnl-positive' : 'pnl-negative'}">
+                            <div class="indicator-price" id="macro-price-${ind.icon}">${ind.value}</div>
+                            <div class="indicator-change ${ind.change >= 0 ? 'pnl-positive' : 'pnl-negative'}" id="macro-change-${ind.icon}">
                                 ${ind.change >= 0 ? '+' : ''}${ind.change.toFixed(2)}%
                             </div>
                         </div>
@@ -5535,6 +5752,143 @@
             fetchFedWatchData();
             fetchEconomicCalendar();
             fetchMarketIndicators();
+            
+            // Iniciar atualização em tempo real dos indicadores macro
+            startMacroRealTimeUpdate();
+        }
+        
+        // Função para atualização em tempo real dos indicadores macro
+        function startMacroRealTimeUpdate() {
+            // Limpar intervalo anterior se existir
+            if (macroUpdateInterval) {
+                clearInterval(macroUpdateInterval);
+            }
+            
+            // Atualizar a cada 2 segundos para tempo real
+            macroUpdateInterval = setInterval(() => {
+                // Verificar se a seção macro está ativa
+                if (document.getElementById('macro').classList.contains('active')) {
+                    console.log('🔄 Atualizando indicadores macro em tempo real...');
+                    fetchMarketIndicatorsSilent();
+                }
+            }, 2000); // 2 segundos
+        }
+        
+        // Atualização silenciosa dos indicadores macro (sem loading)
+        async function fetchMarketIndicatorsSilent() {
+            try {
+                // Buscar S&P 500
+                try {
+                    const sp500Data = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=2d')
+                        .then(r => r.json())
+                        .catch(() => null);
+                    
+                    if (sp500Data?.chart?.result?.[0]) {
+                        const result = sp500Data.chart.result[0];
+                        const closes = result.indicators.quote[0].close;
+                        const currentPrice = closes[closes.length - 1];
+                        const prevPrice = closes[closes.length - 2] || currentPrice;
+                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
+                        
+                        updateMacroIndicator('sp500', currentPrice.toFixed(2), change);
+                    }
+                } catch (e) {}
+                
+                // Buscar DXY
+                try {
+                    const dxyData = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?interval=1d&range=2d')
+                        .then(r => r.json())
+                        .catch(() => null);
+                    
+                    if (dxyData?.chart?.result?.[0]) {
+                        const result = dxyData.chart.result[0];
+                        const closes = result.indicators.quote[0].close;
+                        const currentPrice = closes[closes.length - 1];
+                        const prevPrice = closes[closes.length - 2] || currentPrice;
+                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
+                        
+                        updateMacroIndicator('dxy', currentPrice.toFixed(2), change);
+                    }
+                } catch (e) {}
+                
+                // Buscar VIX
+                try {
+                    const vixData = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=2d')
+                        .then(r => r.json())
+                        .catch(() => null);
+                    
+                    if (vixData?.chart?.result?.[0]) {
+                        const result = vixData.chart.result[0];
+                        const closes = result.indicators.quote[0].close;
+                        const currentPrice = closes[closes.length - 1];
+                        const prevPrice = closes[closes.length - 2] || currentPrice;
+                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
+                        
+                        updateMacroIndicator('vix', currentPrice.toFixed(2), change);
+                    }
+                } catch (e) {}
+                
+                // Buscar Ouro
+                try {
+                    const goldData = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1d&range=2d')
+                        .then(r => r.json())
+                        .catch(() => null);
+                    
+                    if (goldData?.chart?.result?.[0]) {
+                        const result = goldData.chart.result[0];
+                        const closes = result.indicators.quote[0].close;
+                        const currentPrice = closes[closes.length - 1];
+                        const prevPrice = closes[closes.length - 2] || currentPrice;
+                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
+                        
+                        updateMacroIndicator('gold', '$' + currentPrice.toFixed(2), change);
+                    }
+                } catch (e) {}
+                
+                // Buscar Petróleo
+                try {
+                    const oilData = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/CL=F?interval=1d&range=2d')
+                        .then(r => r.json())
+                        .catch(() => null);
+                    
+                    if (oilData?.chart?.result?.[0]) {
+                        const result = oilData.chart.result[0];
+                        const closes = result.indicators.quote[0].close;
+                        const currentPrice = closes[closes.length - 1];
+                        const prevPrice = closes[closes.length - 2] || currentPrice;
+                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
+                        
+                        updateMacroIndicator('oil', '$' + currentPrice.toFixed(2), change);
+                    }
+                } catch (e) {}
+                
+            } catch (e) {
+                console.error('Erro na atualização silenciosa dos indicadores:', e);
+            }
+        }
+        
+        // Função para atualizar um indicador específico na UI
+        function updateMacroIndicator(icon, value, change) {
+            const priceEl = document.getElementById(`macro-price-${icon}`);
+            const changeEl = document.getElementById(`macro-change-${icon}`);
+            
+            if (priceEl) {
+                priceEl.textContent = value;
+            }
+            
+            if (changeEl) {
+                changeEl.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
+                changeEl.className = `indicator-change ${change >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+            }
+            
+            // Atualizar também os dados globais para o modal
+            if (window.marketIndicatorsData) {
+                const indicator = window.marketIndicatorsData.find(i => i.icon === icon);
+                if (indicator) {
+                    indicator.value = value;
+                    indicator.change = change;
+                }
+            }
         }
 
         // ============================================
@@ -5569,6 +5923,11 @@
             document.getElementById('indicator-detail-modal').classList.add('active');
             document.body.style.overflow = 'hidden';
             
+            // Salvar indicador atual e carregar gráfico
+            window.currentIndicator = indicator;
+            window.currentIndicatorPeriod = '5d';
+            loadIndicatorChart();
+            
             // Adicionar ao histórico
             if (window.history && window.history.pushState) {
                 window.history.pushState({ page: 'indicator-detail' }, '', '');
@@ -5578,6 +5937,373 @@
         function closeIndicatorDetailModal() {
             document.getElementById('indicator-detail-modal').classList.remove('active');
             document.body.style.overflow = '';
+            window.currentIndicator = null;
+        }
+        
+        // ============================================
+        // INDICATOR CHART FUNCTIONS
+        // ============================================
+        
+        // Mapeamento de indicadores para símbolos Yahoo Finance
+        const INDICATOR_SYMBOLS = {
+            'sp500': '%5EGSPC',
+            'dxy': 'DX-Y.NYB',
+            'vix': '%5EVIX',
+            'gold': 'GC=F',
+            'oil': 'CL=F'
+        };
+        
+        const INDICATOR_COLORS = {
+            'sp500': '#22c55e',
+            'dxy': '#6366f1',
+            'vix': '#ef4444',
+            'gold': '#eab308',
+            'oil': '#f97316'
+        };
+        
+        let indicatorChartData = [];
+        
+        async function loadIndicatorChart() {
+            if (!window.currentIndicator) return;
+            
+            const symbol = INDICATOR_SYMBOLS[window.currentIndicator.icon];
+            if (!symbol) return;
+            
+            const period = window.currentIndicatorPeriod || '5d';
+            
+            // Mostrar loading no canvas
+            const canvas = document.getElementById('indicator-chart-canvas');
+            const container = document.getElementById('indicator-chart-container');
+            if (canvas && container) {
+                const ctx = canvas.getContext('2d');
+                const rect = container.getBoundingClientRect();
+                canvas.width = rect.width * (window.devicePixelRatio || 1);
+                canvas.height = rect.height * (window.devicePixelRatio || 1);
+                canvas.style.width = rect.width + 'px';
+                canvas.style.height = rect.height + 'px';
+                ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+                ctx.fillStyle = '#0a0a0f';
+                ctx.fillRect(0, 0, rect.width, rect.height);
+                ctx.fillStyle = '#71717a';
+                ctx.font = '12px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Carregando...', rect.width / 2, rect.height / 2);
+            }
+            
+            // Mapear período para intervalo - usar períodos maiores para garantir dados
+            const intervalMap = {
+                '5d': '30m',
+                '1mo': '1d',
+                '3mo': '1d',
+                '6mo': '1d',
+                '1y': '1wk'
+            };
+            
+            const interval = intervalMap[period] || '1d';
+            
+            try {
+                // Usar CORS proxy alternativo se necessário
+                const urls = [
+                    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${period}`,
+                    `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${period}`
+                ];
+                
+                let data = null;
+                for (const url of urls) {
+                    try {
+                        const response = await fetch(url);
+                        if (response.ok) {
+                            data = await response.json();
+                            if (data?.chart?.result?.[0]?.timestamp?.length > 0) break;
+                        }
+                    } catch (e) {
+                        console.log('Tentando próxima URL...');
+                    }
+                }
+                
+                if (data?.chart?.result?.[0]) {
+                    const result = data.chart.result[0];
+                    const timestamps = result.timestamp || [];
+                    const closes = result.indicators.quote[0].close || [];
+                    
+                    indicatorChartData = timestamps.map((t, i) => ({
+                        time: new Date(t * 1000),
+                        close: closes[i]
+                    })).filter(d => d.close != null && !isNaN(d.close));
+                    
+                    if (indicatorChartData.length > 0) {
+                        renderIndicatorChart();
+                    } else {
+                        showIndicatorChartError('Sem dados disponíveis');
+                    }
+                } else {
+                    showIndicatorChartError('Mercado fechado');
+                }
+            } catch (error) {
+                console.error('Erro ao carregar gráfico do indicador:', error);
+                showIndicatorChartError('Erro ao carregar');
+            }
+        }
+        
+        function showIndicatorChartError(message) {
+            const canvas = document.getElementById('indicator-chart-canvas');
+            const container = document.getElementById('indicator-chart-container');
+            if (!canvas || !container) return;
+            
+            const rect = container.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = '#0a0a0f';
+            ctx.fillRect(0, 0, rect.width, rect.height);
+            
+            // Verificar se é fim de semana
+            const today = new Date();
+            const dayOfWeek = today.getDay();
+            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+            
+            if (isWeekend || message.toLowerCase().includes('fechado')) {
+                ctx.fillStyle = '#ef4444'; // Vermelho
+                ctx.font = 'bold 13px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('MERCADO FECHADO', rect.width / 2, rect.height / 2 - 10);
+                ctx.font = '11px Inter, sans-serif';
+                ctx.fillStyle = '#71717a';
+                ctx.fillText('Aos finais de semana', rect.width / 2, rect.height / 2 + 10);
+            } else {
+                ctx.fillStyle = '#71717a';
+                ctx.font = '12px Inter, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(message, rect.width / 2, rect.height / 2);
+            }
+        }
+        
+        function renderIndicatorChart() {
+            const canvas = document.getElementById('indicator-chart-canvas');
+            const container = document.getElementById('indicator-chart-container');
+            if (!canvas || !container || indicatorChartData.length === 0) return;
+            
+            const containerRect = container.getBoundingClientRect();
+            const chartWidth = containerRect.width - 16;
+            const chartHeight = containerRect.height - 16;
+            
+            if (chartWidth <= 0 || chartHeight <= 0) return;
+            
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = chartWidth * dpr;
+            canvas.height = chartHeight * dpr;
+            canvas.style.width = chartWidth + 'px';
+            canvas.style.height = chartHeight + 'px';
+            
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            
+            // Background
+            ctx.fillStyle = '#0a0a0f';
+            ctx.fillRect(0, 0, chartWidth, chartHeight);
+            
+            // Calculate price range
+            const prices = indicatorChartData.map(d => d.close);
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            const priceRange = (maxPrice - minPrice) || maxPrice * 0.01;
+            const paddedMin = minPrice - priceRange * 0.1;
+            const paddedMax = maxPrice + priceRange * 0.1;
+            const paddedRange = paddedMax - paddedMin;
+            
+            const padding = { top: 10, right: 10, bottom: 20, left: 10 };
+            const graphWidth = chartWidth - padding.left - padding.right;
+            const graphHeight = chartHeight - padding.top - padding.bottom;
+            
+            // Determine if trend is up or down
+            const isPositive = indicatorChartData[indicatorChartData.length - 1].close >= indicatorChartData[0].close;
+            const lineColor = window.currentIndicator ? (INDICATOR_COLORS[window.currentIndicator.icon] || (isPositive ? '#22c55e' : '#ef4444')) : '#6366f1';
+            
+            // Draw line chart
+            ctx.beginPath();
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            
+            indicatorChartData.forEach((d, i) => {
+                const x = padding.left + (i / (indicatorChartData.length - 1)) * graphWidth;
+                const y = padding.top + (1 - (d.close - paddedMin) / paddedRange) * graphHeight;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+            ctx.stroke();
+            
+            // Fill area under the line
+            ctx.lineTo(padding.left + graphWidth, padding.top + graphHeight);
+            ctx.lineTo(padding.left, padding.top + graphHeight);
+            ctx.closePath();
+            
+            const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + graphHeight);
+            gradient.addColorStop(0, lineColor + '40');
+            gradient.addColorStop(1, lineColor + '00');
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // Draw price labels
+            ctx.fillStyle = '#71717a';
+            ctx.font = '10px Inter, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(formatIndicatorPrice(maxPrice), padding.left + 4, padding.top + 12);
+            ctx.fillText(formatIndicatorPrice(minPrice), padding.left + 4, chartHeight - padding.bottom - 4);
+        }
+        
+        function formatIndicatorPrice(price) {
+            if (price >= 1000) return price.toFixed(0);
+            if (price >= 100) return price.toFixed(1);
+            return price.toFixed(2);
+        }
+        
+        function selectIndicatorPeriod(period) {
+            window.currentIndicatorPeriod = period;
+            
+            document.querySelectorAll('.indicator-period-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.period === period);
+            });
+            
+            loadIndicatorChart();
+        }
+        
+        // Open fullscreen chart for indicator
+        async function openIndicatorFullscreenChart() {
+            if (!window.currentIndicator) return;
+            
+            const indicator = window.currentIndicator;
+            
+            // Configurar dados para o fullscreen
+            document.getElementById('fullscreen-crypto-icon').src = '';
+            document.getElementById('fullscreen-crypto-icon').style.display = 'none';
+            document.getElementById('fullscreen-crypto-name').textContent = indicator.name;
+            document.getElementById('fullscreen-crypto-price').textContent = indicator.value;
+            
+            // Salvar configuração especial para indicador
+            window.fullscreenIndicatorMode = true;
+            window.fullscreenIndicatorSymbol = INDICATOR_SYMBOLS[indicator.icon];
+            window.fullscreenIndicatorColor = INDICATOR_COLORS[indicator.icon];
+            
+            fullscreenChartType = 'line';
+            fullscreenPeriod = '5d';
+            
+            // Atualizar UI do fullscreen
+            document.querySelectorAll('#chart-fullscreen-modal .chart-type-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.type === 'line');
+            });
+            
+            document.querySelectorAll('.chart-fullscreen-period-btn').forEach(btn => {
+                const period = btn.dataset.period;
+                // Para indicadores macro, usar períodos diferentes
+                if (['1m', '5m', '30m', '1h'].includes(period)) {
+                    btn.style.display = 'none';
+                } else {
+                    btn.style.display = '';
+                    btn.textContent = period === '24h' ? '5D' : period === '7d' ? '1M' : period === '30d' ? '3M' : period;
+                }
+                btn.classList.toggle('active', period === '24h'); // Usar 24h como "5D"
+            });
+            
+            // Fechar modal do indicador
+            document.getElementById('indicator-detail-modal').classList.remove('active');
+            
+            // Ativar modo fullscreen
+            try {
+                // PRIMEIRO: Travar em landscape
+                await lockLandscape();
+                
+                if (window.Capacitor && window.Capacitor.Plugins) {
+                    if (window.Capacitor.Plugins.StatusBar) {
+                        await window.Capacitor.Plugins.StatusBar.hide();
+                    }
+                    if (window.Capacitor.Plugins.Fullscreen) {
+                        await window.Capacitor.Plugins.Fullscreen.enterFullscreen();
+                    }
+                }
+            } catch (e) {
+                console.log('Fullscreen não disponível:', e);
+            }
+            
+            document.body.classList.add('fullscreen-active');
+            document.getElementById('chart-fullscreen-modal').classList.add('active');
+            
+            if (window.history && window.history.pushState) {
+                window.history.pushState({ page: 'chart-fullscreen' }, '', '');
+            }
+            
+            setTimeout(async () => {
+                await loadIndicatorFullscreenData();
+            }, 300);
+        }
+        
+        async function loadIndicatorFullscreenData() {
+            if (!window.fullscreenIndicatorMode || !window.fullscreenIndicatorSymbol) return;
+            
+            const periodMap = {
+                '24h': '5d',
+                '7d': '1mo',
+                '30d': '3mo'
+            };
+            
+            const intervalMap = {
+                '24h': '30m',
+                '7d': '1d',
+                '30d': '1d'
+            };
+            
+            const period = periodMap[fullscreenPeriod] || '5d';
+            const interval = intervalMap[fullscreenPeriod] || '30m';
+            
+            try {
+                // Tentar múltiplas URLs
+                const urls = [
+                    `https://query1.finance.yahoo.com/v8/finance/chart/${window.fullscreenIndicatorSymbol}?interval=${interval}&range=${period}`,
+                    `https://query2.finance.yahoo.com/v8/finance/chart/${window.fullscreenIndicatorSymbol}?interval=${interval}&range=${period}`
+                ];
+                
+                let data = null;
+                for (const url of urls) {
+                    try {
+                        const response = await fetch(url);
+                        if (response.ok) {
+                            data = await response.json();
+                            if (data?.chart?.result?.[0]?.timestamp?.length > 0) break;
+                        }
+                    } catch (e) {
+                        console.log('Tentando próxima URL...');
+                    }
+                }
+                
+                if (data?.chart?.result?.[0]) {
+                    const result = data.chart.result[0];
+                    const timestamps = result.timestamp || [];
+                    const quote = result.indicators.quote[0];
+                    
+                    fullscreenCandleData = timestamps.map((t, i) => ({
+                        time: new Date(t * 1000),
+                        open: quote.open[i] || quote.close[i],
+                        high: quote.high[i] || quote.close[i],
+                        low: quote.low[i] || quote.close[i],
+                        close: quote.close[i],
+                        volume: quote.volume ? quote.volume[i] : 0
+                    })).filter(d => d.close != null);
+                    
+                    renderFullscreenChart();
+                }
+            } catch (error) {
+                console.error('Erro ao carregar dados do indicador fullscreen:', error);
+            }
         }
 
         // ============================================
@@ -5706,12 +6432,17 @@
         let fullscreenChartType = 'line';
         let fullscreenPeriod = '1m';
         let fullscreenRefreshInterval = null;
+        let fullscreenCandleData = []; // Dados separados para fullscreen
 
-        function openFullscreenChart() {
+        async function openFullscreenChart() {
             if (!currentChartSymbol) return;
             
             const crypto = CRYPTO_DATABASE[currentChartSymbol];
             if (!crypto) return;
+            
+            // Resetar zoom e pan ao abrir
+            fsZoom = 1;
+            fsPanX = 0;
             
             const price = prices[currentChartSymbol] || 0;
             const priceFormatted = price > 0 ? `$${price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: price < 1 ? 6 : 2})}` : 'Carregando...';
@@ -5734,6 +6465,44 @@
                 btn.classList.toggle('active', btn.dataset.period === fullscreenPeriod);
             });
             
+            // Ativar modo imersivo completo no Android (esconder status bar e TRAVAR em landscape)
+            try {
+                // PRIMEIRO: Travar em landscape usando nossa função helper
+                await lockLandscape();
+                
+                // Usar Capacitor plugins para outros recursos
+                if (window.Capacitor && window.Capacitor.Plugins) {
+                    // Esconder StatusBar
+                    if (window.Capacitor.Plugins.StatusBar) {
+                        await window.Capacitor.Plugins.StatusBar.hide();
+                        console.log('✅ StatusBar escondida');
+                    }
+                    
+                    // Tentar modo fullscreen nativo
+                    if (window.Capacitor.Plugins.Fullscreen) {
+                        await window.Capacitor.Plugins.Fullscreen.enterFullscreen();
+                        console.log('✅ Modo fullscreen ativado');
+                    }
+                }
+                
+                // Fallback: usar API de Fullscreen do navegador
+                const docEl = document.documentElement;
+                if (docEl.requestFullscreen) {
+                    await docEl.requestFullscreen();
+                } else if (docEl.webkitRequestFullscreen) {
+                    await docEl.webkitRequestFullscreen();
+                } else if (docEl.mozRequestFullScreen) {
+                    await docEl.mozRequestFullScreen();
+                } else if (docEl.msRequestFullscreen) {
+                    await docEl.msRequestFullscreen();
+                }
+            } catch (e) {
+                console.log('Fullscreen API não disponível:', e);
+            }
+            
+            // Adicionar classe ao body para ocultar outros elementos
+            document.body.classList.add('fullscreen-active');
+            
             // Mostrar modal fullscreen
             document.getElementById('chart-fullscreen-modal').classList.add('active');
             
@@ -5742,48 +6511,75 @@
                 window.history.pushState({ page: 'chart-fullscreen' }, '', '');
             }
             
-            // Tentar forçar orientação landscape (pode não funcionar em todos dispositivos)
-            try {
-                if (screen.orientation && screen.orientation.lock) {
-                    screen.orientation.lock('landscape').catch(() => {});
-                }
-            } catch (e) {}
-            
             // Carregar dados e renderizar após delay para o layout estar pronto
             setTimeout(async () => {
-                // Se não tem dados, carregar primeiro
-                if (!candleData || candleData.length === 0) {
-                    await loadFullscreenChartData();
-                } else {
-                    renderFullscreenChart();
-                }
-                
-                // Scroll para a direita (mostrar dados mais recentes)
-                const scrollContainer = document.getElementById('fullscreen-scroll-container');
-                if (scrollContainer) {
-                    scrollContainer.scrollLeft = scrollContainer.scrollWidth;
-                }
-                
-                // Iniciar atualização em tempo real a cada 2 segundos
+                await loadFullscreenChartData();
                 startFullscreenRealTimeUpdate();
-            }, 200);
+            }, 300);
         }
 
-        function closeFullscreenChart() {
-            document.getElementById('chart-fullscreen-modal').classList.remove('active');
-            
-            // Parar atualização em tempo real
+        async function closeFullscreenChart() {
+            // Parar atualização em tempo real primeiro
             if (fullscreenRefreshInterval) {
                 clearInterval(fullscreenRefreshInterval);
                 fullscreenRefreshInterval = null;
             }
             
-            // Liberar orientação
+            // Resetar modo indicador
+            const wasIndicatorMode = window.fullscreenIndicatorMode;
+            window.fullscreenIndicatorMode = false;
+            window.fullscreenIndicatorSymbol = null;
+            window.fullscreenIndicatorColor = null;
+            
+            // Restaurar visibilidade do ícone
+            document.getElementById('fullscreen-crypto-icon').style.display = '';
+            
+            // Restaurar botões de período
+            document.querySelectorAll('.chart-fullscreen-period-btn').forEach(btn => {
+                btn.style.display = '';
+                const period = btn.dataset.period;
+                btn.textContent = period;
+            });
+            
+            // Restaurar modo normal no Android (mostrar status bar e TRAVAR em portrait)
             try {
-                if (screen.orientation && screen.orientation.unlock) {
-                    screen.orientation.unlock();
+                // PRIMEIRO: Travar em portrait usando nossa função helper
+                await lockPortrait();
+                
+                // Usar Capacitor plugins para outros recursos
+                if (window.Capacitor && window.Capacitor.Plugins) {
+                    // Sair do modo fullscreen nativo
+                    if (window.Capacitor.Plugins.Fullscreen) {
+                        await window.Capacitor.Plugins.Fullscreen.exitFullscreen();
+                        console.log('✅ Saiu do modo fullscreen');
+                    }
+                    
+                    // Mostrar StatusBar
+                    if (window.Capacitor.Plugins.StatusBar) {
+                        await window.Capacitor.Plugins.StatusBar.show();
+                        console.log('✅ StatusBar restaurada');
+                    }
                 }
-            } catch (e) {}
+                
+                // Fallback: sair do fullscreen do navegador
+                if (document.exitFullscreen) {
+                    await document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    await document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                    await document.mozCancelFullScreen();
+                } else if (document.msExitFullscreen) {
+                    await document.msExitFullscreen();
+                }
+            } catch (e) {
+                console.log('Fullscreen API não disponível:', e);
+            }
+            
+            // Pequeno delay para a rotação completar antes de esconder o modal
+            await new Promise(resolve => setTimeout(resolve, 150));
+            
+            document.getElementById('chart-fullscreen-modal').classList.remove('active');
+            document.body.classList.remove('fullscreen-active');
             
             if (fullscreenChartInstance) {
                 fullscreenChartInstance.destroy();
@@ -5797,7 +6593,7 @@
                 clearInterval(fullscreenRefreshInterval);
             }
             
-            // Atualizar a cada 2 segundos
+            // Atualizar a cada 3 segundos
             fullscreenRefreshInterval = setInterval(async () => {
                 if (document.getElementById('chart-fullscreen-modal').classList.contains('active')) {
                     await loadFullscreenChartDataSilent();
@@ -5811,31 +6607,32 @@
                         document.getElementById('fullscreen-crypto-price').className = `chart-fullscreen-price ${change >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
                     }
                 }
-            }, 2000);
+            }, 3000);
         }
 
         async function loadFullscreenChartDataSilent() {
             if (!currentChartSymbol) return;
             
-            const symbol = currentChartSymbol.replace('/', '');
+            // O símbolo já está no formato correto (BTCUSDT, ETHUSDT, etc.)
+            const symbol = currentChartSymbol;
             const intervalMap = {
                 '1m': '1m', '5m': '5m', '30m': '30m', '1h': '1h',
                 '4h': '4h', '24h': '1d', '7d': '1d', '30d': '1d'
             };
             const limitMap = {
-                '1m': 200, '5m': 200, '30m': 150, '1h': 150,
-                '4h': 150, '24h': 100, '7d': 200, '30d': 500
+                '1m': 300, '5m': 300, '30m': 200, '1h': 200,
+                '4h': 200, '24h': 150, '7d': 200, '30d': 500
             };
             
             const interval = intervalMap[fullscreenPeriod] || '1m';
-            const limit = limitMap[fullscreenPeriod] || 200;
+            const limit = limitMap[fullscreenPeriod] || 300;
             
             try {
-                const response = await fetchWithTimeout(`https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=${interval}&limit=${limit}`, {}, 3000);
+                const response = await fetchWithTimeout(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`, {}, 5000);
                 const data = await response.json();
                 
-                if (data && data.length > 0) {
-                    candleData = data.map(k => ({
+                if (data && Array.isArray(data) && data.length > 0) {
+                    fullscreenCandleData = data.map(k => ({
                         time: new Date(k[0]),
                         open: parseFloat(k[1]),
                         high: parseFloat(k[2]),
@@ -5867,32 +6664,41 @@
                 btn.classList.toggle('active', btn.dataset.period === period);
             });
             
-            // Recarregar dados e renderizar
-            await loadFullscreenChartData();
+            // Recarregar dados - verificar se é modo indicador ou crypto
+            if (window.fullscreenIndicatorMode) {
+                await loadIndicatorFullscreenData();
+            } else {
+                await loadFullscreenChartData();
+            }
         }
 
         async function loadFullscreenChartData() {
             if (!currentChartSymbol) return;
             
-            const symbol = currentChartSymbol.replace('/', '');
+            // O símbolo já está no formato correto (BTCUSDT, ETHUSDT, etc.)
+            const symbol = currentChartSymbol;
             const intervalMap = {
                 '1m': '1m', '5m': '5m', '30m': '30m', '1h': '1h',
                 '4h': '4h', '24h': '1d', '7d': '1d', '30d': '1d'
             };
             const limitMap = {
-                '1m': 200, '5m': 200, '30m': 150, '1h': 150,
-                '4h': 150, '24h': 100, '7d': 200, '30d': 500
+                '1m': 300, '5m': 300, '30m': 200, '1h': 200,
+                '4h': 200, '24h': 150, '7d': 200, '30d': 500
             };
             
             const interval = intervalMap[fullscreenPeriod] || '1m';
-            const limit = limitMap[fullscreenPeriod] || 200;
+            const limit = limitMap[fullscreenPeriod] || 300;
+            
+            console.log(`📊 Carregando gráfico fullscreen: ${symbol}, interval=${interval}, limit=${limit}`);
             
             try {
-                const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=${interval}&limit=${limit}`);
+                const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
                 const data = await response.json();
                 
-                if (data && data.length > 0) {
-                    candleData = data.map(k => ({
+                console.log(`📊 Dados recebidos:`, data?.length || 0, 'candles');
+                
+                if (data && Array.isArray(data) && data.length > 0) {
+                    fullscreenCandleData = data.map(k => ({
                         time: new Date(k[0]),
                         open: parseFloat(k[1]),
                         high: parseFloat(k[2]),
@@ -5900,53 +6706,57 @@
                         close: parseFloat(k[4]),
                         volume: parseFloat(k[5])
                     }));
-                    renderFullscreenChart();
                     
-                    // Scroll para mostrar dados mais recentes (direita)
-                    setTimeout(() => {
-                        const scrollContainer = document.getElementById('fullscreen-scroll-container');
-                        if (scrollContainer) {
-                            scrollContainer.scrollLeft = scrollContainer.scrollWidth;
-                        }
-                    }, 100);
+                    console.log(`📊 Primeiro candle:`, fullscreenCandleData[0]);
+                    console.log(`📊 Último candle:`, fullscreenCandleData[fullscreenCandleData.length - 1]);
+                    
+                    renderFullscreenChart();
+                } else {
+                    console.error('📊 Dados inválidos recebidos:', data);
+                    // Tentar renderizar mesmo assim com dados vazios para mostrar mensagem
+                    renderFullscreenChart();
                 }
             } catch (error) {
-                console.error('Erro ao carregar dados fullscreen:', error);
+                console.error('📊 Erro ao carregar dados fullscreen:', error);
+                renderFullscreenChart();
             }
         }
 
+        // Variáveis para zoom e pan
+        let fsZoom = 1;
+        let fsPanX = 0;
+        let fsIsDragging = false;
+        let fsLastX = 0;
+        let fsPinchStartDist = 0;
+        let fsPinchStartZoom = 1;
+
         function renderFullscreenChart() {
             const canvas = document.getElementById('fullscreen-chart-canvas');
-            const wrapper = document.getElementById('fullscreen-canvas-wrapper');
-            if (!canvas || !wrapper) {
-                console.log('Fullscreen canvas not found');
+            const container = document.getElementById('fullscreen-scroll-container');
+            if (!canvas || !container) {
+                console.log('📊 Canvas ou container não encontrado');
                 return;
             }
             
-            if (!candleData || candleData.length === 0) {
-                console.log('No candle data for fullscreen');
+            if (!fullscreenCandleData || fullscreenCandleData.length === 0) {
+                console.log('📊 Sem dados para renderizar');
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#0a0a0f';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#888';
+                ctx.font = '16px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Carregando dados...', canvas.width / 2, canvas.height / 2);
                 return;
             }
             
-            // Como o container está rotacionado 90°, as dimensões são invertidas
-            const viewportWidth = window.innerWidth;
-            const viewportHeight = window.innerHeight;
-            
-            // Altura disponível para o gráfico (subtraindo header ~56px, periods ~50px, hint ~30px)
-            const chartHeight = viewportWidth - 150;
-            
-            // Largura baseada na quantidade de dados para permitir scroll
-            // Mínimo de 100% da viewport, máximo baseado em dados
-            const minCanvasWidth = viewportHeight - 40;
-            const dataWidth = candleData.length * 8; // ~8px por candle
-            const chartWidth = Math.max(minCanvasWidth, dataWidth);
-            
-            // Ajustar wrapper para scroll
-            wrapper.style.width = chartWidth + 'px';
-            wrapper.style.minWidth = chartWidth + 'px';
+            // Usar dimensões reais do container
+            const containerRect = container.getBoundingClientRect();
+            const chartWidth = containerRect.width || window.innerWidth;
+            const chartHeight = containerRect.height || (window.innerHeight - 100);
             
             if (chartWidth <= 0 || chartHeight <= 0) {
-                console.log('Invalid fullscreen dimensions:', chartWidth, chartHeight);
+                console.log('📊 Dimensões inválidas:', chartWidth, chartHeight);
                 return;
             }
             
@@ -5961,9 +6771,16 @@
             ctx.fillStyle = '#0a0a0f';
             ctx.fillRect(0, 0, chartWidth, chartHeight);
             
-            // Extrair preços válidos
-            const chartPrices = candleData.map(d => d.close).filter(p => !isNaN(p) && p > 0);
-            if (chartPrices.length === 0) {
+            // Aplicar zoom e pan
+            const visibleCount = Math.floor(fullscreenCandleData.length / fsZoom);
+            const startIdx = Math.max(0, Math.min(
+                fullscreenCandleData.length - visibleCount,
+                Math.floor(fsPanX / (chartWidth / fullscreenCandleData.length))
+            ));
+            const endIdx = Math.min(fullscreenCandleData.length, startIdx + visibleCount);
+            const visibleData = fullscreenCandleData.slice(startIdx, endIdx);
+            
+            if (visibleData.length === 0) {
                 ctx.fillStyle = '#888';
                 ctx.font = '14px sans-serif';
                 ctx.textAlign = 'center';
@@ -5971,16 +6788,24 @@
                 return;
             }
             
-            const minPrice = Math.min(...chartPrices);
-            const maxPrice = Math.max(...chartPrices);
-            const priceRange = (maxPrice - minPrice) || maxPrice * 0.01;
+            // Calcular range de preços
+            const prices = visibleData.map(d => [d.high, d.low]).flat().filter(p => !isNaN(p) && p > 0);
+            if (prices.length === 0) return;
             
-            const padding = { top: 20, right: 60, bottom: 25, left: 15 };
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            const priceRange = (maxPrice - minPrice) || maxPrice * 0.01;
+            const paddedMin = minPrice - priceRange * 0.05;
+            const paddedMax = maxPrice + priceRange * 0.05;
+            const paddedRange = paddedMax - paddedMin;
+            
+            const padding = { top: 10, right: 55, bottom: 30, left: 5 };
             const graphWidth = chartWidth - padding.left - padding.right;
             const graphHeight = chartHeight - padding.top - padding.bottom;
             
-            const isPositive = candleData[candleData.length - 1].close >= candleData[0].close;
-            const chartColor = isPositive ? '#22c55e' : '#ef4444';
+            const isPositive = visibleData[visibleData.length - 1].close >= visibleData[0].close;
+            // Usar cor do indicador se estiver em modo indicador
+            const chartColor = window.fullscreenIndicatorColor || (isPositive ? '#22c55e' : '#ef4444');
             
             // Grid horizontal
             ctx.strokeStyle = 'rgba(255,255,255,0.06)';
@@ -5993,10 +6818,11 @@
                 ctx.stroke();
             }
             
-            // Grid vertical (tempo)
-            const timeGridSpacing = Math.floor(candleData.length / 8);
-            for (let i = 0; i < candleData.length; i += timeGridSpacing) {
-                const x = padding.left + (i / Math.max(1, candleData.length - 1)) * graphWidth;
+            // Grid vertical
+            const timeGridCount = Math.min(8, visibleData.length);
+            const timeGridSpacing = Math.floor(visibleData.length / timeGridCount);
+            for (let i = 0; i < visibleData.length; i += Math.max(1, timeGridSpacing)) {
+                const x = padding.left + (i / Math.max(1, visibleData.length - 1)) * graphWidth;
                 ctx.beginPath();
                 ctx.moveTo(x, padding.top);
                 ctx.lineTo(x, padding.top + graphHeight);
@@ -6004,10 +6830,10 @@
             }
             
             if (fullscreenChartType === 'candle') {
-                const spacing = graphWidth / candleData.length;
-                const candleWidth = Math.max(3, Math.min(8, spacing * 0.75));
+                const spacing = graphWidth / visibleData.length;
+                const candleWidth = Math.max(2, Math.min(12, spacing * 0.7));
                 
-                candleData.forEach((candle, i) => {
+                visibleData.forEach((candle, i) => {
                     if (isNaN(candle.open) || isNaN(candle.close)) return;
                     
                     const x = padding.left + (i * spacing) + spacing / 2;
@@ -6015,8 +6841,8 @@
                     const color = isGreen ? '#22c55e' : '#ef4444';
                     
                     // Wick
-                    const highY = padding.top + ((maxPrice - candle.high) / priceRange) * graphHeight;
-                    const lowY = padding.top + ((maxPrice - candle.low) / priceRange) * graphHeight;
+                    const highY = padding.top + ((paddedMax - candle.high) / paddedRange) * graphHeight;
+                    const lowY = padding.top + ((paddedMax - candle.low) / paddedRange) * graphHeight;
                     ctx.strokeStyle = color;
                     ctx.lineWidth = 1;
                     ctx.beginPath();
@@ -6025,8 +6851,8 @@
                     ctx.stroke();
                     
                     // Body
-                    const openY = padding.top + ((maxPrice - candle.open) / priceRange) * graphHeight;
-                    const closeY = padding.top + ((maxPrice - candle.close) / priceRange) * graphHeight;
+                    const openY = padding.top + ((paddedMax - candle.open) / paddedRange) * graphHeight;
+                    const closeY = padding.top + ((paddedMax - candle.close) / paddedRange) * graphHeight;
                     ctx.fillStyle = color;
                     ctx.fillRect(x - candleWidth / 2, Math.min(openY, closeY), candleWidth, Math.max(Math.abs(closeY - openY), 1));
                 });
@@ -6037,10 +6863,10 @@
                 ctx.lineWidth = 2.5;
                 
                 let firstPoint = true;
-                candleData.forEach((d, i) => {
+                visibleData.forEach((d, i) => {
                     if (isNaN(d.close)) return;
-                    const x = padding.left + (i / Math.max(1, candleData.length - 1)) * graphWidth;
-                    const y = padding.top + ((maxPrice - d.close) / priceRange) * graphHeight;
+                    const x = padding.left + (i / Math.max(1, visibleData.length - 1)) * graphWidth;
+                    const y = padding.top + ((paddedMax - d.close) / paddedRange) * graphHeight;
                     if (firstPoint) {
                         ctx.moveTo(x, y);
                         firstPoint = false;
@@ -6052,7 +6878,7 @@
                 
                 // Gradient fill
                 const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + graphHeight);
-                gradient.addColorStop(0, isPositive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)');
+                gradient.addColorStop(0, isPositive ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)');
                 gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
                 
                 ctx.lineTo(padding.left + graphWidth, padding.top + graphHeight);
@@ -6062,32 +6888,169 @@
                 ctx.fill();
             }
             
-            // Price labels (fixed on right)
-            ctx.fillStyle = '#888';
+            // Price labels (right side)
+            ctx.fillStyle = '#aaa';
             ctx.font = '11px -apple-system, sans-serif';
             ctx.textAlign = 'right';
             
             for (let i = 0; i <= 5; i++) {
-                const price = maxPrice - (priceRange * i / 5);
+                const price = paddedMax - (paddedRange * i / 5);
                 const y = padding.top + (graphHeight * i / 5);
-                const formatted = price >= 1000 ? `$${(price/1000).toFixed(1)}k` : `$${price.toFixed(price < 1 ? 4 : 2)}`;
+                const formatted = price >= 1000 ? `$${(price/1000).toFixed(2)}k` : `$${price.toFixed(price < 1 ? 6 : 2)}`;
                 ctx.fillText(formatted, chartWidth - 8, y + 4);
             }
             
-            // Time labels at bottom
+            // Time labels at bottom - format based on period
             ctx.fillStyle = '#666';
             ctx.font = '10px -apple-system, sans-serif';
             ctx.textAlign = 'center';
             
-            for (let i = 0; i < candleData.length; i += timeGridSpacing) {
-                const x = padding.left + (i / Math.max(1, candleData.length - 1)) * graphWidth;
-                const time = candleData[i].time;
-                const label = time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            for (let i = 0; i < visibleData.length; i += Math.max(1, timeGridSpacing)) {
+                const x = padding.left + (i / Math.max(1, visibleData.length - 1)) * graphWidth;
+                const time = visibleData[i].time;
+                let label;
+                
+                // Format based on the selected period
+                if (fullscreenPeriod === '1m' || fullscreenPeriod === '5m' || fullscreenPeriod === '15m' || fullscreenPeriod === '1h') {
+                    // Short intervals: show time only
+                    label = time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                } else if (fullscreenPeriod === '4h' || fullscreenPeriod === '1d') {
+                    // Medium intervals: show day/month + time
+                    label = time.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                } else if (fullscreenPeriod === '7d') {
+                    // Weekly: show weekday + day
+                    label = time.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit' });
+                } else if (fullscreenPeriod === '30d') {
+                    // Monthly: show day/month
+                    label = time.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+                } else if (fullscreenPeriod === '1y' || fullscreenPeriod === 'max') {
+                    // Yearly/Max: show month/year
+                    label = time.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+                } else {
+                    // Default: day/month
+                    label = time.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                }
+                
                 ctx.fillText(label, x, chartHeight - 8);
             }
             
-            console.log('Fullscreen chart rendered:', chartWidth, 'x', chartHeight, 'candles:', candleData.length);
+            // Current price line
+            const lastPrice = visibleData[visibleData.length - 1].close;
+            const lastY = padding.top + ((paddedMax - lastPrice) / paddedRange) * graphHeight;
+            ctx.strokeStyle = chartColor;
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(padding.left, lastY);
+            ctx.lineTo(chartWidth - padding.right, lastY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Current price badge
+            ctx.fillStyle = chartColor;
+            ctx.fillRect(chartWidth - padding.right, lastY - 10, padding.right - 5, 20);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 10px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            const priceLabel = lastPrice >= 1000 ? `$${(lastPrice/1000).toFixed(2)}k` : `$${lastPrice.toFixed(lastPrice < 1 ? 4 : 2)}`;
+            ctx.fillText(priceLabel, chartWidth - padding.right/2 - 2, lastY + 4);
+            
+            // Zoom indicator
+            if (fsZoom > 1) {
+                ctx.fillStyle = 'rgba(99, 102, 241, 0.8)';
+                ctx.fillRect(10, 10, 60, 24);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${fsZoom.toFixed(1)}x`, 40, 26);
+            }
+            
+            console.log(`📊 Gráfico renderizado: ${chartWidth}x${chartHeight}, ${visibleData.length} candles visíveis`);
         }
+
+        // Touch events para zoom e pan no gráfico fullscreen
+        document.addEventListener('DOMContentLoaded', function() {
+            const canvas = document.getElementById('fullscreen-chart-canvas');
+            if (!canvas) return;
+            
+            // Touch start
+            canvas.addEventListener('touchstart', function(e) {
+                if (e.touches.length === 1) {
+                    fsIsDragging = true;
+                    fsLastX = e.touches[0].clientX;
+                } else if (e.touches.length === 2) {
+                    // Pinch zoom start
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    fsPinchStartDist = Math.sqrt(dx * dx + dy * dy);
+                    fsPinchStartZoom = fsZoom;
+                }
+                e.preventDefault();
+            }, { passive: false });
+            
+            // Touch move
+            canvas.addEventListener('touchmove', function(e) {
+                if (e.touches.length === 1 && fsIsDragging) {
+                    const deltaX = e.touches[0].clientX - fsLastX;
+                    fsPanX = Math.max(0, fsPanX - deltaX * fsZoom);
+                    fsLastX = e.touches[0].clientX;
+                    renderFullscreenChart();
+                } else if (e.touches.length === 2) {
+                    // Pinch zoom
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const scale = dist / fsPinchStartDist;
+                    fsZoom = Math.max(1, Math.min(10, fsPinchStartZoom * scale));
+                    renderFullscreenChart();
+                }
+                e.preventDefault();
+            }, { passive: false });
+            
+            // Touch end
+            let isPinching = false;
+            canvas.addEventListener('touchend', function(e) {
+                if (e.touches.length === 0) {
+                    // Todos os dedos levantados
+                    setTimeout(() => {
+                        fsIsDragging = false;
+                        isPinching = false;
+                    }, 50);
+                } else if (e.touches.length === 1) {
+                    // Um dedo ainda tocando após pinch
+                    isPinching = false;
+                }
+            });
+            
+            // Marcar quando está fazendo pinch
+            canvas.addEventListener('touchstart', function(e) {
+                if (e.touches.length === 2) {
+                    isPinching = true;
+                }
+            }, { passive: true });
+            
+            // Double tap to reset zoom (apenas se não estava fazendo pinch)
+            let lastTap = 0;
+            let tapCount = 0;
+            canvas.addEventListener('touchend', function(e) {
+                // Ignorar se estava fazendo pinch ou se ainda há dedos na tela
+                if (isPinching || e.touches.length > 0) return;
+                
+                const now = Date.now();
+                if (now - lastTap < 300) {
+                    tapCount++;
+                    if (tapCount === 2) {
+                        fsZoom = 1;
+                        fsPanX = 0;
+                        renderFullscreenChart();
+                        tapCount = 0;
+                    }
+                } else {
+                    tapCount = 1;
+                }
+                lastTap = now;
+            });
+        });
 
         // Handle back button in fullscreen
         document.addEventListener('keydown', function(e) {
@@ -6582,19 +7545,24 @@
         // Integração com Capacitor App Plugin (método mais confiável)
         async function initCapacitorApp() {
             try {
-                // Verificar se o Capacitor está disponível
-                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-                    const { App } = window.Capacitor.Plugins;
-                    
-                    // Registrar listener para back button
-                    App.addListener('backButton', ({ canGoBack }) => {
-                        console.log('🔙 Capacitor backButton event triggered');
-                        const handled = handleBackButton();
-                        console.log('🔙 Back button handled:', handled);
-                        // Nunca deixar fechar o app
-                    });
-                    
-                    console.log('✅ Capacitor App plugin inicializado');
+                // TRAVAR orientação em PORTRAIT ao iniciar o app
+                await lockPortrait();
+                
+                // Verificar se o Capacitor está disponível para outros plugins
+                if (window.Capacitor && window.Capacitor.Plugins) {
+                    if (window.Capacitor.Plugins.App) {
+                        const { App } = window.Capacitor.Plugins;
+                        
+                        // Registrar listener para back button
+                        App.addListener('backButton', ({ canGoBack }) => {
+                            console.log('🔙 Capacitor backButton event triggered');
+                            const handled = handleBackButton();
+                            console.log('🔙 Back button handled:', handled);
+                            // Nunca deixar fechar o app
+                        });
+                        
+                        console.log('✅ Capacitor App plugin inicializado');
+                    }
                 }
             } catch (e) {
                 console.log('⚠️ Capacitor App não disponível:', e);
