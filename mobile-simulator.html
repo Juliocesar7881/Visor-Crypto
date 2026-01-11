@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeBot AI - Mobile Simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #F1F5F9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            gap: 30px;
+        }
+
+        .simulator-container {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        .phone-frame {
+            width: 390px;
+            height: 844px;
+            background: linear-gradient(180deg, #0F172A 0%, #1E293B 100%);
+            border-radius: 40px;
+            box-shadow: 0 30px 90px rgba(0, 0, 0, 0.8), 0 0 0 8px #1a1a2e, 0 0 0 10px rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        
+        .phone-frame::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 30px;
+            background: #0F172A;
+            border-radius: 0 0 20px 20px;
+            z-index: 10;
+        }
+
+        .status-bar {
+            height: 50px;
+            background: transparent;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 24px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .hero-section {
+            padding: 20px 24px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-section::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -20%;
+            width: 300px;
+            height: 300px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            filter: blur(60px);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+        }
+        
+        .balance-card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 24px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            z-index: 1;
+        }
+        
+        .balance-label {
+            font-size: 13px;
+            opacity: 0.9;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+        
+        .balance-amount {
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: -1px;
+        }
+        
+        .balance-change {
+            font-size: 14px;
+            margin-top: 8px;
+            font-weight: 600;
+        }
+        
+        .balance-change.positive {
+            color: #10B981;
+        }
+
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 24px;
+            font-size: 12px;
+            font-weight: 700;
+            background: rgba(100, 116, 139, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-badge.active {
+            background: rgba(16, 185, 129, 0.3);
+            border-color: #10B981;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #64748B;
+        }
+        
+        .status-badge.active .status-dot {
+            background: #10B981;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .quick-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            padding: 0 24px 24px;
+            margin-top: -40px;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .stat-card {
+            background: #1E293B;
+            border-radius: 16px;
+            padding: 16px;
+            border: 1px solid #334155;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #94A3B8;
+            margin-bottom: 6px;
+        }
+        
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .controls {
+            padding: 24px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 18px;
+            border: none;
+            border-radius: 16px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: white;
+            position: relative;
+            overflow: hidden;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .btn:active::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+        }
+
+        .alerts-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 24px 16px;
+        }
+
+        .alerts-title {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+        }
+
+        .alerts-count {
+            background: #334155;
+            color: #F1F5F9;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .alerts-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 24px 24px;
+        }
+        
+        .alerts-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .alerts-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        .alerts-list::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 10px;
+        }
+
+        .alert-card {
+            background: #1E293B;
+            padding: 18px;
+            border-radius: 16px;
+            margin-bottom: 12px;
+            border: 1px solid #334155;
+            transition: all 0.3s;
+            animation: slideIn 0.4s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        .alert-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+        }
+
+        .alert-card.buy::before {
+            background: linear-gradient(180deg, #10B981 0%, #059669 100%);
+        }
+
+        .alert-card.sell::before {
+            background: linear-gradient(180deg, #EF4444 0%, #DC2626 100%);
+        }
+        
+        .alert-card:hover {
+            transform: translateX(4px);
+            border-color: #475569;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .alert-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .alert-action {
+            font-size: 18px;
+            font-weight: bold;
+            margin-right: 12px;
+        }
+
+        .alert-action.buy {
+            color: #10B981;
+        }
+
+        .alert-action.sell {
+            color: #EF4444;
+        }
+
+        .alert-symbol {
+            font-size: 16px;
+            color: #CBD5E1;
+        }
+
+        .alert-time {
+            font-size: 12px;
+            color: #94A3B8;
+        }
+
+        .alert-confidence {
+            font-size: 12px;
+            color: #64748B;
+            margin-top: 4px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #64748B;
+            padding: 40px 20px;
+            font-size: 14px;
+        }
+
+        .test-controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 24px;
+            border-radius: 20px;
+            border: 1px solid #334155;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            min-width: 260px;
+        }
+
+        .test-controls h3 {
+            margin-bottom: 16px;
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .test-controls button {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .test-controls button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .connection-status {
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            margin-top: 12px;
+            text-align: center;
+        }
+
+        .connection-status.connected {
+            background: #10B98144;
+            color: #10B981;
+        }
+
+        .connection-status.disconnected {
+            background: #EF444444;
+            color: #EF4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-controls">
+        <h3>🧪 Controles de Teste</h3>
+        <button onclick="testBuySignal()">📈 Simular Sinal COMPRA</button>
+        <button onclick="testSellSignal()">📉 Simular Sinal VENDA</button>
+        <button onclick="clearAlerts()">🗑️ Limpar Alertas</button>
+        <div id="connection-status" class="connection-status disconnected">
+            Backend: Desconectado
+        </div>
+    </div>
+
+    <div class="phone-frame">
+        <div class="status-bar">
+            <span>9:41</span>
+            <span>📶 🔋</span>
+        </div>
+
+        <div class="hero-section">
+            <div class="header">
+                <div class="title">TradeBot AI</div>
+                <div id="status-badge" class="status-badge">
+                    <span class="status-dot"></span>
+                    PARADO
+                </div>
+            </div>
+
+            <div class="balance-card">
+                <div class="balance-label">Saldo Total</div>
+                <div class="balance-amount">$12,458.90</div>
+                <div class="balance-change positive">+2.5% hoje ↗</div>
+            </div>
+        </div>
+
+        <div class="quick-stats">
+            <div class="stat-card">
+                <div class="stat-label">Sinais Hoje</div>
+                <div class="stat-value" id="signals-today">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Taxa Acerto</div>
+                <div class="stat-value">68%</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="bot-toggle" class="btn btn-primary" onclick="toggleBot()">
+                🚀 Iniciar Bot
+            </button>
+        </div>
+
+        <div class="alerts-header">
+            <div class="alerts-title">Atividade</div>
+            <div id="alerts-count" class="alerts-count">0</div>
+        </div>
+
+        <div class="alerts-list" id="alerts-list">
+            <div class="empty-state">
+                Nenhuma atividade ainda. Inicie o bot para começar!
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+        let botRunning = false;
+        let alerts = [];
+
+        // Verificar conexão com backend
+        async function checkBackend() {
+            try {
+                const response = await fetch('http://localhost:8000/');
+                const data = await response.json();
+                document.getElementById('connection-status').className = 'connection-status connected';
+                document.getElementById('connection-status').textContent = 'Backend: Conectado ✓';
+            } catch (error) {
+                document.getElementById('connection-status').className = 'connection-status disconnected';
+                document.getElementById('connection-status').textContent = 'Backend: Desconectado ✗';
+            }
+        }
+
+        async function toggleBot() {
+            const button = document.getElementById('bot-toggle');
+            const badge = document.getElementById('status-badge');
+            
+            button.disabled = true;
+            
+            try {
+                const newState = botRunning ? 'stop' : 'start';
+                const response = await fetch(`${API_BASE}/bot/state`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ desired_state: newState })
+                });
+
+                if (response.ok) {
+                    botRunning = !botRunning;
+                    
+                    if (botRunning) {
+                        button.innerHTML = '⏸️ Parar Bot';
+                        button.className = 'btn btn-danger';
+                        badge.innerHTML = '<span class="status-dot"></span>ATIVO';
+                        badge.classList.add('active');
+                    } else {
+                        button.innerHTML = '🚀 Iniciar Bot';
+                        button.className = 'btn btn-primary';
+                        badge.innerHTML = '<span class="status-dot"></span>PARADO';
+                        badge.classList.remove('active');
+                    }
+                }
+            } catch (error) {
+                alert('Erro ao conectar com o backend. Verifique se está rodando na porta 8000.');
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function testBuySignal() {
+            await sendTestSignal('BUY');
+        }
+
+        async function testSellSignal() {
+            await sendTestSignal('SELL');
+        }
+
+        async function sendTestSignal(action) {
+            try {
+                const response = await fetch(`${API_BASE}/signals/webhook`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source: 'manual',
+                        symbol: 'BTCUSDT',
+                        action: action,
+                        confidence: Math.random() * 0.5 + 0.5,
+                        strategy: 'test',
+                        mode: 'notification'
+                    })
+                });
+
+                if (response.ok) {
+                    // Simular recebimento do alerta
+                    addAlert({
+                        symbol: 'BTCUSDT',
+                        action: action,
+                        confidence: Math.random() * 0.5 + 0.5,
+                        timestamp: Date.now()
+                    });
+                }
+            } catch (error) {
+                alert('Erro ao enviar sinal. Backend está rodando?');
+            }
+        }
+
+        function addAlert(alert) {
+            const newAlert = {
+                id: `${Date.now()}-${Math.random()}`,
+                ...alert
+            };
+            
+            alerts.unshift(newAlert);
+            if (alerts.length > 50) alerts = alerts.slice(0, 50);
+            
+            // Atualizar contador de sinais hoje
+            document.getElementById('signals-today').textContent = alerts.length;
+            
+            renderAlerts();
+            
+            // Vibração simulada
+            if ('vibrate' in navigator) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        }
+
+        function renderAlerts() {
+            const container = document.getElementById('alerts-list');
+            const count = document.getElementById('alerts-count');
+            
+            count.textContent = alerts.length;
+
+            if (alerts.length === 0) {
+                container.innerHTML = '<div class="empty-state">Nenhuma atividade ainda. Inicie o bot para começar!</div>';
+                return;
+            }
+
+            container.innerHTML = alerts.map(alert => {
+                const date = new Date(alert.timestamp).toLocaleString('pt-BR');
+                const actionClass = alert.action.toLowerCase();
+                const confidence = alert.confidence ? `${(alert.confidence * 100).toFixed(0)}%` : 'N/A';
+                
+                return `
+                    <div class="alert-card ${actionClass}">
+                        <div class="alert-header">
+                            <div class="alert-action ${actionClass}">${alert.action}</div>
+                            <div class="alert-symbol">${alert.symbol}</div>
+                        </div>
+                        <div class="alert-time">${date}</div>
+                        <div class="alert-confidence">Confiança: ${confidence}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function clearAlerts() {
+            alerts = [];
+            document.getElementById('signals-today').textContent = '0';
+            renderAlerts();
+        }
+
+        // Verificar backend a cada 5 segundos
+        checkBackend();
+        setInterval(checkBackend, 5000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "TradeBot AI",
+    "slug": "tradebot-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.tradebot.ai"
+    },
+    "ios": {
+      "bundleIdentifier": "com.tradebot.ai"
+    },
+    "scheme": "tradebotai"
+  }
+}

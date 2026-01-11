@@ -1,0 +1,42 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea"/>
+      <stop offset="100%" style="stop-color:#764ba2"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1024" height="1024" fill="url(#gradient)" rx="200"/>
+  
+  <!-- Icon content -->
+  <g transform="translate(200, 200)">
+    <!-- Robot head -->
+    <circle cx="312" cy="200" r="150" fill="white" opacity="0.9"/>
+    <circle cx="280" cy="180" r="20" fill="#0a0e27"/>
+    <circle cx="344" cy="180" r="20" fill="#0a0e27"/>
+    <rect x="290" y="200" width="44" height="20" fill="#0a0e27" rx="10"/>
+    
+    <!-- Trading chart -->
+    <g transform="translate(100, 350)">
+      <rect x="0" y="0" width="424" height="200" fill="white" opacity="0.1" rx="20"/>
+      <polyline points="50,150 150,100 250,130 350,80 424,90" 
+                stroke="white" stroke-width="6" fill="none" opacity="0.9"/>
+      <!-- Candlesticks -->
+      <rect x="80" y="120" width="8" height="40" fill="#10B981"/>
+      <rect x="180" y="110" width="8" height="50" fill="#10B981"/>
+      <rect x="280" y="140" width="8" height="30" fill="#EF4444"/>
+      <rect x="380" y="100" width="8" height="60" fill="#10B981"/>
+    </g>
+    
+    <!-- AI Brain -->
+    <circle cx="312" cy="150" r="60" fill="none" stroke="white" stroke-width="4" opacity="0.6"/>
+    <circle cx="312" cy="150" r="40" fill="none" stroke="white" stroke-width="2" opacity="0.8"/>
+    <circle cx="312" cy="150" r="20" fill="white" opacity="0.4"/>
+  </g>
+  
+  <!-- Text -->
+  <text x="512" y="900" text-anchor="middle" font-family="Arial, sans-serif" font-size="80" font-weight="bold" fill="white">
+    TradeBot AI
+  </text>
+</svg>

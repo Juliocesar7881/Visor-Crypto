@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeBot AI - Dashboard de Controle</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #F1F5F9;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 8px;
+            text-shadow: 0 2px 20px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 32px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        .card h2 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #64748B;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.active {
+            background: #10B981;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+            color: white;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .coin-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .coin-btn {
+            padding: 12px 8px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
+
+        .coin-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .coin-btn.selected {
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+            border-color: #10B981;
+        }
+
+        .info-box {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-label {
+            opacity: 0.8;
+        }
+
+        .info-value {
+            font-weight: 700;
+        }
+
+        .alert-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 12px;
+            border-left: 4px solid;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .alert-item.buy {
+            border-left-color: #10B981;
+        }
+
+        .alert-item.sell {
+            border-left-color: #EF4444;
+        }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .alert-action {
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .alert-action.buy {
+            color: #10B981;
+        }
+
+        .alert-action.sell {
+            color: #EF4444;
+        }
+
+        .alert-time {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        .alert-confidence {
+            font-size: 13px;
+            opacity: 0.8;
+            margin-top: 4px;
+        }
+
+        .log-console {
+            background: #0F172A;
+            padding: 20px;
+            border-radius: 12px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+        }
+
+        .log-entry.info {
+            color: #60A5FA;
+        }
+
+        .log-entry.success {
+            color: #10B981;
+        }
+
+        .log-entry.warning {
+            color: #F59E0B;
+        }
+
+        .log-entry.error {
+            color: #EF4444;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 800;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        .connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .connection-status.connected {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10B981;
+        }
+
+        .connection-status.disconnected {
+            background: rgba(239, 68, 68, 0.2);
+            color: #EF4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 TradeBot AI</h1>
+            <p>Dashboard de Controle e Monitoramento</p>
+            <div style="margin-top: 16px;">
+                <span id="connection-status" class="connection-status disconnected">
+                    ● Backend Desconectado
+                </span>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Controle do Bot -->
+            <div class="card">
+                <h2>
+                    <span class="status-indicator" id="bot-indicator"></span>
+                    Controle do Bot
+                </h2>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Status</div>
+                        <div class="stat-value" id="bot-status">PARADO</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Sinais Hoje</div>
+                        <div class="stat-value" id="signals-count">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Moedas Ativas</div>
+                        <div class="stat-value" id="active-coins">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Detectores</div>
+                        <div class="stat-value" id="detectors-count">0</div>
+                    </div>
+                </div>
+
+                <button id="toggle-bot-btn" class="btn btn-primary" onclick="toggleBot()">
+                    🚀 Iniciar Bot
+                </button>
+
+                <button class="btn btn-secondary" onclick="refreshStatus()">
+                    🔄 Atualizar Status
+                </button>
+
+                <button class="btn btn-secondary" onclick="simulateSignal('BUY')">
+                    📈 Simular Sinal COMPRA
+                </button>
+
+                <button class="btn btn-secondary" onclick="simulateSignal('SELL')">
+                    📉 Simular Sinal VENDA
+                </button>
+            </div>
+
+            <!-- Seleção de Moedas -->
+            <div class="card">
+                <h2>💰 Seleção de Criptomoedas</h2>
+
+                <div class="info-box">
+                    <div class="info-row">
+                        <span class="info-label">Estratégia:</span>
+                        <span class="info-value">EMA Crossover (9/21)</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Selecionadas:</span>
+                        <span class="info-value" id="selected-count">0 de 10</span>
+                    </div>
+                </div>
+
+                <div class="coin-grid" id="coin-grid">
+                    <!-- Preenchido dinamicamente -->
+                </div>
+
+                <button class="btn btn-primary" onclick="saveSymbols()">
+                    💾 Salvar Seleção
+                </button>
+
+                <button class="btn btn-secondary" onclick="selectAll()">
+                    ✓ Selecionar Todas
+                </button>
+            </div>
+        </div>
+
+        <!-- Alertas e Console -->
+        <div class="grid">
+            <div class="card">
+                <h2>📊 Alertas de Trading</h2>
+                <div class="alert-list" id="alert-list">
+                    <div style="text-align: center; opacity: 0.5; padding: 40px;">
+                        Nenhum alerta ainda. Inicie o bot para começar!
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="clearAlerts()">
+                    🗑️ Limpar Alertas
+                </button>
+            </div>
+
+            <div class="card">
+                <h2>📝 Console de Logs</h2>
+                <div class="log-console" id="log-console">
+                    <div class="log-entry info">Sistema iniciado. Aguardando conexão...</div>
+                </div>
+                <button class="btn btn-secondary" onclick="clearLogs()">
+                    🗑️ Limpar Logs
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+        let botRunning = false;
+        let selectedSymbols = [];
+        let availableSymbols = [];
+        let alerts = [];
+
+        // Verificar conexão
+        async function checkConnection() {
+            try {
+                const response = await fetch('http://localhost:8000/');
+                const data = await response.json();
+                document.getElementById('connection-status').className = 'connection-status connected';
+                document.getElementById('connection-status').textContent = '● Backend Conectado';
+                log('Backend conectado com sucesso', 'success');
+                return true;
+            } catch (error) {
+                document.getElementById('connection-status').className = 'connection-status disconnected';
+                document.getElementById('connection-status').textContent = '● Backend Desconectado';
+                return false;
+            }
+        }
+
+        // Carregar moedas disponíveis
+        async function loadSymbols() {
+            try {
+                const response = await fetch(`${API_BASE}/bot/symbols`);
+                const data = await response.json();
+                availableSymbols = data.available || [];
+                selectedSymbols = data.currently_monitoring || [];
+                renderCoinGrid();
+                log(`Carregadas ${availableSymbols.length} moedas disponíveis`, 'info');
+            } catch (error) {
+                log('Erro ao carregar moedas', 'error');
+            }
+        }
+
+        // Renderizar grid de moedas
+        function renderCoinGrid() {
+            const grid = document.getElementById('coin-grid');
+            grid.innerHTML = availableSymbols.map(symbol => `
+                <button class="coin-btn ${selectedSymbols.includes(symbol) ? 'selected' : ''}" 
+                        onclick="toggleSymbol('${symbol}')">
+                    ${symbol.replace('USDT', '')}
+                </button>
+            `).join('');
+            updateSelectedCount();
+        }
+
+        // Toggle símbolo
+        function toggleSymbol(symbol) {
+            if (selectedSymbols.includes(symbol)) {
+                selectedSymbols = selectedSymbols.filter(s => s !== symbol);
+            } else {
+                selectedSymbols.push(symbol);
+            }
+            renderCoinGrid();
+        }
+
+        // Selecionar todas
+        function selectAll() {
+            selectedSymbols = [...availableSymbols];
+            renderCoinGrid();
+            log('Todas as moedas selecionadas', 'info');
+        }
+
+        // Atualizar contador
+        function updateSelectedCount() {
+            document.getElementById('selected-count').textContent = 
+                `${selectedSymbols.length} de ${availableSymbols.length}`;
+            document.getElementById('active-coins').textContent = selectedSymbols.length;
+        }
+
+        // Salvar símbolos
+        async function saveSymbols() {
+            if (selectedSymbols.length === 0) {
+                log('Selecione pelo menos 1 criptomoeda', 'warning');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/bot/symbols`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(selectedSymbols)
+                });
+                const data = await response.json();
+                log(`Moedas salvas: ${selectedSymbols.join(', ')}`, 'success');
+                if (data.bot_restarted) {
+                    log('Bot reiniciado com novas moedas', 'info');
+                }
+            } catch (error) {
+                log('Erro ao salvar moedas', 'error');
+            }
+        }
+
+        // Toggle bot
+        async function toggleBot() {
+            const btn = document.getElementById('toggle-bot-btn');
+            btn.disabled = true;
+
+            try {
+                const newState = botRunning ? 'stop' : 'start';
+                const response = await fetch(`${API_BASE}/bot/state`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ desired_state: newState })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    botRunning = !botRunning;
+                    updateBotUI();
+                    
+                    if (botRunning) {
+                        log(`🚀 Bot iniciado! Monitorando: ${data.symbols.join(', ')}`, 'success');
+                        log(`📊 Estratégia: ${data.strategy}`, 'info');
+                    } else {
+                        log('⏹️ Bot parado', 'warning');
+                    }
+                }
+            } catch (error) {
+                log('Erro ao mudar estado do bot', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Atualizar UI do bot
+        function updateBotUI() {
+            const btn = document.getElementById('toggle-bot-btn');
+            const indicator = document.getElementById('bot-indicator');
+            const status = document.getElementById('bot-status');
+
+            if (botRunning) {
+                btn.innerHTML = '⏸️ Parar Bot';
+                btn.className = 'btn btn-danger';
+                indicator.classList.add('active');
+                status.textContent = 'ATIVO';
+                status.style.color = '#10B981';
+            } else {
+                btn.innerHTML = '🚀 Iniciar Bot';
+                btn.className = 'btn btn-primary';
+                indicator.classList.remove('active');
+                status.textContent = 'PARADO';
+                status.style.color = '#64748B';
+            }
+        }
+
+        // Atualizar status
+        async function refreshStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/bot/status`);
+                const data = await response.json();
+                
+                botRunning = data.running;
+                updateBotUI();
+                
+                document.getElementById('detectors-count').textContent = data.detectors_active;
+                document.getElementById('active-coins').textContent = data.symbols.length;
+                
+                log('Status atualizado', 'info');
+            } catch (error) {
+                log('Erro ao atualizar status', 'error');
+            }
+        }
+
+        // Simular sinal
+        async function simulateSignal(action) {
+            try {
+                const symbol = selectedSymbols[0] || 'BTCUSDT';
+                const response = await fetch(`${API_BASE}/signals/webhook`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source: 'manual',
+                        symbol: symbol,
+                        action: action,
+                        confidence: Math.random() * 0.5 + 0.5,
+                        strategy: 'test',
+                        mode: 'notification'
+                    })
+                });
+
+                if (response.ok) {
+                    addAlert({
+                        symbol: symbol,
+                        action: action,
+                        confidence: Math.random() * 0.5 + 0.5,
+                        timestamp: Date.now()
+                    });
+                    log(`📨 Sinal simulado: ${action} ${symbol}`, 'success');
+                }
+            } catch (error) {
+                log('Erro ao simular sinal', 'error');
+            }
+        }
+
+        // Adicionar alerta
+        function addAlert(alert) {
+            const newAlert = {
+                id: `${Date.now()}-${Math.random()}`,
+                ...alert
+            };
+            
+            alerts.unshift(newAlert);
+            if (alerts.length > 50) alerts = alerts.slice(0, 50);
+            
+            document.getElementById('signals-count').textContent = alerts.length;
+            renderAlerts();
+            
+            if ('vibrate' in navigator) {
+                navigator.vibrate([200, 100, 200]);
+            }
+        }
+
+        // Renderizar alertas
+        function renderAlerts() {
+            const container = document.getElementById('alert-list');
+            
+            if (alerts.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; opacity: 0.5; padding: 40px;">
+                        Nenhum alerta ainda. Inicie o bot para começar!
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = alerts.map(alert => {
+                const date = new Date(alert.timestamp).toLocaleString('pt-BR');
+                const actionClass = alert.action.toLowerCase();
+                const confidence = alert.confidence ? `${(alert.confidence * 100).toFixed(0)}%` : 'N/A';
+                
+                return `
+                    <div class="alert-item ${actionClass}">
+                        <div class="alert-header">
+                            <span class="alert-action ${actionClass}">${alert.action} ${alert.symbol}</span>
+                            <span class="alert-time">${date.split(' ')[1]}</span>
+                        </div>
+                        <div class="alert-confidence">Confiança: ${confidence}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Limpar alertas
+        function clearAlerts() {
+            alerts = [];
+            document.getElementById('signals-count').textContent = '0';
+            renderAlerts();
+            log('Alertas limpos', 'info');
+        }
+
+        // Log
+        function log(message, type = 'info') {
+            const console = document.getElementById('log-console');
+            const time = new Date().toLocaleTimeString('pt-BR');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${time}] ${message}`;
+            console.insertBefore(entry, console.firstChild);
+            
+            // Limitar a 100 logs
+            while (console.children.length > 100) {
+                console.removeChild(console.lastChild);
+            }
+        }
+
+        // Limpar logs
+        function clearLogs() {
+            document.getElementById('log-console').innerHTML = 
+                '<div class="log-entry info">Logs limpos</div>';
+        }
+
+        // Inicialização
+        async function init() {
+            log('Iniciando dashboard...', 'info');
+            
+            const connected = await checkConnection();
+            if (connected) {
+                await loadSymbols();
+                await refreshStatus();
+            }
+        }
+
+        // Auto-refresh a cada 5 segundos
+        setInterval(async () => {
+            const connected = await checkConnection();
+            if (connected && botRunning) {
+                await refreshStatus();
+            }
+        }, 5000);
+
+        // Iniciar
+        init();
+    </script>
+</body>
+</html>

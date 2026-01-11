@@ -1,0 +1,97 @@
+# 🚀 Guia Rápido - TradeBot AI
+
+## ✅ Status do Projeto
+
+Backend FastAPI está **RODANDO** em `http://localhost:8000`
+
+## 🎯 Como Testar Agora
+
+### 1️⃣ **Abrir o Simulador Mobile**
+
+Abra o arquivo no navegador:
+```
+c:\Users\Luchini\Downloads\App para pagar\mobile-simulator.html
+```
+
+Ou clique aqui: [Abrir Simulador](file:///c:/Users/Luchini/Downloads/App%20para%20pagar/mobile-simulator.html)
+
+### 2️⃣ **Funcionalidades Disponíveis**
+
+- ✅ **Iniciar/Parar Bot** - Botão principal
+- ✅ **Simular Sinal de COMPRA** - Painel de testes (direita)
+- ✅ **Simular Sinal de VENDA** - Painel de testes (direita)
+- ✅ **Status de Conexão** - Indica se backend está ativo
+- ✅ **Lista de Alertas** - Mostra sinais recebidos em tempo real
+
+### 3️⃣ **APIs Swagger Disponíveis**
+
+Documentação interativa: http://localhost:8000/docs
+
+Endpoints:
+- `POST /api/devices/register` - Registrar dispositivo
+- `POST /api/signals/webhook` - Enviar sinal de trading
+- `POST /api/bot/state` - Controlar estado do bot
+- `GET /` - Status do servidor
+
+## 📱 Estrutura Mobile Real (React Native)
+
+Para rodar o app mobile real em um dispositivo:
+
+```bash
+cd mobile
+npm install
+npm start
+```
+
+Mas para testes rápidos, use o **simulador HTML** que já funciona!
+
+## 🔧 O que foi implementado
+
+### Backend (Python/FastAPI) ✅
+- ✅ Endpoints REST completos
+- ✅ Sistema de notificações (stub - sem Firebase por enquanto)
+- ✅ WebSocket de preços (Binance)
+- ✅ Estratégias de trading
+- ✅ Store de dispositivos
+- ✅ CORS configurado
+
+### Mobile Simulator (HTML) ✅
+- ✅ Interface realista (frame de iPhone)
+- ✅ Controle Start/Stop
+- ✅ Testes de sinais BUY/SELL
+- ✅ Lista de alertas com animações
+- ✅ Status de conexão em tempo real
+
+### App Mobile Real (React Native/Expo) ✅
+- ✅ Código completo gerado
+- ✅ Autenticação biométrica
+- ✅ Push notifications
+- ✅ Integração com backend
+- ✅ UI profissional
+
+## 🎮 Teste Agora!
+
+1. ✅ Backend já está rodando
+2. 🌐 Abra `mobile-simulator.html` no navegador
+3. 🎯 Clique em "Iniciar Bot"
+4. 📈 Use os botões de teste para simular sinais
+5. 👀 Veja os alertas aparecendo na lista!
+
+## 🐛 Problemas?
+
+Se o simulador mostrar "Backend: Desconectado":
+- Verifique se o terminal do uvicorn está rodando
+- Acesse http://localhost:8000 no navegador
+- Deve mostrar: `{"app":"TradeBot AI Backend","status":"running"}`
+
+## 📝 Próximos Passos
+
+- [ ] Adicionar gráficos de preços ao simulador
+- [ ] Implementar WebSocket real time no simulador
+- [ ] Configurar Firebase para push real
+- [ ] Deploy do backend em VPS
+- [ ] Build do app mobile para loja
+
+---
+
+**Divirta-se testando! 🚀**

@@ -1,0 +1,3 @@
+1. Abra: dashboard.html (duplo clique)
+2. Clique "Iniciar Bot"
+3. Teste tudo visualmente!

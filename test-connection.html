@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Conexão - TradeBot AI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0F172A;
+            color: white;
+        }
+        .status {
+            padding: 20px;
+            border-radius: 10px;
+            margin: 10px 0;
+            font-size: 18px;
+        }
+        .success { background: #10B981; }
+        .error { background: #EF4444; }
+        .loading { background: #3B82F6; }
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            background: #3B82F6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #2563EB; }
+        pre {
+            background: #1E293B;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Teste de Conexão</h1>
+    
+    <div id="status" class="status loading">
+        Testando conexão...
+    </div>
+
+    <div>
+        <button onclick="testConnection()">🔄 Testar Novamente</button>
+        <button onclick="openDashboard()">📊 Abrir Dashboard</button>
+    </div>
+
+    <h3>Resultado dos Testes:</h3>
+    <pre id="result">Aguardando...</pre>
+
+    <script>
+        async function testConnection() {
+            const statusDiv = document.getElementById('status');
+            const resultPre = document.getElementById('result');
+            
+            statusDiv.className = 'status loading';
+            statusDiv.textContent = '⏳ Testando...';
+            
+            const tests = [];
+            
+            // Teste 1: Endpoint raiz
+            try {
+                const response = await fetch('http://localhost:8000/');
+                const data = await response.json();
+                tests.push({
+                    name: 'GET /',
+                    status: '✅ SUCESSO',
+                    data: data
+                });
+            } catch (error) {
+                tests.push({
+                    name: 'GET /',
+                    status: '❌ FALHOU',
+                    error: error.message
+                });
+            }
+
+            // Teste 2: Health check
+            try {
+                const response = await fetch('http://localhost:8000/health');
+                const data = await response.json();
+                tests.push({
+                    name: 'GET /health',
+                    status: '✅ SUCESSO',
+                    data: data
+                });
+            } catch (error) {
+                tests.push({
+                    name: 'GET /health',
+                    status: '❌ FALHOU',
+                    error: error.message
+                });
+            }
+
+            // Teste 3: Status do bot
+            try {
+                const response = await fetch('http://localhost:8000/api/bot/status');
+                const data = await response.json();
+                tests.push({
+                    name: 'GET /api/bot/status',
+                    status: '✅ SUCESSO',
+                    data: data
+                });
+            } catch (error) {
+                tests.push({
+                    name: 'GET /api/bot/status',
+                    status: '❌ FALHOU',
+                    error: error.message
+                });
+            }
+
+            // Teste 4: Símbolos disponíveis
+            try {
+                const response = await fetch('http://localhost:8000/api/bot/symbols');
+                const data = await response.json();
+                tests.push({
+                    name: 'GET /api/bot/symbols',
+                    status: '✅ SUCESSO',
+                    data: data
+                });
+            } catch (error) {
+                tests.push({
+                    name: 'GET /api/bot/symbols',
+                    status: '❌ FALHOU',
+                    error: error.message
+                });
+            }
+
+            // Verificar se todos passaram
+            const allPassed = tests.every(t => t.status.includes('✅'));
+            
+            if (allPassed) {
+                statusDiv.className = 'status success';
+                statusDiv.textContent = '✅ Backend Conectado! Todos os testes passaram!';
+            } else {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '❌ Alguns testes falharam. Backend pode estar offline.';
+            }
+
+            resultPre.textContent = JSON.stringify(tests, null, 2);
+        }
+
+        function openDashboard() {
+            window.location.href = 'dashboard.html';
+        }
+
+        // Testar automaticamente ao carregar
+        testConnection();
+    </script>
+</body>
+</html>

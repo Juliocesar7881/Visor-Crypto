@@ -1,0 +1,461 @@
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, StatusBar, TouchableOpacity, ActivityIndicator } from 'react-native';
+
+interface AIReport {
+  timestamp: string;
+  marketSentiment: 'bullish' | 'bearish' | 'neutral';
+  recommendation: 'strong_buy' | 'buy' | 'hold' | 'sell' | 'strong_sell';
+  confidence: number;
+  analysis: string;
+  keyPoints: string[];
+  risks: string[];
+  opportunities: string[];
+  technicalScore: number;
+  fundamentalScore: number;
+  sentimentScore: number;
+}
+
+export default function ReportsScreen() {
+  const [loading, setLoading] = useState(false);
+  const [report, setReport] = useState<AIReport | null>(null);
+
+  useEffect(() => {
+    generateReport();
+  }, []);
+
+  const generateReport = async () => {
+    setLoading(true);
+    // Simular geração de relatório por IA
+    setTimeout(() => {
+      setReport({
+        timestamp: new Date().toISOString(),
+        marketSentiment: 'bullish',
+        recommendation: 'buy',
+        confidence: 0.82,
+        analysis: 'Com base na análise de múltiplos indicadores técnicos, fundamentos de mercado e sentimento geral, o mercado apresenta sinais positivos de continuação da tendência de alta. O volume de negociação aumentou 45% nas últimas 24h, indicando forte interesse institucional.',
+        keyPoints: [
+          'EMA 9 cruzou acima da EMA 21 em 8 dos 10 ativos monitorados',
+          'RSI em zona neutra (58), indicando espaço para crescimento',
+          'Volume acima da média de 30 dias',
+          'Dominância do Bitcoin estável em 52%',
+          'Fear & Greed Index em 65 (Greed)',
+        ],
+        risks: [
+          'Possível resistência em $45.000 para BTC',
+          'Volatilidade aumentada devido a anúncios do Fed',
+          'Correção técnica pode ocorrer após rally de 3 dias',
+        ],
+        opportunities: [
+          'Altcoins com forte correlação com BTC podem seguir alta',
+          'DeFi tokens apresentando volume crescente',
+          'Possível breakout em ETH acima de $3.200',
+        ],
+        technicalScore: 78,
+        fundamentalScore: 72,
+        sentimentScore: 85,
+      });
+      setLoading(false);
+    }, 2000);
+  };
+
+  const getRecommendationColor = (rec: string) => {
+    switch (rec) {
+      case 'strong_buy': return '#10B981';
+      case 'buy': return '#34D399';
+      case 'hold': return '#F59E0B';
+      case 'sell': return '#F87171';
+      case 'strong_sell': return '#EF4444';
+      default: return '#64748B';
+    }
+  };
+
+  const getRecommendationText = (rec: string) => {
+    switch (rec) {
+      case 'strong_buy': return '🚀 COMPRA FORTE';
+      case 'buy': return '📈 COMPRA';
+      case 'hold': return '⏸️ MANTER';
+      case 'sell': return '📉 VENDA';
+      case 'strong_sell': return '⚠️ VENDA FORTE';
+      default: return 'NEUTRO';
+    }
+  };
+
+  const getSentimentEmoji = (sentiment: string) => {
+    switch (sentiment) {
+      case 'bullish': return '🐂';
+      case 'bearish': return '🐻';
+      default: return '😐';
+    }
+  };
+
+  if (loading && !report) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>🤖 IA analisando mercado...</Text>
+          <Text style={styles.loadingSubtext}>Processando 10.000+ pontos de dados</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+      
+      <View style={styles.header}>
+        <Text style={styles.title}>✨ Relatório IA</Text>
+        <Text style={styles.subtitle}>Análise inteligente de mercado</Text>
+      </View>
+
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        {report && (
+          <>
+            {/* Card de recomendação principal */}
+            <View style={[styles.recommendationCard, { borderColor: getRecommendationColor(report.recommendation) }]}>
+              <View style={styles.recHeader}>
+                <Text style={styles.recLabel}>Recomendação Atual</Text>
+                <Text style={styles.timestamp}>
+                  {new Date(report.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+              </View>
+              
+              <View style={[styles.recBadge, { backgroundColor: getRecommendationColor(report.recommendation) }]}>
+                <Text style={styles.recText}>{getRecommendationText(report.recommendation)}</Text>
+              </View>
+
+              <View style={styles.sentimentRow}>
+                <Text style={styles.sentimentLabel}>Sentimento do Mercado:</Text>
+                <Text style={styles.sentimentValue}>
+                  {getSentimentEmoji(report.marketSentiment)} {report.marketSentiment.toUpperCase()}
+                </Text>
+              </View>
+
+              <View style={styles.confidenceContainer}>
+                <Text style={styles.confidenceLabel}>Confiança da IA: {(report.confidence * 100).toFixed(0)}%</Text>
+                <View style={styles.confidenceBarBg}>
+                  <View style={[
+                    styles.confidenceBarFill,
+                    { 
+                      width: `${report.confidence * 100}%`,
+                      backgroundColor: getRecommendationColor(report.recommendation)
+                    }
+                  ]} />
+                </View>
+              </View>
+            </View>
+
+            {/* Scores */}
+            <View style={styles.scoresGrid}>
+              <View style={styles.scoreCard}>
+                <Text style={styles.scoreValue}>{report.technicalScore}</Text>
+                <Text style={styles.scoreLabel}>Técnico</Text>
+                <View style={[styles.scoreBar, { width: `${report.technicalScore}%`, backgroundColor: '#3B82F6' }]} />
+              </View>
+              <View style={styles.scoreCard}>
+                <Text style={styles.scoreValue}>{report.fundamentalScore}</Text>
+                <Text style={styles.scoreLabel}>Fundamentos</Text>
+                <View style={[styles.scoreBar, { width: `${report.fundamentalScore}%`, backgroundColor: '#8B5CF6' }]} />
+              </View>
+              <View style={styles.scoreCard}>
+                <Text style={styles.scoreValue}>{report.sentimentScore}</Text>
+                <Text style={styles.scoreLabel}>Sentimento</Text>
+                <View style={[styles.scoreBar, { width: `${report.sentimentScore}%`, backgroundColor: '#10B981' }]} />
+              </View>
+            </View>
+
+            {/* Análise detalhada */}
+            <View style={styles.analysisCard}>
+              <Text style={styles.cardTitle}>🔍 Análise Detalhada</Text>
+              <Text style={styles.analysisText}>{report.analysis}</Text>
+            </View>
+
+            {/* Pontos chave */}
+            <View style={styles.listCard}>
+              <Text style={styles.cardTitle}>🎯 Pontos Chave</Text>
+              {report.keyPoints.map((point, index) => (
+                <View key={index} style={styles.listItem}>
+                  <Text style={styles.bullet}>•</Text>
+                  <Text style={styles.listText}>{point}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Oportunidades */}
+            <View style={styles.listCard}>
+              <Text style={styles.cardTitle}>💎 Oportunidades</Text>
+              {report.opportunities.map((opp, index) => (
+                <View key={index} style={styles.listItem}>
+                  <Text style={styles.bulletGreen}>✓</Text>
+                  <Text style={styles.listText}>{opp}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Riscos */}
+            <View style={styles.listCard}>
+              <Text style={styles.cardTitle}>⚠️ Riscos</Text>
+              {report.risks.map((risk, index) => (
+                <View key={index} style={styles.listItem}>
+                  <Text style={styles.bulletRed}>!</Text>
+                  <Text style={styles.listText}>{risk}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Botão atualizar */}
+            <TouchableOpacity
+              style={styles.refreshButton}
+              onPress={generateReport}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#F1F5F9" />
+              ) : (
+                <Text style={styles.refreshButtonText}>🔄 Gerar Novo Relatório</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Disclaimer */}
+            <View style={styles.disclaimer}>
+              <Text style={styles.disclaimerText}>
+                ⚠️ Este relatório é gerado por IA e não constitui aconselhamento financeiro. 
+                Sempre faça sua própria pesquisa antes de investir.
+              </Text>
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#F1F5F9',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#F1F5F9',
+    marginTop: 24,
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    color: '#64748B',
+    marginTop: 8,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  content: {
+    padding: 16,
+  },
+  recommendationCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 16,
+    borderWidth: 3,
+  },
+  recHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  recLabel: {
+    fontSize: 14,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  timestamp: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  recBadge: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  recText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#F1F5F9',
+  },
+  sentimentRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  sentimentLabel: {
+    fontSize: 14,
+    color: '#94A3B8',
+  },
+  sentimentValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#F1F5F9',
+  },
+  confidenceContainer: {
+    gap: 8,
+  },
+  confidenceLabel: {
+    fontSize: 14,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  confidenceBarBg: {
+    height: 10,
+    backgroundColor: '#334155',
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  confidenceBarFill: {
+    height: '100%',
+    borderRadius: 5,
+  },
+  scoresGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  scoreCard: {
+    flex: 1,
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  scoreValue: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#F1F5F9',
+    marginBottom: 4,
+  },
+  scoreLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  scoreBar: {
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'stretch',
+  },
+  analysisCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#F1F5F9',
+    marginBottom: 12,
+  },
+  analysisText: {
+    fontSize: 15,
+    color: '#94A3B8',
+    lineHeight: 24,
+  },
+  listCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  listItem: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    alignItems: 'flex-start',
+  },
+  bullet: {
+    fontSize: 16,
+    color: '#3B82F6',
+    marginRight: 12,
+    marginTop: 2,
+  },
+  bulletGreen: {
+    fontSize: 16,
+    color: '#10B981',
+    marginRight: 12,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  bulletRed: {
+    fontSize: 16,
+    color: '#EF4444',
+    marginRight: 12,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  listText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#94A3B8',
+    lineHeight: 20,
+  },
+  refreshButton: {
+    backgroundColor: '#3B82F6',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  refreshButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#F1F5F9',
+  },
+  disclaimer: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  disclaimerText: {
+    fontSize: 12,
+    color: '#F87171',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+});

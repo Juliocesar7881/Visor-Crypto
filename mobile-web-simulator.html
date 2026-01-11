@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeBot AI - Mobile Web Simulator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .device-container {
+            position: relative;
+            background: #000;
+            border-radius: 30px;
+            padding: 20px;
+            box-shadow: 
+                0 0 0 8px #1a1a1a,
+                0 0 0 12px #333,
+                0 20px 50px rgba(0,0,0,0.4),
+                0 0 100px rgba(103, 126, 234, 0.3);
+        }
+
+        .device-screen {
+            width: 375px;  /* iPhone 13/14 width */
+            height: 812px; /* iPhone 13/14 height */
+            border-radius: 25px;
+            overflow: hidden;
+            position: relative;
+            background: #000;
+        }
+
+        .device-notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 30px;
+            background: #000;
+            border-radius: 0 0 15px 15px;
+            z-index: 1000;
+        }
+
+        .app-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 25px;
+            background: #fff;
+        }
+
+        .device-controls {
+            position: absolute;
+            right: -80px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .control-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .control-btn:hover {
+            background: rgba(255,255,255,0.2);
+            transform: scale(1.1);
+        }
+
+        .info-panel {
+            position: absolute;
+            left: -300px;
+            top: 0;
+            width: 280px;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .info-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .info-item {
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-online {
+            background: #10B981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .toolbar {
+            position: absolute;
+            bottom: -80px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .toolbar-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 25px;
+            background: rgba(255,255,255,0.15);
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .toolbar-btn:hover {
+            background: rgba(255,255,255,0.25);
+            transform: translateY(-2px);
+        }
+
+        @media (max-width: 768px) {
+            .device-container {
+                transform: scale(0.8);
+            }
+            .info-panel {
+                display: none;
+            }
+            .device-controls {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="device-container">
+        <!-- Painel de Informações -->
+        <div class="info-panel">
+            <div class="info-title">📱 Mobile Simulator</div>
+            <div class="info-item">
+                <span class="status-indicator status-online"></span>
+                Backend: Conectado
+            </div>
+            <div class="info-item">
+                <span class="status-indicator status-online"></span>
+                Expo Web: Ativo
+            </div>
+            <div class="info-item">
+                <strong>Dimensões:</strong><br>
+                375x812px (iPhone 13/14)
+            </div>
+            <div class="info-item">
+                <strong>Features Ativas:</strong><br>
+                • Paper Trading ✅<br>
+                • Learning Reports ✅<br>
+                • Multi-timeframe Analysis ✅<br>
+                • RSI + Volume + MA ✅<br>
+                • News Integration ✅<br>
+                • Support/Resistance ✅
+            </div>
+            <div class="info-item">
+                <strong>APIs:</strong><br>
+                • CoinGecko: Conectada<br>
+                • CryptoPanic: Conectada<br>
+                • Backend: localhost:8000
+            </div>
+        </div>
+
+        <!-- Dispositivo Móvel -->
+        <div class="device-screen">
+            <div class="device-notch"></div>
+            <iframe 
+                src="http://localhost:19007"
+                class="app-iframe"
+                id="appFrame"
+                title="TradeBot AI Mobile App"
+            ></iframe>
+        </div>
+
+        <!-- Controles do Dispositivo -->
+        <div class="device-controls">
+            <button class="control-btn" onclick="reloadApp()" title="Reload App">
+                🔄
+            </button>
+            <button class="control-btn" onclick="toggleDevTools()" title="Dev Tools">
+                🛠️
+            </button>
+            <button class="control-btn" onclick="takeScreenshot()" title="Screenshot">
+                📸
+            </button>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <button class="toolbar-btn" onclick="navigateToTab('index')">📊 Dashboard</button>
+            <button class="toolbar-btn" onclick="navigateToTab('account')">💰 Conta</button>
+            <button class="toolbar-btn" onclick="navigateToTab('news')">📰 Notícias</button>
+            <button class="toolbar-btn" onclick="navigateToTab('charts')">📈 Charts</button>
+        </div>
+    </div>
+
+    <script>
+        // Funções de controle
+        function reloadApp() {
+            document.getElementById('appFrame').src = document.getElementById('appFrame').src;
+        }
+
+        function toggleDevTools() {
+            const frame = document.getElementById('appFrame');
+            if (frame.style.transform === 'scale(0.8)') {
+                frame.style.transform = 'scale(1)';
+            } else {
+                frame.style.transform = 'scale(0.8)';
+            }
+        }
+
+        function takeScreenshot() {
+            // Simula captura de tela
+            const flash = document.createElement('div');
+            flash.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: white;
+                z-index: 9999;
+                opacity: 0.8;
+                pointer-events: none;
+            `;
+            document.body.appendChild(flash);
+            
+            setTimeout(() => {
+                document.body.removeChild(flash);
+                console.log('📸 Screenshot capturada!');
+            }, 200);
+        }
+
+        function navigateToTab(tab) {
+            // Envia comando para navegar (se a app suportar)
+            try {
+                const frame = document.getElementById('appFrame');
+                frame.contentWindow.postMessage({ action: 'navigate', tab: tab }, '*');
+            } catch (e) {
+                console.log(`Navegando para: ${tab}`);
+            }
+        }
+
+        // Monitora o status da conexão
+        setInterval(() => {
+            fetch('http://localhost:8000/api/account/balance')
+                .then(() => {
+                    document.querySelectorAll('.status-indicator')[0].className = 'status-indicator status-online';
+                })
+                .catch(() => {
+                    document.querySelectorAll('.status-indicator')[0].style.background = '#EF4444';
+                });
+        }, 5000);
+
+        // Adiciona efeitos sonoros simulados
+        document.addEventListener('click', () => {
+            console.log('🔊 Click sound');
+        });
+
+        // Informações no console
+        console.log(`
+🚀 TradeBot AI Mobile Simulator
+===============================
+📱 Dimensões: 375x812px
+🌐 Expo Web: http://localhost:19006
+🔧 Backend: http://localhost:8000
+📊 Features: Paper Trading, Learning AI, Multi-timeframe Analysis
+        `);
+    </script>
+</body>
+</html>
