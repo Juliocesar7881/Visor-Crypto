@@ -6897,7 +6897,7 @@
                 const price = paddedMax - (paddedRange * i / 5);
                 const y = padding.top + (graphHeight * i / 5);
                 const formatted = price >= 1000 ? `$${(price/1000).toFixed(1)}k` : `$${price.toFixed(price < 1 ? 4 : 2)}`;
-                ctx.fillText(formatted, chartWidth - 5, y + 3);
+                ctx.fillText(formatted, chartWidth - 15, y + 3);
             }
             
             // Time labels at bottom - format based on period
@@ -6931,7 +6931,7 @@
                     label = time.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
                 }
                 
-                ctx.fillText(label, x, chartHeight - 12);
+                ctx.fillText(label, x, chartHeight - 20);
             }
             
             // Current price line
