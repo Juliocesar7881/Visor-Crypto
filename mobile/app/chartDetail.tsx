@@ -632,6 +632,23 @@ export default function ChartDetailScreen() {
                 </View>
               </View>
             </View>
+
+            {/* Botão Análise Técnica */}
+            <TouchableOpacity 
+              style={styles.technicalAnalysisButton}
+              onPress={() => router.push({ pathname: '/technicalAnalysis', params: { symbol: symbol || 'BTCUSDT' } })}
+            >
+              <View style={styles.technicalAnalysisContent}>
+                <View style={styles.technicalAnalysisIcon}>
+                  <Ionicons name="analytics" size={24} color="#FFF" />
+                </View>
+                <View style={styles.technicalAnalysisText}>
+                  <Text style={styles.technicalAnalysisTitle}>ANÁLISE TÉCNICA</Text>
+                  <Text style={styles.technicalAnalysisSubtitle}>Confluência institucional • IA Recommendation</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#3B82F6" />
+              </View>
+            </TouchableOpacity>
           </>
         )}
       </ScrollView>
@@ -999,5 +1016,40 @@ const styles = StyleSheet.create({
     height: '150%',
     left: '50%',
     top: '-25%',
+  },
+  // Technical Analysis Button styles
+  technicalAnalysisButton: {
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#3B82F6',
+  },
+  technicalAnalysisContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  technicalAnalysisIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  technicalAnalysisText: {
+    flex: 1,
+  },
+  technicalAnalysisTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#3B82F6',
+    marginBottom: 2,
+  },
+  technicalAnalysisSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
   },
 });

@@ -1,0 +1,12 @@
+{
+  "name": "cmc-api",
+  "version": "1.0.0",
+  "description": "Backend centralizado para CoinMarketCap - Fear & Greed, BTC Dominance, Altseason",
+  "main": "fetch-cmc-data.js",
+  "scripts": {
+    "fetch": "node fetch-cmc-data.js"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  }
+}

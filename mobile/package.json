@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
-    "@expo/webpack-config": "^19.0.1",
     "axios": "^1.7.9",
     "babel-preset-expo": "^54.0.7",
     "expo": "~54.0.0",

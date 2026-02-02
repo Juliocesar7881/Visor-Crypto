@@ -1,0 +1,62 @@
+{
+  "fearGreed": 29,
+  "fearGreedClassification": "Fear",
+  "btcDominance": 59.13,
+  "altseasonIndex": 35,
+  "fedWatch": {
+    "currentRate": {
+      "range": "4.25-4.50%",
+      "midpoint": 4.375
+    },
+    "nextMeeting": {
+      "date": "2026-01-28",
+      "label": "27-28 Jan 2026",
+      "time": "16:00",
+      "daysUntil": 1
+    },
+    "probabilities": {
+      "cut": 30,
+      "hold": 60,
+      "hike": 10
+    },
+    "lastDecision": "Corte 25pb"
+  },
+  "marketIndicators": {
+    "vix": {
+      "value": 16.15,
+      "change": 0,
+      "status": "normal"
+    },
+    "dxy": {
+      "value": 97.08,
+      "change": 0
+    },
+    "gold": {
+      "value": 5055.3,
+      "change": 0
+    },
+    "sp500": {
+      "value": 6950.23,
+      "change": 0
+    },
+    "treasury10y": {
+      "value": 4.213,
+      "change": 0
+    },
+    "btcPrice": {
+      "value": 88548.13,
+      "change": 0.845
+    },
+    "ethPrice": {
+      "value": 2931.72,
+      "change": 1.166
+    },
+    "totalMarketCap": {
+      "value": 3077225795315.55,
+      "formatted": "$3.08T",
+      "change": 1.110048057789569
+    }
+  },
+  "lastUpdate": "2026-01-27T01:53:29.199Z",
+  "error": null
+}

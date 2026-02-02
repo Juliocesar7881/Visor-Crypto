@@ -96,6 +96,20 @@ export default function RootLayout() {
           headerShown: false,
         }}
       />
+      <Tabs.Screen
+        name="technicalAnalysis"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
+      <Tabs.Screen
+        name="indicatorDetail"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
   );
 }

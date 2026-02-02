@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,36 +14,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 
-interface MacroEvent {
-  id: string;
-  title: string;
-  date: string;
-  country: string;
-  impact: 'high' | 'medium' | 'low';
-  actual?: string;
-  forecast?: string;
-  previous?: string;
-  category: string;
-}
+// Importa o serviço de API Macro
+import {
+  fetchEconomicCalendar,
+  fetchFedData,
+  fetchMarketIndicators,
+  fetchIndicatorsRealtime,
+  clearMacroCache,
+  getLastUpdateTime,
+  MacroEvent,
+  FedData,
+  MarketIndicator,
+} from '../services/macroApi';
 
-interface FedData {
-  meeting_date: string;
-  rate_probability: {
-    no_change: number;
-    cut_25bp: number;
-    cut_50bp: number;
-    hike_25bp: number;
-  };
-  current_rate: string;
-}
-
-interface MarketIndicator {
-  name: string;
-  value: string;
-  change: number;
-  changePercent: number;
-  icon: string;
-}
+// Intervalo de atualização em tempo real dos indicadores (30 segundos)
+const REALTIME_UPDATE_INTERVAL = 30 * 1000;
 
 export default function MacroScreen() {
   const router = useRouter();
@@ -53,6 +38,8 @@ export default function MacroScreen() {
   const [events, setEvents] = useState<MacroEvent[]>([]);
   const [indicators, setIndicators] = useState<MarketIndicator[]>([]);
   const [activeTab, setActiveTab] = useState<'fed' | 'calendar' | 'indicators'>('fed');
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const realtimeInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Handle Android back button
   useFocusEffect(
@@ -70,150 +57,91 @@ export default function MacroScreen() {
 
   useEffect(() => {
     loadData();
+    
+    // Inicia atualização em tempo real dos indicadores
+    startRealtimeUpdates();
+    
+    // Cleanup ao desmontar
+    return () => {
+      if (realtimeInterval.current) {
+        clearInterval(realtimeInterval.current);
+      }
+    };
   }, []);
+
+  // Atualização em tempo real apenas dos indicadores (a cada 30s)
+  const startRealtimeUpdates = () => {
+    realtimeInterval.current = setInterval(async () => {
+      try {
+        const realtimeData = await fetchIndicatorsRealtime();
+        if (realtimeData && realtimeData.length > 0) {
+          setIndicators(realtimeData);
+          setLastUpdate(new Date().toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          }));
+        }
+      } catch (error) {
+        console.error('Realtime update error:', error);
+      }
+    }, REALTIME_UPDATE_INTERVAL);
+  };
 
   const loadData = async () => {
     setLoading(true);
     try {
-      // Try to fetch real data from APIs
-      await Promise.all([
-        loadFedData(),
-        loadEconomicCalendar(),
-        loadMarketIndicators(),
+      // Busca dados das APIs em paralelo
+      const [fedResult, eventsResult, indicatorsResult] = await Promise.all([
+        fetchFedData(),
+        fetchEconomicCalendar(),
+        fetchMarketIndicators(),
       ]);
+
+      setFedData(fedResult);
+      setEvents(eventsResult);
+      setIndicators(indicatorsResult);
+
+      // Atualiza timestamp
+      setLastUpdate(new Date().toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }));
     } catch (error) {
       console.error('Error loading macro data:', error);
-      // Use mock data
-      loadMockData();
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const loadFedData = async () => {
-    // Mock FED data - in production, connect to CME FedWatch API
-    setFedData({
-      meeting_date: '2026-01-29',
-      rate_probability: {
-        no_change: 45.2,
-        cut_25bp: 42.8,
-        cut_50bp: 8.5,
-        hike_25bp: 3.5,
-      },
-      current_rate: '4.50% - 4.75%',
+  const onRefresh = async () => {
+    setRefreshing(true);
+    // Limpa cache para forçar atualização
+    await clearMacroCache();
+    await loadData();
+  };
+
+  // Navega para detalhes do indicador
+  const openIndicatorDetail = (indicatorId: string) => {
+    router.push({
+      pathname: '/indicatorDetail',
+      params: { indicatorId },
     });
   };
 
-  const loadEconomicCalendar = async () => {
-    // Mock economic calendar events
-    const mockEvents: MacroEvent[] = [
-      {
-        id: '1',
-        title: 'Decisão de Taxa de Juros do Fed',
-        date: '2026-01-29T19:00:00Z',
-        country: 'EUA',
-        impact: 'high',
-        forecast: '4.50%',
-        previous: '4.75%',
-        category: 'Política Monetária',
-      },
-      {
-        id: '2',
-        title: 'PIB dos EUA (Q4)',
-        date: '2026-01-30T13:30:00Z',
-        country: 'EUA',
-        impact: 'high',
-        forecast: '2.8%',
-        previous: '3.1%',
-        category: 'Crescimento',
-      },
-      {
-        id: '3',
-        title: 'Inflação CPI (YoY)',
-        date: '2026-02-12T13:30:00Z',
-        country: 'EUA',
-        impact: 'high',
-        forecast: '2.9%',
-        previous: '3.0%',
-        category: 'Inflação',
-      },
-      {
-        id: '4',
-        title: 'Taxa de Desemprego',
-        date: '2026-02-07T13:30:00Z',
-        country: 'EUA',
-        impact: 'medium',
-        forecast: '4.2%',
-        previous: '4.1%',
-        category: 'Emprego',
-      },
-      {
-        id: '5',
-        title: 'Decisão BCE',
-        date: '2026-02-06T13:45:00Z',
-        country: 'EUR',
-        impact: 'high',
-        forecast: '3.75%',
-        previous: '4.00%',
-        category: 'Política Monetária',
-      },
-      {
-        id: '6',
-        title: 'PMI Manufatura',
-        date: '2026-02-03T15:00:00Z',
-        country: 'EUA',
-        impact: 'medium',
-        forecast: '49.5',
-        previous: '49.2',
-        category: 'Atividade Econômica',
-      },
-      {
-        id: '7',
-        title: 'Vendas no Varejo',
-        date: '2026-02-14T13:30:00Z',
-        country: 'EUA',
-        impact: 'medium',
-        forecast: '0.4%',
-        previous: '0.3%',
-        category: 'Consumo',
-      },
-      {
-        id: '8',
-        title: 'Balança Comercial China',
-        date: '2026-02-07T03:00:00Z',
-        country: 'CHN',
-        impact: 'medium',
-        forecast: '$75.5B',
-        previous: '$72.3B',
-        category: 'Comércio',
-      },
-    ];
-    setEvents(mockEvents);
-  };
-
-  const loadMarketIndicators = async () => {
-    // Mock market indicators
-    const mockIndicators: MarketIndicator[] = [
-      { name: 'DXY (Índice Dólar)', value: '103.45', change: -0.32, changePercent: -0.31, icon: '💵' },
-      { name: 'US 10Y Treasury', value: '4.28%', change: 0.05, changePercent: 1.18, icon: '📜' },
-      { name: 'VIX (Volatilidade)', value: '14.52', change: -0.85, changePercent: -5.52, icon: '📊' },
-      { name: 'Ouro (XAU/USD)', value: '$2,048.50', change: 12.30, changePercent: 0.60, icon: '🥇' },
-      { name: 'Petróleo WTI', value: '$75.82', change: -1.24, changePercent: -1.61, icon: '🛢️' },
-      { name: 'S&P 500', value: '4,892.50', change: 28.45, changePercent: 0.58, icon: '📈' },
-    ];
-    setIndicators(mockIndicators);
-  };
-
-  const loadMockData = () => {
-    loadFedData();
-    loadEconomicCalendar();
-    loadMarketIndicators();
-  };
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadData();
+  // Mapa de nome para ID do indicador
+  const getIndicatorId = (name: string): string => {
+    if (name.includes('DXY')) return 'DXY';
+    if (name.includes('Treasury') || name.includes('10Y')) return 'TREASURY';
+    if (name.includes('VIX')) return 'VIX';
+    if (name.includes('Ouro') || name.includes('Gold') || name.includes('XAU')) return 'GOLD';
+    if (name.includes('Petróleo') || name.includes('Oil') || name.includes('WTI')) return 'OIL';
+    if (name.includes('S&P') || name.includes('500')) return 'SP500';
+    return 'DXY'; // fallback
   };
 
   const getImpactColor = (impact: string) => {
@@ -251,58 +179,75 @@ export default function MacroScreen() {
     });
   };
 
-  const renderFedTab = () => (
+  const renderFedTab = () => {
+    // Verificar se fedData está disponível e válido
+    if (!fedData || !fedData.rate_probability) {
+      return (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>🏛️ Fed Watch - Probabilidades</Text>
+            <Text style={styles.cardSubtitle}>Carregando dados...</Text>
+          </View>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="small" color="#3B82F6" />
+            <Text style={styles.loadingBoxText}>Buscando dados do Fed...</Text>
+          </View>
+        </View>
+      );
+    }
+
+    return (
     <View>
       {/* FED Rate Probabilities */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>🏛️ Fed Watch - Probabilidades</Text>
-          <Text style={styles.cardSubtitle}>Próxima reunião: {formatMeetingDate(fedData?.meeting_date || '')}</Text>
+          <Text style={styles.cardSubtitle}>Próxima reunião: {formatMeetingDate(fedData.meeting_date || '')}</Text>
         </View>
 
         <View style={styles.currentRate}>
           <Text style={styles.currentRateLabel}>Taxa Atual:</Text>
-          <Text style={styles.currentRateValue}>{fedData?.current_rate}</Text>
+          <Text style={styles.currentRateValue}>{fedData.current_rate || 'N/A'}</Text>
         </View>
 
         <View style={styles.probabilities}>
           <View style={styles.probabilityItem}>
             <View style={styles.probabilityBar}>
-              <View style={[styles.probabilityFill, { width: `${fedData?.rate_probability.cut_25bp || 0}%`, backgroundColor: '#10B981' }]} />
+              <View style={[styles.probabilityFill, { width: `${fedData.rate_probability?.cut_25bp || 0}%`, backgroundColor: '#10B981' }]} />
             </View>
             <View style={styles.probabilityInfo}>
               <Text style={styles.probabilityLabel}>Corte 25bp</Text>
-              <Text style={[styles.probabilityValue, { color: '#10B981' }]}>{fedData?.rate_probability.cut_25bp.toFixed(1)}%</Text>
+              <Text style={[styles.probabilityValue, { color: '#10B981' }]}>{(fedData.rate_probability?.cut_25bp || 0).toFixed(1)}%</Text>
             </View>
           </View>
 
           <View style={styles.probabilityItem}>
             <View style={styles.probabilityBar}>
-              <View style={[styles.probabilityFill, { width: `${fedData?.rate_probability.no_change || 0}%`, backgroundColor: '#64748B' }]} />
+              <View style={[styles.probabilityFill, { width: `${fedData.rate_probability?.no_change || 0}%`, backgroundColor: '#64748B' }]} />
             </View>
             <View style={styles.probabilityInfo}>
               <Text style={styles.probabilityLabel}>Sem Mudança</Text>
-              <Text style={[styles.probabilityValue, { color: '#64748B' }]}>{fedData?.rate_probability.no_change.toFixed(1)}%</Text>
+              <Text style={[styles.probabilityValue, { color: '#64748B' }]}>{(fedData.rate_probability?.no_change || 0).toFixed(1)}%</Text>
             </View>
           </View>
 
           <View style={styles.probabilityItem}>
             <View style={styles.probabilityBar}>
-              <View style={[styles.probabilityFill, { width: `${fedData?.rate_probability.cut_50bp || 0}%`, backgroundColor: '#3B82F6' }]} />
+              <View style={[styles.probabilityFill, { width: `${fedData.rate_probability?.cut_50bp || 0}%`, backgroundColor: '#3B82F6' }]} />
             </View>
             <View style={styles.probabilityInfo}>
               <Text style={styles.probabilityLabel}>Corte 50bp</Text>
-              <Text style={[styles.probabilityValue, { color: '#3B82F6' }]}>{fedData?.rate_probability.cut_50bp.toFixed(1)}%</Text>
+              <Text style={[styles.probabilityValue, { color: '#3B82F6' }]}>{(fedData.rate_probability?.cut_50bp || 0).toFixed(1)}%</Text>
             </View>
           </View>
 
           <View style={styles.probabilityItem}>
             <View style={styles.probabilityBar}>
-              <View style={[styles.probabilityFill, { width: `${fedData?.rate_probability.hike_25bp || 0}%`, backgroundColor: '#EF4444' }]} />
+              <View style={[styles.probabilityFill, { width: `${fedData.rate_probability?.hike_25bp || 0}%`, backgroundColor: '#EF4444' }]} />
             </View>
             <View style={styles.probabilityInfo}>
               <Text style={styles.probabilityLabel}>Alta 25bp</Text>
-              <Text style={[styles.probabilityValue, { color: '#EF4444' }]}>{fedData?.rate_probability.hike_25bp.toFixed(1)}%</Text>
+              <Text style={[styles.probabilityValue, { color: '#EF4444' }]}>{(fedData.rate_probability?.hike_25bp || 0).toFixed(1)}%</Text>
             </View>
           </View>
         </View>
@@ -314,7 +259,8 @@ export default function MacroScreen() {
         </View>
       </View>
     </View>
-  );
+    );
+  };
 
   const renderCalendarTab = () => (
     <View>
@@ -364,11 +310,22 @@ export default function MacroScreen() {
   const renderIndicatorsTab = () => (
     <View>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>📊 Indicadores de Mercado</Text>
-        <Text style={styles.cardSubtitle}>Dados em tempo real</Text>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>📊 Indicadores de Mercado</Text>
+          <View style={styles.realtimeBadge}>
+            <View style={styles.realtimeDot} />
+            <Text style={styles.realtimeText}>Tempo Real</Text>
+          </View>
+        </View>
+        <Text style={styles.cardSubtitle}>Toque para ver gráfico • Atualiza a cada 30s</Text>
 
         {indicators.map((indicator, index) => (
-          <View key={index} style={styles.indicatorItem}>
+          <TouchableOpacity 
+            key={index} 
+            style={styles.indicatorItem}
+            onPress={() => openIndicatorDetail(getIndicatorId(indicator.name))}
+            activeOpacity={0.7}
+          >
             <View style={styles.indicatorLeft}>
               <Text style={styles.indicatorIcon}>{indicator.icon}</Text>
               <Text style={styles.indicatorName}>{indicator.name}</Text>
@@ -382,7 +339,8 @@ export default function MacroScreen() {
                 {indicator.change >= 0 ? '↑' : '↓'} {Math.abs(indicator.changePercent).toFixed(2)}%
               </Text>
             </View>
-          </View>
+            <Ionicons name="chevron-forward" size={18} color="#64748B" style={styles.indicatorArrow} />
+          </TouchableOpacity>
         ))}
       </View>
 
@@ -413,7 +371,12 @@ export default function MacroScreen() {
 
       <View style={styles.header}>
         <Text style={styles.title}>📈 Dados Macro</Text>
-        <Text style={styles.subtitle}>Indicadores macroeconômicos</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.subtitle}>Indicadores macroeconômicos</Text>
+          {lastUpdate && (
+            <Text style={styles.lastUpdate}>🔄 {lastUpdate}</Text>
+          )}
+        </View>
       </View>
 
       {/* Tab Selector */}
@@ -481,6 +444,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B',
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -490,6 +458,10 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: '#64748B',
+  },
+  lastUpdate: {
+    fontSize: 11,
+    color: '#3B82F6',
   },
   tabContainer: {
     flexDirection: 'row',
@@ -534,13 +506,15 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   cardHeader: {
-    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#F1F5F9',
-    marginBottom: 4,
   },
   cardSubtitle: {
     fontSize: 13,
@@ -696,9 +670,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#F1F5F9',
     fontWeight: '500',
+    flex: 1,
   },
   indicatorRight: {
     alignItems: 'flex-end',
+    marginRight: 8,
   },
   indicatorValue: {
     fontSize: 16,
@@ -707,6 +683,29 @@ const styles = StyleSheet.create({
   },
   indicatorChange: {
     fontSize: 13,
+    fontWeight: '600',
+  },
+  indicatorArrow: {
+    marginLeft: 4,
+  },
+  realtimeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  realtimeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginRight: 6,
+  },
+  realtimeText: {
+    fontSize: 10,
+    color: '#10B981',
     fontWeight: '600',
   },
   infoCard: {
@@ -726,5 +725,16 @@ const styles = StyleSheet.create({
   infoBold: {
     fontWeight: '700',
     color: '#F1F5F9',
+  },
+  loadingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    gap: 12,
+  },
+  loadingBoxText: {
+    color: '#64748B',
+    fontSize: 14,
   },
 });

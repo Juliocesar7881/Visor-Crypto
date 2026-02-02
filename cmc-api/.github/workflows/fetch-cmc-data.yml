@@ -1,0 +1,44 @@
+name: Fetch CMC Data
+
+on:
+  schedule:
+    # Roda a cada 5 minutos (máximo permitido pelo GitHub Actions)
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Permite rodar manualmente
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Fetch CMC data
+        env:
+          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
+        run: npm run fetch
+      
+      - name: Commit and push if changed
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add data/
+          git diff --staged --quiet || git commit -m "📊 Update CMC data - $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          git push

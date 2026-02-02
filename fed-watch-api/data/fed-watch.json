@@ -1,0 +1,23 @@
+{
+  "lastUpdate": "2026-01-24T22:54:38.658Z",
+  "nextMeeting": {
+    "date": "2026-01-28",
+    "label": "27-28 Jan 2026",
+    "daysUntil": 4
+  },
+  "currentRate": {
+    "range": "4.25-4.50%",
+    "midpoint": 4.375
+  },
+  "probabilities": {
+    "cut": 95,
+    "hold": 5,
+    "hike": 0
+  },
+  "market": {
+    "impliedRate": "0.036",
+    "fearGreed": 25,
+    "fearGreedClassification": "Extreme Fear"
+  },
+  "source": "GitHub Actions - Fed Watch API"
+}

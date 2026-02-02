@@ -10,8 +10,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     fcm_credentials_path: str | None = None
     binance_ws_endpoint: str = "wss://stream.binance.com:9443/ws/btcusdt@trade"
-    cryptopanic_api_key: str = "a9a68f7c2deb41fd426935995e3324df210bcba5"
-    coingecko_api_key: str = "CG-iDkKAPFHhbA3v3nKW3ph87SL"
+    cryptopanic_api_key: str = ""  # Set via CRYPTOPANIC_API_KEY env variable
+    coingecko_api_key: str = ""  # Set via COINGECKO_API_KEY env variable
+    groq_api_key: str = ""  # Set via GROQ_API_KEY env variable
     allowed_origins: list[str] = [
         "*",  # Permitir todas as origens (desenvolvimento)
     ]
