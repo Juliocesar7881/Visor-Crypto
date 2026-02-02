@@ -5116,13 +5116,13 @@
         let hotNewsFetchInProgress = null; // Promise para evitar múltiplas requisições simultâneas
         
         // Palavras-chave para detectar notícias de ALTO impacto
-        // Equilibrado: pega notícias importantes mas não qualquer coisa
+        // EXPANDIDO: mais palavras-chave para capturar notícias importantes
         const HOT_KEYWORDS = {
-            politics: ['trump tariff', 'trump sanction', 'trump crypto', 'trump bitcoin', 'trump executive', 'trump announce', 'trump signs', 'biden tariff', 'biden sanction', 'elon musk bitcoin', 'elon musk crypto', 'elon musk doge', 'executive order crypto', 'executive order bitcoin', 'white house crypto', 'congress crypto', 'senate crypto'],
-            economic: ['new tariff', 'tariff announce', 'tariff impose', 'tariff shock', 'tariffs war', 'trade war', 'interest rate hike', 'interest rate cut', 'rate decision', 'fomc decision', 'fed decision', 'fed announce', 'rate hike', 'rate cut', 'recession', 'debt ceiling', 'economic crisis', 'economic emergency', 'inflation surge', 'inflation jump', 'cpi data', 'jobs report'],
-            geopolitical: ['declares war', 'declared war', 'war declared', 'invasion', 'military strike', 'military attack', 'nuclear threat', 'missile launch', 'missile strike', 'troops deploy', 'troops sent', 'attack on', 'strikes on', 'bombing', 'escalation', 'ceasefire', 'peace deal', 'conflict escalat'],
-            crypto_major: ['bitcoin reserve', 'strategic reserve', 'etf approved', 'etf launch', 'sec approv', 'sec reject', 'institutional adoption', 'legal tender', 'ban crypto', 'crypto ban', 'crypto regulation', 'bitcoin regulation', 'crypto law', 'bitcoin law', 'binance', 'coinbase sec', 'tether', 'stablecoin'],
-            market_crisis: ['market crash', 'crypto crash', 'bitcoin crash', 'stock crash', 'market plunge', 'bitcoin plunge', 'collapse', 'bankrupt', 'bank fail', 'bank run', 'black swan', 'massive liquidation', 'billion liquidat', 'billion wipe', 'flash crash', 'circuit breaker', 'trading halt']
+            politics: ['trump tariff', 'trump sanction', 'trump crypto', 'trump bitcoin', 'trump executive', 'trump announce', 'trump signs', 'trump policy', 'trump administration', 'biden tariff', 'biden sanction', 'biden crypto', 'elon musk bitcoin', 'elon musk crypto', 'elon musk doge', 'elon musk tesla', 'musk announces', 'musk buys', 'musk sells', 'executive order crypto', 'executive order bitcoin', 'white house crypto', 'white house bitcoin', 'congress crypto', 'congress bitcoin', 'senate crypto', 'senate bitcoin', 'government bitcoin', 'government crypto', 'us government', 'china government', 'russia government', 'president signs', 'president announces', 'new policy', 'new legislation', 'lawmakers', 'politician'],
+            economic: ['new tariff', 'tariff announce', 'tariff impose', 'tariff shock', 'tariffs war', 'trade war', 'interest rate hike', 'interest rate cut', 'rate decision', 'fomc decision', 'fed decision', 'fed announce', 'rate hike', 'rate cut', 'recession', 'debt ceiling', 'economic crisis', 'economic emergency', 'inflation surge', 'inflation jump', 'inflation data', 'cpi data', 'cpi report', 'jobs report', 'employment data', 'unemployment', 'gdp growth', 'gdp data', 'economic data', 'treasury', 'bond yield', 'dollar index', 'dxy', 'monetary policy', 'quantitative', 'stimulus', 'bailout', 'central bank', 'banking crisis', 'liquidity'],
+            geopolitical: ['declares war', 'declared war', 'war declared', 'invasion', 'invades', 'military strike', 'military attack', 'military operation', 'nuclear threat', 'nuclear test', 'missile launch', 'missile strike', 'missile test', 'troops deploy', 'troops sent', 'attack on', 'strikes on', 'bombing', 'escalation', 'escalates', 'ceasefire', 'peace deal', 'peace talks', 'conflict escalat', 'tensions rise', 'tensions escalat', 'sanctions', 'embargo', 'diplomatic', 'geopolitical', 'world war', 'cold war'],
+            crypto_major: ['bitcoin reserve', 'strategic reserve', 'btc reserve', 'crypto reserve', 'etf approved', 'etf approval', 'etf launch', 'etf rejected', 'spot etf', 'sec approv', 'sec reject', 'sec charges', 'sec lawsuit', 'sec investigation', 'institutional adoption', 'institutional buy', 'institutional invest', 'legal tender', 'ban crypto', 'crypto ban', 'bitcoin ban', 'crypto regulation', 'bitcoin regulation', 'crypto law', 'bitcoin law', 'crypto bill', 'bitcoin bill', 'binance', 'coinbase sec', 'coinbase news', 'tether', 'usdt', 'usdc', 'stablecoin', 'microstrategy', 'saylor', 'grayscale', 'blackrock bitcoin', 'blackrock crypto', 'fidelity bitcoin', 'fidelity crypto', 'wall street', 'hedge fund', 'bitcoin halving', 'halving', 'whale alert', 'whale moves', 'whale buys', 'whale sells', 'billion dollar', 'million dollar', 'massive buy', 'massive sell', 'record high', 'all time high', 'ath', 'record low', 'major exchange', 'exchange hack', 'exchange news', 'defi hack', 'protocol hack', 'exploit', 'vulnerability', 'security breach', 'cbdc', 'digital dollar', 'digital yuan', 'digital currency'],
+            market_crisis: ['market crash', 'crypto crash', 'bitcoin crash', 'stock crash', 'market plunge', 'bitcoin plunge', 'crypto plunge', 'collapse', 'collapsing', 'bankrupt', 'bankruptcy', 'bank fail', 'bank failure', 'bank run', 'black swan', 'massive liquidation', 'billion liquidat', 'billion wipe', 'flash crash', 'circuit breaker', 'trading halt', 'panic sell', 'capitulation', 'bear market', 'market fear', 'extreme fear', 'market turmoil', 'volatility spike', 'vix spike', 'blood in the streets', 'wipeout', 'meltdown', 'freefall', 'correction', 'major correction', 'significant drop', 'sharp decline', 'plummets', 'tumbles', 'tanks', 'dumps', 'selloff', 'sell-off', 'risk off', 'flight to safety']
         };
         
         function isHotNews(title) {
@@ -5156,11 +5156,18 @@
                 const hotNews = [];
                 
                 // 1. RSS Feeds de notícias globais via proxy - PARALELO para velocidade
+                // EXPANDIDO: mais feeds para capturar mais notícias importantes
                 const rssFeeds = [
                     { url: 'https://feeds.reuters.com/reuters/businessNews', source: 'Reuters' },
                     { url: 'https://feeds.bbci.co.uk/news/business/rss.xml', source: 'BBC' },
                     { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
-                    { url: 'https://cointelegraph.com/rss', source: 'Cointelegraph' }
+                    { url: 'https://cointelegraph.com/rss', source: 'Cointelegraph' },
+                    { url: 'https://decrypt.co/feed', source: 'Decrypt' },
+                    { url: 'https://thedefiant.io/feed', source: 'The Defiant' },
+                    { url: 'https://www.theblock.co/rss.xml', source: 'The Block' },
+                    { url: 'https://bitcoinmagazine.com/.rss/full/', source: 'Bitcoin Magazine' },
+                    { url: 'https://cryptoslate.com/feed/', source: 'CryptoSlate' },
+                    { url: 'https://cryptonews.com/news/feed/', source: 'CryptoNews' }
                 ];
             
             // Executar todas as requisições RSS em paralelo para maior velocidade
@@ -5271,9 +5278,9 @@
                 }
             });
             
-            // Ordenar por data e limitar
+            // Ordenar por data e limitar a 100 notícias importantes
                 hotNews.sort((a, b) => new Date(b.published) - new Date(a.published));
-                hotNewsCache = hotNews.slice(0, 50);
+                hotNewsCache = hotNews.slice(0, 100);
                 hotNewsLastFetch = now;
                 
                 console.log(`🔥 ${hotNewsCache.length} notícias quentes encontradas`);
@@ -5296,7 +5303,8 @@
                 // Parse simples de RSS/XML
                 const itemMatches = text.match(/<item[^>]*>[\s\S]*?<\/item>/gi) || [];
                 
-                for (const itemXml of itemMatches.slice(0, 20)) {
+                // Aumentado de 20 para 50 itens por feed para capturar mais notícias
+                for (const itemXml of itemMatches.slice(0, 50)) {
                     const titleMatch = itemXml.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
                     const linkMatch = itemXml.match(/<link[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/link>/i);
                     const pubDateMatch = itemXml.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i);
@@ -5326,10 +5334,10 @@
         function analyzeSentimentForHot(title, category) {
             const lower = title.toLowerCase();
             
-            // Palavras positivas para mercado
-            const positive = ['approve', 'adopt', 'rally', 'surge', 'peace', 'deal', 'agreement', 'stimulus', 'cut rate', 'growth'];
-            // Palavras negativas para mercado
-            const negative = ['ban', 'war', 'attack', 'crash', 'crisis', 'sanction', 'tariff', 'conflict', 'recession', 'default'];
+            // Palavras positivas para mercado - EXPANDIDO
+            const positive = ['approve', 'approved', 'approval', 'adopt', 'adoption', 'adopted', 'rally', 'rallies', 'rallying', 'surge', 'surges', 'surging', 'peace', 'deal', 'agreement', 'stimulus', 'cut rate', 'rate cut', 'growth', 'grows', 'growing', 'gain', 'gains', 'gaining', 'rise', 'rises', 'rising', 'soar', 'soars', 'boom', 'booming', 'record', 'high', 'highs', 'bullish', 'bull', 'launch', 'launches', 'partnership', 'partners', 'integration', 'upgrade', 'invest', 'invests', 'investment', 'buy', 'buys', 'buying', 'accumulate', 'inflow', 'inflows', 'positive', 'optimistic', 'strong', 'milestone', 'breakthrough', 'success'];
+            // Palavras negativas para mercado - EXPANDIDO
+            const negative = ['ban', 'bans', 'banned', 'war', 'wars', 'attack', 'attacks', 'attacking', 'crash', 'crashes', 'crashing', 'crisis', 'sanction', 'sanctions', 'tariff', 'tariffs', 'conflict', 'conflicts', 'recession', 'default', 'defaults', 'collapse', 'collapses', 'collapsing', 'drop', 'drops', 'dropping', 'fall', 'falls', 'falling', 'plunge', 'plunges', 'plunging', 'dump', 'dumps', 'dumping', 'fear', 'fears', 'hack', 'hacks', 'hacked', 'scam', 'fraud', 'reject', 'rejects', 'rejected', 'decline', 'declines', 'slump', 'slide', 'tank', 'tanks', 'weak', 'weakness', 'concern', 'concerns', 'worry', 'worries', 'risk', 'risks', 'danger', 'warn', 'warns', 'warning', 'threat', 'threatens', 'trouble', 'lawsuit', 'sue', 'investigation', 'fine', 'fines', 'penalty', 'outflow', 'outflows', 'withdraw', 'layoff', 'layoffs', 'fail', 'fails', 'failure', 'bearish', 'bear', 'panic', 'selloff', 'sell-off', 'capitulation', 'liquidation', 'wipeout'];
             
             let score = 0;
             positive.forEach(word => { if (lower.includes(word)) score += 1; });
@@ -5398,8 +5406,11 @@
                 const timeAgo = getTimeAgo(news.published);
                 const twitterBadge = news.isTwitter ? '<span style="background: #1DA1F2; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; margin-left: 6px;"><i class="fab fa-twitter"></i></span>' : '';
                 
+                // Usar URL como identificador para maior confiabilidade
+                const safeUrl = (news.url || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                
                 return `
-                    <div class="news-item hot" onclick="openHotNewsModal(${index})" style="border-left: 3px solid #f97316;">
+                    <div class="news-item hot" onclick="openHotNewsModal('${safeUrl}')" style="border-left: 3px solid #f97316;">
                         <div class="news-header">
                             <div class="news-title">
                                 <span style="font-size: 16px; margin-right: 6px;">${icon}</span>
@@ -5420,12 +5431,29 @@
         }
         
         // Função para abrir modal de notícia importante
-        async function openHotNewsModal(newsIndex) {
-            console.log('🔥 Abrindo modal para notícia:', newsIndex, 'Data:', window.hotNewsData);
+        // Aceita índice numérico OU URL da notícia para maior confiabilidade
+        async function openHotNewsModal(newsIndexOrUrl) {
+            console.log('🔥 Abrindo modal para notícia:', newsIndexOrUrl);
             try {
-                const news = window.hotNewsData?.[newsIndex];
+                let news;
+                
+                // Se é string (URL), buscar por URL
+                if (typeof newsIndexOrUrl === 'string') {
+                    news = window.hotNewsData?.find(n => n.url === newsIndexOrUrl) ||
+                           hotNewsCache?.find(n => n.url === newsIndexOrUrl) ||
+                           allNews?.find(n => n.url === newsIndexOrUrl);
+                } else {
+                    // Se é número (índice), buscar por índice
+                    news = window.hotNewsData?.[newsIndexOrUrl] ||
+                           hotNewsCache?.[newsIndexOrUrl];
+                }
+                
                 if (!news) {
-                    console.error('Notícia não encontrada no índice:', newsIndex);
+                    console.error('Notícia não encontrada:', newsIndexOrUrl);
+                    // Tentar abrir como notícia normal se tiver URL
+                    if (typeof newsIndexOrUrl === 'string') {
+                        window.open(newsIndexOrUrl, '_blank');
+                    }
                     return;
                 }
                 
@@ -5667,12 +5695,12 @@
                 const displayTitle = sanitizeHTML(news.translatedTitle || news.title);
                 const safeSource = sanitizeHTML(news.source);
                 
-                // Determinar qual função de modal usar e o índice correto
+                // Determinar qual função de modal usar - USAR URL para hot news
                 let onclickHandler;
                 if (isHot) {
-                    // Para urgentes, encontrar índice no hotNewsCache
-                    const hotIndex = hotNewsCache?.findIndex(h => h.url === news.url) ?? -1;
-                    onclickHandler = hotIndex >= 0 ? `openHotNewsModal(${hotIndex})` : `openNewsModal(${news.originalIndex})`;
+                    // Para urgentes, usar URL como identificador para maior confiabilidade
+                    const safeUrl = (news.url || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    onclickHandler = `openHotNewsModal('${safeUrl}')`;
                 } else {
                     onclickHandler = `openNewsModal(${news.originalIndex})`;
                 }
