@@ -1,62 +1,62 @@
 {
-  "fearGreed": 29,
-  "fearGreedClassification": "Fear",
-  "btcDominance": 59.13,
-  "altseasonIndex": 35,
+  "fearGreed": 15,
+  "fearGreedClassification": "Extreme fear",
+  "btcDominance": 59.27,
+  "altseasonIndex": 29,
   "fedWatch": {
     "currentRate": {
       "range": "4.25-4.50%",
       "midpoint": 4.375
     },
     "nextMeeting": {
-      "date": "2026-01-28",
-      "label": "27-28 Jan 2026",
+      "date": "2026-03-18",
+      "label": "17-18 Mar 2026",
       "time": "16:00",
-      "daysUntil": 1
+      "daysUntil": 44
     },
     "probabilities": {
-      "cut": 30,
-      "hold": 60,
-      "hike": 10
+      "cut": 40,
+      "hold": 55,
+      "hike": 5
     },
     "lastDecision": "Corte 25pb"
   },
   "marketIndicators": {
     "vix": {
-      "value": 16.15,
+      "value": 16.1,
       "change": 0,
       "status": "normal"
     },
     "dxy": {
-      "value": 97.08,
+      "value": 97.73,
       "change": 0
     },
     "gold": {
-      "value": 5055.3,
+      "value": 4656.6,
       "change": 0
     },
     "sp500": {
-      "value": 6950.23,
+      "value": 6990.59,
       "change": 0
     },
     "treasury10y": {
-      "value": 4.213,
+      "value": 4.275,
       "change": 0
     },
     "btcPrice": {
-      "value": 88548.13,
-      "change": 0.845
+      "value": 78476.23,
+      "change": 0.999
     },
     "ethPrice": {
-      "value": 2931.72,
-      "change": 1.166
+      "value": 2342.48,
+      "change": 0.084
     },
     "totalMarketCap": {
-      "value": 3077225795315.55,
-      "formatted": "$3.08T",
-      "change": 1.110048057789569
+      "value": 2722692646598.1855,
+      "formatted": "$2.72T",
+      "change": 1.624018246978025
     }
   },
-  "lastUpdate": "2026-01-27T01:53:29.199Z",
+  "lastUpdate": "2026-02-02T19:29:56.462Z",
   "error": null
 }

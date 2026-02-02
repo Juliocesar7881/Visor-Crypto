@@ -78,31 +78,77 @@ async function fetchCMCData() {
         }
     } catch (e) { console.error('❌ Fear & Greed:', e.message); }
 
-    // 3. Calcular Altseason Index
+    // 3. Calcular Altseason Index (metodologia similar ao CoinMarketCap)
+    // CMC considera: se 75% das top 50 altcoins performaram melhor que BTC nos últimos 90 dias = Altseason
+    // Fórmula ajustada para aproximar dos valores do CMC
     try {
-        console.log('📊 Calculando Altseason Index...');
+        console.log('📊 Calculando Altseason Index (metodologia CMC)...');
         await new Promise(r => setTimeout(r, 1000));
         
-        const coinsRes = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false');
+        const coinsRes = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=24h,7d,30d');
         if (coinsRes.ok) {
             const coins = await coinsRes.json();
             const btc = coins.find(c => c.id === 'bitcoin');
             if (btc) {
-                const btcAthChange = btc.ath_change_percentage || 0;
-                const excluded = ['bitcoin', 'tether', 'usd-coin', 'dai', 'binance-usd', 'true-usd', 'pax-dollar', 'first-digital-usd', 'ethena-usde', 'usds', 'wrapped-bitcoin', 'steth', 'weth', 'wrapped-steth', 'cbeth', 'rocket-pool-eth', 'frax-ether', 'coinbase-wrapped-btc', 'leo-token', 'multi-collateral-dai'];
+                // Usar variação de 30 dias como proxy (mais próximo do comportamento CMC)
+                const btc30dChange = btc.price_change_percentage_30d_in_currency || 0;
+                const btc7dChange = btc.price_change_percentage_7d_in_currency || 0;
+                
+                // Excluir stablecoins e wrapped tokens
+                const excluded = ['bitcoin', 'tether', 'usd-coin', 'dai', 'binance-usd', 'true-usd', 'pax-dollar', 'first-digital-usd', 'ethena-usde', 'usds', 'wrapped-bitcoin', 'steth', 'weth', 'wrapped-steth', 'cbeth', 'rocket-pool-eth', 'frax-ether', 'coinbase-wrapped-btc', 'leo-token', 'multi-collateral-dai', 'paypal-usd', 'frax', 'usdd', 'gemini-dollar', 'liquity-usd'];
                 const altcoins = coins.filter(c => !excluded.includes(c.id)).slice(0, 50);
-                let outperformCount = 0;
-                altcoins.forEach(coin => { if ((coin.ath_change_percentage || -100) > btcAthChange) outperformCount++; });
-                const rawRatio = outperformCount / altcoins.length;
-                const btcDomFactor = (100 - result.btcDominance) / 100;
-                result.altseasonIndex = Math.round((rawRatio * 40) + (btcDomFactor * 60));
+                
+                // Contar quantas altcoins superaram o BTC em 30d e 7d
+                let outperform30d = 0;
+                let outperform7d = 0;
+                altcoins.forEach(coin => {
+                    const coin30d = coin.price_change_percentage_30d_in_currency || -100;
+                    const coin7d = coin.price_change_percentage_7d_in_currency || -100;
+                    if (coin30d > btc30dChange) outperform30d++;
+                    if (coin7d > btc7dChange) outperform7d++;
+                });
+                
+                // Calcular razões (quanto maior, mais altseason)
+                const ratio30d = outperform30d / altcoins.length;
+                const ratio7d = outperform7d / altcoins.length;
+                
+                // Peso maior para 30d (mais próximo da metodologia CMC de 90 dias)
+                const performanceScore = (ratio30d * 0.7) + (ratio7d * 0.3);
+                
+                // Fator de dominância BTC (quanto menor dominância, mais altseason)
+                // CMC considera: BTC dom < 40% = mais altseason
+                const btcDom = result.btcDominance || 60;
+                let domFactor = 0;
+                if (btcDom < 40) domFactor = 0.8;
+                else if (btcDom < 50) domFactor = 0.5;
+                else if (btcDom < 60) domFactor = 0.3;
+                else domFactor = 0.1;
+                
+                // Fórmula final ajustada (valores mais conservadores como CMC)
+                // Performance tem peso 70%, dominância 30%
+                let rawIndex = (performanceScore * 70) + (domFactor * 30);
+                
+                // Aplicar fator de correção para aproximar do CMC (geralmente mais baixo)
+                rawIndex = rawIndex * 0.75; // Reduz ~25% para alinhar com CMC
+                
+                result.altseasonIndex = Math.round(rawIndex);
                 result.altseasonIndex = Math.min(100, Math.max(0, result.altseasonIndex));
+                
+                console.log(`📊 Altcoins superando BTC (30d): ${outperform30d}/${altcoins.length} (${(ratio30d*100).toFixed(1)}%)`);
+                console.log(`📊 Altcoins superando BTC (7d): ${outperform7d}/${altcoins.length} (${(ratio7d*100).toFixed(1)}%)`);
+                console.log(`📊 BTC Dominance: ${btcDom}% (fator: ${domFactor})`);
                 console.log(`✅ Altseason Index: ${result.altseasonIndex}`);
             }
         }
     } catch (e) {
         console.error('❌ Altseason:', e.message);
-        if (result.btcDominance) result.altseasonIndex = Math.min(100, Math.max(0, Math.round(100 - (result.btcDominance * 1.4))));
+        // Fallback mais conservador
+        if (result.btcDominance) {
+            const btcDom = result.btcDominance;
+            let fallback = 100 - (btcDom * 1.5);
+            fallback = fallback * 0.7; // Fator de correção
+            result.altseasonIndex = Math.min(100, Math.max(0, Math.round(fallback)));
+        }
     }
 
     // 4. Fed Watch - Taxa atual e probabilidades
