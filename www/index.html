@@ -3650,30 +3650,30 @@
                             Links Úteis
                         </div>
                     </div>
-                    <a href="https://intel.arkm.com/explorer/entity/blackrock" target="_blank" class="external-link">
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/blackrock', 'BlackRock Holdings')">
                         <i class="fas fa-building"></i>
                         <div class="external-link-text">
                             <div class="external-link-title">BlackRock Holdings</div>
                             <div class="external-link-desc">Arkham - Carteira BlackRock</div>
                         </div>
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
-                    </a>
-                    <a href="https://intel.arkm.com/explorer/entity/grayscale" target="_blank" class="external-link">
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/grayscale', 'Grayscale GBTC')">
                         <i class="fas fa-chart-pie"></i>
                         <div class="external-link-text">
                             <div class="external-link-title">Grayscale GBTC</div>
                             <div class="external-link-desc">Arkham - Fluxos Grayscale</div>
                         </div>
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
-                    </a>
-                    <a href="https://www.coinglass.com/pro/futures/LiquidationHeatMap" target="_blank" class="external-link">
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://www.coinglass.com/pro/futures/LiquidationHeatMap', 'Liquidation Heatmap')">
                         <i class="fas fa-fire"></i>
                         <div class="external-link-text">
                             <div class="external-link-title">Liquidation Heatmap</div>
                             <div class="external-link-desc">CoinGlass - Mapa de liquidações</div>
                         </div>
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
-                    </a>
+                    </div>
                 </div>
             </div>
 
@@ -3928,6 +3928,7 @@
         let newsLastFetch = 0; // Timestamp da última busca de notícias
         let newsLoaded = false; // Flag para saber se notícias já foram carregadas
         let macroUpdateInterval = null; // Intervalo para atualização em tempo real do MACRO
+        let isRenderingNews = false; // Flag para evitar renderizações simultâneas
 
 
 
@@ -3962,6 +3963,198 @@
             }
             // Usar noopener e noreferrer para segurança
             window.open(url, '_blank', 'noopener,noreferrer');
+        }
+        
+        // ============================================
+        // IN-APP BROWSER - Abrir sites dentro do app usando WebView
+        // Como a maioria dos sites bloqueia iframe (X-Frame-Options),
+        // usamos o Capacitor Browser para abrir dentro do app
+        // ============================================
+        let currentBrowserUrl = '';
+        let browserReturnToNews = false;
+        let lastOpenedNewsIndex = null; // Para reabrir o modal ao voltar
+        let lastOpenedHotNewsUrl = null; // Para hot news
+        
+        async function openInAppBrowser(url, title, newsIndex = null, isHotNews = false, hotNewsUrl = null) {
+            if (!isValidURL(url)) {
+                console.warn('URL inválida bloqueada:', url);
+                return;
+            }
+            
+            currentBrowserUrl = url;
+            browserReturnToNews = true;
+            lastOpenedNewsIndex = newsIndex;
+            lastOpenedHotNewsUrl = hotNewsUrl;
+            
+            // Salvar no sessionStorage para recuperar ao voltar
+            sessionStorage.setItem('returnToNewsModal', JSON.stringify({
+                newsIndex: newsIndex,
+                isHotNews: isHotNews,
+                hotNewsUrl: hotNewsUrl,
+                timestamp: Date.now()
+            }));
+            
+            // Usar Capacitor Browser para abrir dentro do app
+            try {
+                if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.Browser) {
+                    const { Browser } = Capacitor.Plugins;
+                    await Browser.open({ 
+                        url: url,
+                        presentationStyle: 'popover' // Abre como overlay
+                    });
+                } else {
+                    // Fallback para web
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                }
+            } catch (e) {
+                console.log('Browser plugin error, usando fallback:', e);
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        }
+        
+        // Função para abrir links externos (Links Úteis) guardando a seção atual
+        let previousSectionBeforeExternalLink = null;
+        
+        async function openExternalLink(url, title) {
+            // Guardar a seção atual para retornar depois
+            previousSectionBeforeExternalLink = currentSection;
+            sessionStorage.setItem('returnToSection', currentSection);
+            console.log('🔗 Abrindo link externo, seção atual:', currentSection);
+            
+            // Usar o browser do Capacitor
+            try {
+                if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.Browser) {
+                    const { Browser } = Capacitor.Plugins;
+                    await Browser.open({ 
+                        url: url,
+                        presentationStyle: 'popover'
+                    });
+                } else {
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                }
+            } catch (e) {
+                console.log('Browser error:', e);
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        }
+        
+        function closeInAppBrowser() {
+            const browser = document.getElementById('in-app-browser');
+            if (browser) {
+                browser.classList.remove('active');
+            }
+            document.body.style.overflow = '';
+            currentBrowserUrl = '';
+            browserReturnToNews = false;
+        }
+        
+        // Listener para quando o browser do Capacitor fecha
+        // E também para quando o app volta ao foco após sair do browser
+        async function initBrowserListener() {
+            try {
+                if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.Browser) {
+                    const { Browser } = Capacitor.Plugins;
+                    // Quando o browser fecha, o app volta ao estado anterior
+                    Browser.addListener('browserFinished', () => {
+                        console.log('🔙 Browser fechado, verificando estado...');
+                        // Restaurar seção se veio de link externo
+                        restoreSectionIfNeeded();
+                        // Restaurar modal se necessário
+                        restoreNewsModalIfNeeded();
+                    });
+                    console.log('✅ Browser listener inicializado');
+                }
+                
+                // Listener para App do Capacitor (quando app volta ao foco)
+                if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.App) {
+                    const { App } = Capacitor.Plugins;
+                    App.addListener('appStateChange', ({ isActive }) => {
+                        console.log('📱 App state changed, isActive:', isActive);
+                        if (isActive) {
+                            // App voltou ao foco - verificar se deve restaurar seção ou modal
+                            setTimeout(() => {
+                                restoreSectionIfNeeded();
+                                restoreNewsModalIfNeeded();
+                            }, 100);
+                        }
+                    });
+                    console.log('✅ App state listener inicializado');
+                }
+            } catch (e) {
+                console.log('Listeners não disponíveis:', e.message);
+            }
+        }
+        
+        // Função para restaurar a seção após fechar link externo
+        function restoreSectionIfNeeded() {
+            const savedSection = sessionStorage.getItem('returnToSection');
+            if (savedSection) {
+                console.log('🔙 Restaurando seção:', savedSection);
+                sessionStorage.removeItem('returnToSection');
+                // Mostrar a seção que estava antes
+                if (savedSection !== currentSection) {
+                    showSection(savedSection);
+                }
+            }
+        }
+        
+        // Função para restaurar modal da notícia se necessário
+        function restoreNewsModalIfNeeded() {
+            try {
+                const savedData = sessionStorage.getItem('returnToNewsModal');
+                if (!savedData) return;
+                
+                const data = JSON.parse(savedData);
+                // Verificar se não passou muito tempo (5 minutos)
+                if (Date.now() - data.timestamp > 300000) {
+                    sessionStorage.removeItem('returnToNewsModal');
+                    return;
+                }
+                
+                // Verificar se modal já está aberto
+                const modal = document.getElementById('news-modal');
+                if (modal && modal.classList.contains('active')) {
+                    console.log('✅ Modal já está aberto, nada a fazer');
+                    sessionStorage.removeItem('returnToNewsModal');
+                    return;
+                }
+                
+                console.log('🔄 Restaurando modal da notícia...');
+                
+                // Garantir que estamos na seção de notícias
+                showSection('news');
+                
+                // Reabrir o modal correto
+                if (data.isHotNews && data.hotNewsUrl) {
+                    openHotNewsModal(data.hotNewsUrl);
+                } else if (data.newsIndex !== null && data.newsIndex !== undefined) {
+                    openNewsModal(data.newsIndex);
+                }
+                
+                // Limpar dados salvos
+                sessionStorage.removeItem('returnToNewsModal');
+                currentBrowserUrl = '';
+                browserReturnToNews = false;
+            } catch (e) {
+                console.log('Erro ao restaurar modal:', e);
+            }
+        }
+        
+        // Também usar visibilitychange como fallback
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                console.log('👁 Página voltou ao foco');
+                setTimeout(() => restoreNewsModalIfNeeded(), 200);
+            }
+        });
+        
+        // Inicializar listener quando o DOM estiver pronto
+        document.addEventListener('DOMContentLoaded', initBrowserListener);
+        
+        function openCurrentUrlExternal() {
+            if (currentBrowserUrl) {
+                openExternalLink(currentBrowserUrl);
+            }
         }
         
         // Rate limiter para APIs
@@ -4031,9 +4224,38 @@
             return text; // Retorna original se tudo falhar
         }
 
-        // Pré-traduzir notícias (roda em background, não bloqueia o app)
+        // Traduzir notícias ANTES de renderizar (bloqueia até terminar)
+        // Isso garante que as notícias apareçam já em português
+        async function translateNewsBeforeRender(count = 30) {
+            console.log(`🌐 Traduzindo ${count} notícias antes de renderizar...`);
+            
+            // Filtrar notícias que precisam ser traduzidas
+            const toTranslate = allNews.filter(n => !n.translatedTitle).slice(0, count);
+            
+            if (toTranslate.length === 0) {
+                console.log('✅ Notícias já traduzidas');
+                return;
+            }
+            
+            // Traduzir em paralelo (mais rápido) - lotes de 5
+            const batchSize = 5;
+            for (let i = 0; i < toTranslate.length; i += batchSize) {
+                const batch = toTranslate.slice(i, i + batchSize);
+                await Promise.all(batch.map(async (news) => {
+                    try {
+                        news.translatedTitle = await translateText(news.title);
+                    } catch (e) {
+                        news.translatedTitle = news.title; // Manter original se falhar
+                    }
+                }));
+            }
+            
+            console.log(`✅ ${toTranslate.length} notícias traduzidas`);
+        }
+
+        // Pré-traduzir notícias restantes (roda em background após renderizar)
         async function preTranslateNews() {
-            console.log('🌐 Traduzindo notícias em background...');
+            console.log('🌐 Traduzindo notícias restantes em background...');
             
             let translatedCount = 0;
             const totalToTranslate = allNews.filter(n => !n.translatedTitle).length;
@@ -4043,119 +4265,22 @@
                 return;
             }
             
-            // Traduzir apenas as primeiras 10 notícias prioritárias (mais rápido)
-            const priorityNews = allNews.slice(0, 10);
-            
-            for (let i = 0; i < priorityNews.length; i++) {
-                const news = priorityNews[i];
+            // Traduzir as que faltam
+            for (const news of allNews) {
                 if (!news.translatedTitle) {
                     try {
                         news.translatedTitle = await translateText(news.title);
                         translatedCount++;
                     } catch (e) {
-                        news.translatedTitle = news.title; // Manter original se falhar
-                    }
-                    // Delay pequeno para não sobrecarregar a API
-                    await new Promise(r => setTimeout(r, 100));
-                }
-            }
-            
-            console.log(`✅ ${translatedCount} notícias traduzidas`);
-            
-            // Traduzir o resto em background depois
-            setTimeout(() => translateNewsInBackground(), 2000);
-        }
-
-        // Traduzir notícias em lote (background)
-        async function translateNewsInBackground() {
-            if (isTranslating) return;
-            isTranslating = true;
-            
-            let updatedCount = 0;
-            const batchSize = 5; // Traduzir em lotes de 5
-            
-            for (let i = 0; i < allNews.length; i++) {
-                const news = allNews[i];
-                if (!news.translatedTitle) {
-                    try {
-                        news.translatedTitle = await translateText(news.title);
-                        updatedCount++;
-                        
-                        // Atualizar UI a cada 5 traduções ou no final
-                        if (updatedCount % batchSize === 0) {
-                            renderNewsWithoutTranslate();
-                        }
-                    } catch (e) {
                         news.translatedTitle = news.title;
                     }
-                    // Delay para não sobrecarregar a API
-                    await new Promise(r => setTimeout(r, 250));
+                    await new Promise(r => setTimeout(r, 150));
                 }
             }
             
-            isTranslating = false;
-            if (updatedCount > 0) {
-                renderNewsWithoutTranslate(); // Atualizar UI final
-            }
+            console.log(`✅ ${translatedCount} notícias traduzidas em background`);
         }
         
-        // Render sem iniciar nova tradução (evita loop infinito)
-        function renderNewsWithoutTranslate() {
-            // Se estiver no filtro "hot", não fazer nada - hot news tem seu próprio sistema
-            if (newsFilter === 'hot') {
-                return;
-            }
-            
-            const container = document.getElementById('news-container');
-            const now = new Date();
-            const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-            
-            // Filtrar notícias recentes e REMOVER NEUTRAS
-            let filtered = allNews.filter(news => {
-                const published = new Date(news.published);
-                const isRecent = (now - published) <= sevenDaysMs;
-                const isNotNeutral = news.sentiment !== 'neutral'; // Remover neutras
-                return isRecent && isNotNeutral;
-            });
-            
-            let sorted = [...filtered].sort((a, b) => new Date(b.published) - new Date(a.published));
-            
-            if (newsFilter !== 'all') {
-                sorted = sorted.filter(n => n.sentiment === newsFilter);
-            }
-            
-            if (sorted.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhuma notícia nesta categoria</p>';
-                return;
-            }
-            
-            sorted.forEach((news, index) => {
-                const originalIndex = allNews.findIndex(n => n.url === news.url);
-                news.originalIndex = originalIndex;
-            });
-            
-            container.innerHTML = sorted.map((news, index) => {
-                const sentimentIcon = news.sentiment === 'positive' ? '<i class="fas fa-arrow-trend-up"></i>' : news.sentiment === 'negative' ? '<i class="fas fa-arrow-trend-down"></i>' : '<i class="fas fa-minus"></i>';
-                const sentimentText = news.sentiment === 'positive' ? 'Positiva' : news.sentiment === 'negative' ? 'Negativa' : 'Neutra';
-                const timeAgo = getTimeAgo(news.published);
-                const displayTitle = sanitizeHTML(news.translatedTitle || news.title);
-                const safeSource = sanitizeHTML(news.source);
-                
-                return `
-                    <div class="news-item ${news.sentiment}" onclick="openNewsModal(${news.originalIndex})">
-                        <div class="news-header">
-                            <div class="news-title">${displayTitle}</div>
-                            <span class="news-sentiment ${news.sentiment}">${sentimentIcon} ${sentimentText}</span>
-                        </div>
-                        <div class="news-meta">
-                            <span class="news-source">${safeSource}</span>
-                            <span class="news-time"><i class="far fa-clock"></i> ${timeAgo}</span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
         // ============================================
         // NEWS MODAL FUNCTIONS
         // ============================================
@@ -4297,6 +4422,9 @@
             const news = allNews[newsIndex];
             if (!news) return;
             
+            // Guardar índice da notícia atual para reabrir após voltar do browser
+            window.currentNewsIndex = newsIndex;
+            
             const modal = document.getElementById('news-modal');
             const sentimentIcon = news.sentiment === 'positive' ? '<i class="fas fa-arrow-trend-up"></i>' : 
                                   news.sentiment === 'negative' ? '<i class="fas fa-arrow-trend-down"></i>' : 
@@ -4332,7 +4460,10 @@
             document.getElementById('news-modal-title').textContent = translatedTitle;
             document.getElementById('news-modal-summary').textContent = summary;
             document.getElementById('news-modal-time-text').textContent = `Publicado ${timeAgo} • ${formattedDate}`;
-            document.getElementById('news-modal-button').onclick = () => openExternalLink(news.url);
+            document.getElementById('news-modal-button').onclick = () => {
+                // NÃO fechar o modal - manter aberto para quando voltar
+                openInAppBrowser(news.url, translatedTitle, newsIndex, false, null);
+            };
             
             // Gerar imagem - usar imagem real se disponível
             const imageContainer = document.getElementById('news-modal-image');
@@ -4775,6 +4906,16 @@
             // Filtrar apenas notícias novas
             const uniqueNew = newItems.filter(item => !existingUrls.has(item.url));
             
+            // MARCAR NOTÍCIAS IMPORTANTES IMEDIATAMENTE ao adicionar
+            uniqueNew.forEach(news => {
+                const hotCheck = isHotNews(news.title);
+                if (hotCheck.isHot) {
+                    news.isHotNews = true;
+                    news.hotCategory = hotCheck.category;
+                    news.hotKeyword = hotCheck.keyword;
+                }
+            });
+            
             // Adicionar novas notícias ao início
             if (uniqueNew.length > 0) {
                 allNews = [...uniqueNew, ...allNews];
@@ -4789,7 +4930,22 @@
                 return (now - published) <= fifteenDaysMs;
             });
             
-            // Limitar a 100 notícias mais recentes
+            // GARANTIR que TODAS as notícias tenham a flag isHotNews verificada
+            // Isso é necessário caso alguma notícia tenha sido adicionada sem a verificação
+            allNews.forEach(news => {
+                if (news.isHotNews === undefined) {
+                    const hotCheck = isHotNews(news.title);
+                    if (hotCheck.isHot) {
+                        news.isHotNews = true;
+                        news.hotCategory = hotCheck.category;
+                        news.hotKeyword = hotCheck.keyword;
+                    } else {
+                        news.isHotNews = false;
+                    }
+                }
+            });
+            
+            // Limitar a 150 notícias mais recentes
             allNews = allNews.sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 150);
         }
 
@@ -4851,17 +5007,25 @@
                         
                         console.log(`📰 Filtradas ${ccData.Data.length - filteredData.length} notícias de previsão de preço`);
                         
-                        const newItems = filteredData.slice(0, 100).map(item => ({
-                            title: item.title,
-                            url: item.url,
-                            source: item.source_info?.name || item.source || 'CryptoCompare',
-                            published: new Date(item.published_on * 1000).toISOString(),
-                            sentiment: analyzeSentiment(item.title + ' ' + (item.body || '')),
-                            relevance: categorizeRelevance(item.title),
-                            image: item.imageurl || null,
-                            body: item.body ? item.body.substring(0, 300) : null,
-                            categories: item.categories || ''
-                        }));
+                        const newItems = filteredData.slice(0, 100).map(item => {
+                            // MARCAR HOT IMEDIATAMENTE ao criar a notícia
+                            const hotCheck = isHotNews(item.title);
+                            const newsItem = {
+                                title: item.title,
+                                url: item.url,
+                                source: item.source_info?.name || item.source || 'CryptoCompare',
+                                published: new Date(item.published_on * 1000).toISOString(),
+                                sentiment: analyzeSentiment(item.title + ' ' + (item.body || '')),
+                                relevance: categorizeRelevance(item.title),
+                                image: item.imageurl || null,
+                                body: item.body ? item.body.substring(0, 300) : null,
+                                categories: item.categories || '',
+                                isHotNews: hotCheck.isHot,
+                                hotCategory: hotCheck.isHot ? hotCheck.category : null,
+                                hotKeyword: hotCheck.isHot ? hotCheck.keyword : null
+                            };
+                            return newsItem;
+                        });
                         mergeNews(newItems);
                         totalFetched += newItems.length;
                         successfulSources++;
@@ -4890,16 +5054,23 @@
                         if (response.ok) {
                             const data = await response.json();
                             if (data.results && data.results.length > 0) {
-                                const newItems = data.results.map(item => ({
-                                    title: item.title,
-                                    url: item.url,
-                                    source: item.source?.title || 'CryptoPanic',
-                                    published: item.published_at || new Date().toISOString(),
-                                    sentiment: item.votes?.positive > item.votes?.negative ? 'positive' : 
-                                               item.votes?.negative > item.votes?.positive ? 'negative' : 'neutral',
-                                    relevance: categorizeRelevance(item.title),
-                                    image: null
-                                }));
+                                const newItems = data.results.map(item => {
+                                    // MARCAR HOT IMEDIATAMENTE ao criar a notícia
+                                    const hotCheck = isHotNews(item.title);
+                                    return {
+                                        title: item.title,
+                                        url: item.url,
+                                        source: item.source?.title || 'CryptoPanic',
+                                        published: item.published_at || new Date().toISOString(),
+                                        sentiment: item.votes?.positive > item.votes?.negative ? 'positive' : 
+                                                   item.votes?.negative > item.votes?.positive ? 'negative' : 'neutral',
+                                        relevance: categorizeRelevance(item.title),
+                                        image: null,
+                                        isHotNews: hotCheck.isHot,
+                                        hotCategory: hotCheck.isHot ? hotCheck.category : null,
+                                        hotKeyword: hotCheck.isHot ? hotCheck.keyword : null
+                                    };
+                                });
                                 mergeNews(newItems);
                                 totalFetched += newItems.length;
                                 successfulSources++;
@@ -4920,20 +5091,17 @@
                 newsLastFetch = Date.now(); // Marcar timestamp da última busca
                 newsLoaded = true; // Marcar que notícias foram carregadas
                 
-                // Renderizar notícias PRIMEIRO (em inglês) para carregar rápido
+                // TRADUZIR PRIMEIRO as notícias antes de renderizar
+                // Isso evita que apareçam em inglês e depois mudem
                 if (newsFilter !== 'hot') {
+                    container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px;">Traduzindo notícias...</p></div>';
+                    
+                    // Traduzir as primeiras 30 notícias ANTES de renderizar
+                    await translateNewsBeforeRender(30);
+                    
+                    // Agora renderizar com as traduções prontas
                     renderNews();
                 }
-                
-                // Traduzir em background depois (não bloqueia mais)
-                setTimeout(() => {
-                    preTranslateNews().then(() => {
-                        // Re-renderiza com tradução após traduzir
-                        if (newsFilter !== 'hot') {
-                            renderNews();
-                        }
-                    }).catch(e => console.log('Tradução falhou, mantendo inglês'));
-                }, 500);
             } else {
                 newsRetryCount++;
                 if (newsRetryCount <= MAX_NEWS_RETRIES) {
@@ -5115,14 +5283,35 @@
         let hotNewsLastFetch = 0;
         let hotNewsFetchInProgress = null; // Promise para evitar múltiplas requisições simultâneas
         
-        // Palavras-chave para detectar notícias de ALTO impacto
-        // EXPANDIDO: mais palavras-chave para capturar notícias importantes
+        // PALAVRAS-CHAVE ULTRA-RIGOROSAS - APENAS eventos que REALMENTE movem o mercado
+        // Máximo 5-10 notícias importantes por dia, não mais que isso
         const HOT_KEYWORDS = {
-            politics: ['trump tariff', 'trump sanction', 'trump crypto', 'trump bitcoin', 'trump executive', 'trump announce', 'trump signs', 'trump policy', 'trump administration', 'biden tariff', 'biden sanction', 'biden crypto', 'elon musk bitcoin', 'elon musk crypto', 'elon musk doge', 'elon musk tesla', 'musk announces', 'musk buys', 'musk sells', 'executive order crypto', 'executive order bitcoin', 'white house crypto', 'white house bitcoin', 'congress crypto', 'congress bitcoin', 'senate crypto', 'senate bitcoin', 'government bitcoin', 'government crypto', 'us government', 'china government', 'russia government', 'president signs', 'president announces', 'new policy', 'new legislation', 'lawmakers', 'politician'],
-            economic: ['new tariff', 'tariff announce', 'tariff impose', 'tariff shock', 'tariffs war', 'trade war', 'interest rate hike', 'interest rate cut', 'rate decision', 'fomc decision', 'fed decision', 'fed announce', 'rate hike', 'rate cut', 'recession', 'debt ceiling', 'economic crisis', 'economic emergency', 'inflation surge', 'inflation jump', 'inflation data', 'cpi data', 'cpi report', 'jobs report', 'employment data', 'unemployment', 'gdp growth', 'gdp data', 'economic data', 'treasury', 'bond yield', 'dollar index', 'dxy', 'monetary policy', 'quantitative', 'stimulus', 'bailout', 'central bank', 'banking crisis', 'liquidity'],
-            geopolitical: ['declares war', 'declared war', 'war declared', 'invasion', 'invades', 'military strike', 'military attack', 'military operation', 'nuclear threat', 'nuclear test', 'missile launch', 'missile strike', 'missile test', 'troops deploy', 'troops sent', 'attack on', 'strikes on', 'bombing', 'escalation', 'escalates', 'ceasefire', 'peace deal', 'peace talks', 'conflict escalat', 'tensions rise', 'tensions escalat', 'sanctions', 'embargo', 'diplomatic', 'geopolitical', 'world war', 'cold war'],
-            crypto_major: ['bitcoin reserve', 'strategic reserve', 'btc reserve', 'crypto reserve', 'etf approved', 'etf approval', 'etf launch', 'etf rejected', 'spot etf', 'sec approv', 'sec reject', 'sec charges', 'sec lawsuit', 'sec investigation', 'institutional adoption', 'institutional buy', 'institutional invest', 'legal tender', 'ban crypto', 'crypto ban', 'bitcoin ban', 'crypto regulation', 'bitcoin regulation', 'crypto law', 'bitcoin law', 'crypto bill', 'bitcoin bill', 'binance', 'coinbase sec', 'coinbase news', 'tether', 'usdt', 'usdc', 'stablecoin', 'microstrategy', 'saylor', 'grayscale', 'blackrock bitcoin', 'blackrock crypto', 'fidelity bitcoin', 'fidelity crypto', 'wall street', 'hedge fund', 'bitcoin halving', 'halving', 'whale alert', 'whale moves', 'whale buys', 'whale sells', 'billion dollar', 'million dollar', 'massive buy', 'massive sell', 'record high', 'all time high', 'ath', 'record low', 'major exchange', 'exchange hack', 'exchange news', 'defi hack', 'protocol hack', 'exploit', 'vulnerability', 'security breach', 'cbdc', 'digital dollar', 'digital yuan', 'digital currency'],
-            market_crisis: ['market crash', 'crypto crash', 'bitcoin crash', 'stock crash', 'market plunge', 'bitcoin plunge', 'crypto plunge', 'collapse', 'collapsing', 'bankrupt', 'bankruptcy', 'bank fail', 'bank failure', 'bank run', 'black swan', 'massive liquidation', 'billion liquidat', 'billion wipe', 'flash crash', 'circuit breaker', 'trading halt', 'panic sell', 'capitulation', 'bear market', 'market fear', 'extreme fear', 'market turmoil', 'volatility spike', 'vix spike', 'blood in the streets', 'wipeout', 'meltdown', 'freefall', 'correction', 'major correction', 'significant drop', 'sharp decline', 'plummets', 'tumbles', 'tanks', 'dumps', 'selloff', 'sell-off', 'risk off', 'flight to safety']
+            // GUERRA e CONFLITOS - apenas início/fim de guerras
+            war: [
+                'war declared', 'declares war', 'invasion begins', 'invades',
+                'nuclear strike', 'nuclear attack', 'peace treaty signed', 'ceasefire agreement'
+            ],
+            // FED e JUROS - apenas decisões oficiais
+            fed: [
+                'fed raises rates', 'fed cuts rates', 'fed hikes', 
+                'rate hike decision', 'rate cut decision', 'fomc rate decision',
+                'interest rate increase', 'interest rate decrease'
+            ],
+            // ACORDOS COMERCIAIS de grande escala
+            trade: [
+                'trade deal signed', 'trade agreement signed', 'tariff war',
+                'trade war begins', 'sanctions announced'
+            ],
+            // CRISES FINANCEIRAS - colapsos reais
+            crisis: [
+                'bank collapses', 'bank failure', 'exchange collapses',
+                'market crash', 'stock market crashes', 'recession begins'
+            ],
+            // CRYPTO - apenas ETFs e regulação massiva
+            crypto_regulation: [
+                'bitcoin etf approved', 'ethereum etf approved', 'spot etf approved',
+                'crypto banned', 'bitcoin banned', 'bitcoin legal tender'
+            ]
         };
         
         function isHotNews(title) {
@@ -5262,8 +5451,13 @@
                 }
             });
             
-            // 3. Também filtrar notícias existentes
+            // 3. Também filtrar notícias existentes (até 14 dias atrás)
+            const fourteenDaysAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
             allNews.forEach(news => {
+                // Verificar se a notícia é de até 14 dias atrás
+                const newsDate = new Date(news.published).getTime();
+                if (newsDate < fourteenDaysAgo) return; // Pular notícias muito antigas
+                
                 const hotCheck = isHotNews(news.title);
                 if (hotCheck.isHot) {
                     const existing = hotNews.find(h => h.url === news.url);
@@ -5278,9 +5472,16 @@
                 }
             });
             
+            // Filtrar notícias com mais de 14 dias e ordenar por data
+            const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+            let recentHotNews = hotNews.filter(news => {
+                const published = new Date(news.published).getTime();
+                return (Date.now() - published) <= fourteenDaysMs;
+            });
+            
             // Ordenar por data e limitar a 100 notícias importantes
-                hotNews.sort((a, b) => new Date(b.published) - new Date(a.published));
-                hotNewsCache = hotNews.slice(0, 100);
+                recentHotNews.sort((a, b) => new Date(b.published) - new Date(a.published));
+                hotNewsCache = recentHotNews.slice(0, 100);
                 hotNewsLastFetch = now;
                 
                 console.log(`🔥 ${hotNewsCache.length} notícias quentes encontradas`);
@@ -5437,11 +5638,12 @@
             try {
                 let news;
                 
-                // Se é string (URL), buscar por URL
+                // Se é string (URL), buscar por URL - PRIORIZAR allNews
                 if (typeof newsIndexOrUrl === 'string') {
-                    news = window.hotNewsData?.find(n => n.url === newsIndexOrUrl) ||
-                           hotNewsCache?.find(n => n.url === newsIndexOrUrl) ||
-                           allNews?.find(n => n.url === newsIndexOrUrl);
+                    // Primeiro buscar no allNews (onde estão todas as notícias)
+                    news = allNews?.find(n => n.url === newsIndexOrUrl) ||
+                           window.hotNewsData?.find(n => n.url === newsIndexOrUrl) ||
+                           hotNewsCache?.find(n => n.url === newsIndexOrUrl);
                 } else {
                     // Se é número (índice), buscar por índice
                     news = window.hotNewsData?.[newsIndexOrUrl] ||
@@ -5450,11 +5652,18 @@
                 
                 if (!news) {
                     console.error('Notícia não encontrada:', newsIndexOrUrl);
-                    // Tentar abrir como notícia normal se tiver URL
+                    // Tentar abrir diretamente no browser se tiver URL
                     if (typeof newsIndexOrUrl === 'string') {
-                        window.open(newsIndexOrUrl, '_blank');
+                        openInAppBrowser(newsIndexOrUrl, 'Notícia', null, true, newsIndexOrUrl);
                     }
                     return;
+                }
+                
+                // Verificar se é hot e preencher campos se necessário
+                const hotCheck = isHotNews(news.title);
+                if (hotCheck.isHot) {
+                    news.hotCategory = news.hotCategory || hotCheck.category;
+                    news.hotKeyword = news.hotKeyword || hotCheck.keyword;
                 }
                 
                 const modal = document.getElementById('news-modal');
@@ -5500,7 +5709,14 @@
             document.getElementById('news-modal-title').textContent = translatedTitle;
             document.getElementById('news-modal-summary').textContent = summary;
             document.getElementById('news-modal-time-text').textContent = `Publicado ${timeAgo} • ${formattedDate}`;
-            document.getElementById('news-modal-button').onclick = () => openExternalLink(news.url);
+            
+            // Guardar URL da hot news para reabrir após voltar do browser
+            window.currentHotNewsUrl = news.url;
+            
+            document.getElementById('news-modal-button').onclick = () => {
+                // NÃO fechar o modal - manter aberto para quando voltar
+                openInAppBrowser(news.url, translatedTitle, null, true, news.url);
+            };
             
             // Gerar imagem - tentar buscar imagem real primeiro, fallback para ícone urgente
             const imageContainer = document.getElementById('news-modal-image');
@@ -5547,19 +5763,27 @@
         }
 
         async function renderNews() {
-            const container = document.getElementById('news-container');
+            // Evitar renderizações simultâneas que causam "piscar"
+            if (isRenderingNews) {
+                console.log('⏳ Renderização já em andamento, ignorando...');
+                return;
+            }
+            isRenderingNews = true;
             
-            // Se filtro é "hot", buscar notícias quentes
-            if (newsFilter === 'hot') {
-                // Mostrar loading SEMPRE primeiro
-                container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Buscando notícias importantes...</p></div>';
+            try {
+                const container = document.getElementById('news-container');
                 
-                // Aguardar o fetch completar (a função já gerencia cache e requisições em andamento)
-                let hotNews = await fetchHotNews();
-                
-                // Se retornou vazio e o app acabou de abrir (menos de 5s), aguardar mais um pouco
-                // pois os feeds podem ainda estar carregando
-                if (hotNews.length === 0 && hotNewsLastFetch === 0) {
+                // Se filtro é "hot", buscar notícias quentes
+                if (newsFilter === 'hot') {
+                    // Mostrar loading SEMPRE primeiro
+                    container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Buscando notícias importantes...</p></div>';
+                    
+                    // Aguardar o fetch completar (a função já gerencia cache e requisições em andamento)
+                    let hotNews = await fetchHotNews();
+                    
+                    // Se retornou vazio e o app acabou de abrir (menos de 5s), aguardar mais um pouco
+                    // pois os feeds podem ainda estar carregando
+                    if (hotNews.length === 0 && hotNewsLastFetch === 0) {
                     console.log('🔥 Primeira tentativa vazia, aguardando feeds...');
                     // Aguardar até 2 segundos para os feeds responderem
                     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -5582,63 +5806,53 @@
                     if (localHotNews.length > 0) {
                         hotNewsCache = localHotNews.slice(0, 50);
                         await renderHotNewsList(hotNewsCache);
+                        isRenderingNews = false;
                         return;
                     }
                 }
                 
                 // Renderizar resultado final (só uma vez!)
                 await renderHotNewsList(hotNews);
+                isRenderingNews = false;
                 return;
             }
             
             const now = new Date();
             const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000; // 15 dias em milissegundos
             
-            // Obter URLs das notícias urgentes para excluí-las das outras categorias
-            const hotNewsUrls = new Set((hotNewsCache || []).map(n => n.url).concat(
-                (window.hotNewsData || []).map(n => n.url)
-            ));
-            
-            // Filtrar notícias com mais de 15 dias, REMOVER NEUTRAS e REMOVER DUPLICATAS DAS URGENTES
+            // Filtrar notícias com mais de 15 dias
+            // Revalidar hot news aqui para garantir consistência
             let filtered = allNews.filter(news => {
                 const published = new Date(news.published);
                 const isRecent = (now - published) <= fifteenDaysMs;
-                const isNotNeutral = news.sentiment !== 'neutral'; // Remover neutras
-                // Se for positiva, verificar se não está nas urgentes (evitar duplicatas)
-                const isNotDuplicate = !hotNewsUrls.has(news.url);
-                return isRecent && isNotNeutral && isNotDuplicate;
-            });
-            
-            // Ordenar por mais recente primeiro e limitar a 150 notícias
-            let sorted = [...filtered].sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 150);
-            
-            // Se filtro é "all", incluir também as notícias urgentes
-            if (newsFilter === 'all') {
-                // Se hotNewsCache está vazio, tentar buscar rapidamente
-                if (!hotNewsCache || hotNewsCache.length === 0) {
-                    // Tentar buscar urgentes com timeout curto (não bloqueia muito)
-                    try {
-                        await Promise.race([
-                            fetchHotNews(),
-                            new Promise(resolve => setTimeout(resolve, 2000)) // timeout 2s
-                        ]);
-                    } catch(e) {}
+                
+                // Revalidar se é hot usando a função atual
+                const hotCheck = isHotNews(news.title);
+                const isHot = hotCheck.isHot;
+                
+                // Atualizar flags da notícia
+                if (isHot) {
+                    news.isHotNews = true;
+                    news.hotCategory = hotCheck.category;
+                    news.hotKeyword = hotCheck.keyword;
                 }
                 
-                if (hotNewsCache && hotNewsCache.length > 0) {
-                    // Adicionar urgentes que não estão duplicadas
-                    const existingUrls = new Set(sorted.map(n => n.url));
-                    const uniqueHotNews = hotNewsCache.filter(n => !existingUrls.has(n.url));
-                    sorted = [...uniqueHotNews, ...sorted].sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 150);
-                }
-            }
+                // Na aba "Todas" mostrar TODAS as notícias recentes (incluindo neutras)
+                // Nas outras abas, filtrar por sentimento depois
+                return isRecent;
+            });
+            
+            // Ordenar por mais recente primeiro e limitar a 200 notícias
+            let sorted = [...filtered].sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 200);
+            
+            // NÃO re-marcar notícias como hot aqui - elas já vêm marcadas do mergeNews()
+            // Isso evita o problema de piscar/sumir
             
             // Filtrar por sentimento (excluir notícias urgentes de positivas/negativas - elas só aparecem em Todas e Urgentes)
             if (newsFilter !== 'all') {
-                const hotNewsUrls = new Set((hotNewsCache || []).map(n => n.url));
                 sorted = sorted.filter(n => {
-                    // Se é notícia urgente, não mostrar em positivas/negativas
-                    if (hotNewsUrls.has(n.url) || n.isHotNews || n.hotCategory) {
+                    // Se é notícia urgente/importante, não mostrar em positivas/negativas
+                    if (n.isHotNews === true) {
                         return false;
                     }
                     return n.sentiment === newsFilter;
@@ -5647,6 +5861,7 @@
             
             if (sorted.length === 0) {
                 container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhuma notícia nesta categoria</p>';
+                isRenderingNews = false;
                 return;
             }
             
@@ -5654,21 +5869,13 @@
             sorted.forEach((news, index) => {
                 const originalIndex = allNews.findIndex(n => n.url === news.url);
                 news.originalIndex = originalIndex;
-                // Marcar se é notícia urgente para uso no render
-                news.isHotNews = hotNewsCache?.some(h => h.url === news.url) || false;
-                // Se for urgente, copiar hotCategory do cache
-                if (news.isHotNews) {
-                    const hotNews = hotNewsCache.find(h => h.url === news.url);
-                    if (hotNews) {
-                        news.hotCategory = hotNews.hotCategory;
-                        news.hotKeyword = hotNews.hotKeyword;
-                    }
-                }
             });
             
             container.innerHTML = sorted.map((news, index) => {
-                // Verificar se é notícia importante
-                const isHot = news.isHotNews || news.hotCategory;
+                // Verificar se é notícia importante - REVALIDAR aqui para garantir
+                // Ignorar qualquer flag anterior e verificar novamente
+                const recheck = isHotNews(news.title);
+                const isHot = recheck.isHot === true;
                 
                 let sentimentIcon, sentimentText, sentimentClass;
                 if (isHot) {
@@ -5676,15 +5883,15 @@
                     sentimentText = 'Importante';
                     sentimentClass = 'hot';
                 } else if (news.sentiment === 'positive') {
-                    sentimentIcon = '<i class="fas fa-arrow-trend-up"></i>';
+                    sentimentIcon = '';
                     sentimentText = 'Positiva';
                     sentimentClass = 'positive';
                 } else if (news.sentiment === 'negative') {
-                    sentimentIcon = '<i class="fas fa-arrow-trend-down"></i>';
+                    sentimentIcon = '';
                     sentimentText = 'Negativa';
                     sentimentClass = 'negative';
                 } else {
-                    sentimentIcon = '<i class="fas fa-minus"></i>';
+                    sentimentIcon = '';
                     sentimentText = 'Neutra';
                     sentimentClass = 'neutral';
                 }
@@ -5719,9 +5926,12 @@
                 `;
             }).join('');
             
-            // Iniciar tradução em background após renderizar
-            if (!isTranslating) {
-                translateNewsInBackground();
+            // Traduzir restante em background APÓS renderizar (não bloqueia)
+            setTimeout(() => {
+                preTranslateNews().catch(e => console.log('Tradução background falhou'));
+            }, 2000);
+            } finally {
+                isRenderingNews = false;
             }
         }
 
@@ -8098,7 +8308,8 @@
             // Carregar dados em background (não bloqueia UI)
             setTimeout(() => {
                 try { fetchNews(); } catch(e) { console.error('News error:', e); }
-                try { fetchHotNews(); } catch(e) { console.error('HotNews error:', e); }
+                // NÃO chamar fetchHotNews aqui - ela interfere com o allNews
+                // Hot news são identificadas automaticamente pelo mergeNews via isHotNews()
                 try { fetchFearGreed(); } catch(e) { console.error('FearGreed error:', e); }
                 try { fetchAltseasonIndex(); } catch(e) { console.error('Altseason error:', e); }
                 try { fetchGlobalData(); } catch(e) { console.error('GlobalData error:', e); }
