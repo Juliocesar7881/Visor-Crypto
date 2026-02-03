@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Visor Crypto</title>
     
+    <!-- Macro Section flag - funções serão carregadas do macro-section.js no final -->
+    <script>window.__MACRO_SECTION_LOADING__ = true;</script>
+    
     <!-- PWA Meta Tags -->
     <meta name="description" content="Visualizador de criptomoedas em tempo real com preços, notícias e análises">
     <meta name="theme-color" content="#58a6ff">
@@ -2830,6 +2833,12 @@
             gap: 8px;
         }
 
+        .indicator-ta-btn {
+            padding: 8px 12px;
+            font-size: 11px;
+            gap: 6px;
+        }
+
         .indicator-chart-periods {
             display: flex;
             gap: 6px;
@@ -3387,6 +3396,11 @@
                                 <i class="fas fa-chart-area"></i>
                                 Gráfico
                             </div>
+                            <!-- Botão de Análise Técnica -->
+                            <button class="ta-button indicator-ta-btn" onclick="openIndicatorTechnicalAnalysis()">
+                                <i class="fas fa-microscope"></i>
+                                <span>Análise Técnica</span>
+                            </button>
                         </div>
                         <div class="indicator-chart-periods">
                             <button class="indicator-period-btn active" data-period="5d" onclick="selectIndicatorPeriod('5d')">5D</button>
@@ -3643,31 +3657,74 @@
                 </div>
 
                 <!-- Links -->
+                <!-- Carteiras de Baleias -->
                 <div class="card" style="margin-top: 16px;">
                     <div class="card-header">
                         <div class="card-title">
-                            <i class="fas fa-link"></i>
-                            Links Úteis
+                            <i class="fas fa-whale" style="font-size: 16px;">🐋</i>
+                            Carteiras de Baleias
                         </div>
                     </div>
-                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/blackrock', 'BlackRock Holdings')">
-                        <i class="fas fa-building"></i>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/coinbase', 'Coinbase')">
+                        <img src="COINBASE.jpg" alt="Coinbase" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
-                            <div class="external-link-title">BlackRock Holdings</div>
-                            <div class="external-link-desc">Arkham - Carteira BlackRock</div>
+                            <div class="external-link-title">Coinbase</div>
+                            <div class="external-link-desc">Arkham - Exchange americana</div>
                         </div>
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
-                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/grayscale', 'Grayscale GBTC')">
-                        <i class="fas fa-chart-pie"></i>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/binance', 'Binance')">
+                        <img src="BINANCE.jpg" alt="Binance" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
-                            <div class="external-link-title">Grayscale GBTC</div>
-                            <div class="external-link-desc">Arkham - Fluxos Grayscale</div>
+                            <div class="external-link-title">Binance</div>
+                            <div class="external-link-desc">Arkham - Maior exchange</div>
                         </div>
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/blackrock', 'BlackRock')">
+                        <img src="BLACKROCK.jpg" alt="BlackRock" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">BlackRock</div>
+                            <div class="external-link-desc">Arkham - Maior gestora do mundo</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/fidelity', 'Fidelity')">
+                        <img src="FIDELITY.png" alt="Fidelity" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Fidelity</div>
+                            <div class="external-link-desc">Arkham - Gestora institucional</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/grayscale', 'Grayscale')">
+                        <img src="GRAYSCALE.jpg" alt="Grayscale" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Grayscale</div>
+                            <div class="external-link-desc">Arkham - GBTC e ETHE</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/usg', 'US Government')">
+                        <img src="EUA.jpg" alt="US Government" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">U.S. Government</div>
+                            <div class="external-link-desc">Arkham - Governo dos EUA</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                </div>
+
+                <!-- Mapa de Calor -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fas fa-fire" style="color: #ff6b35;"></i>
+                            Mapa de Calor
+                        </div>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://www.coinglass.com/pro/futures/LiquidationHeatMap', 'Liquidation Heatmap')">
-                        <i class="fas fa-fire"></i>
+                        <i class="fas fa-fire-alt" style="color: #ff4444;"></i>
                         <div class="external-link-text">
                             <div class="external-link-title">Liquidation Heatmap</div>
                             <div class="external-link-desc">CoinGlass - Mapa de liquidações</div>
@@ -5948,303 +6005,43 @@
         });
 
         // ============================================
-        // CMC DATA CACHE - Sistema escalável para infinitos usuários
-        // ============================================
-        const CMC_API_KEY = 'c3989cf0317a4eacbda6802f3c851a16';
-        const CMC_CACHE_KEY = 'cmc_data_cache';
-        const CMC_CACHE_DURATION = 20 * 60 * 1000; // 20 minutos em ms (atualização mais frequente para Altseason)
-        
-        // Cache compartilhado via localStorage com timestamp
-        function getCMCCache() {
-            try {
-                const cached = localStorage.getItem(CMC_CACHE_KEY);
-                if (cached) {
-                    const data = JSON.parse(cached);
-                    if (Date.now() - data.timestamp < CMC_CACHE_DURATION) {
-                        console.log('📦 Usando cache CMC (idade:', Math.round((Date.now() - data.timestamp) / 60000), 'min)');
-                        return data;
-                    }
-                }
-            } catch (e) {
-                console.log('Cache CMC inválido');
-            }
-            return null;
-        }
-        
-        function setCMCCache(fearGreedData, altseasonData) {
-            try {
-                const cacheData = {
-                    timestamp: Date.now(),
-                    fearGreed: fearGreedData,
-                    altseason: altseasonData
-                };
-                localStorage.setItem(CMC_CACHE_KEY, JSON.stringify(cacheData));
-                console.log('💾 Cache CMC salvo');
-            } catch (e) {
-                console.log('Erro ao salvar cache CMC');
-            }
-        }
-        
-        // Buscar dados do CMC via proxy para evitar CORS
-        async function fetchCMCData() {
-            const cache = getCMCCache();
-            if (cache) {
-                return cache;
-            }
-            
-            console.log('🔄 Buscando dados frescos do CoinMarketCap...');
-            
-            try {
-                // Usar proxy CORS para acessar CMC API
-                const proxies = [
-                    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-                    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
-                ];
-                
-                // Fear & Greed da CMC
-                const fgUrl = `https://pro-api.coinmarketcap.com/v3/fear-and-greed/latest?CMC_PRO_API_KEY=${CMC_API_KEY}`;
-                
-                let fearGreedData = null;
-                let altseasonData = null;
-                
-                for (const proxyFn of proxies) {
-                    try {
-                        const fgResponse = await fetchWithTimeout(proxyFn(fgUrl), {}, 10000);
-                        if (fgResponse.ok) {
-                            const fgData = await fgResponse.json();
-                            if (fgData && fgData.data) {
-                                fearGreedData = {
-                                    value: fgData.data.value || 50,
-                                    classification: fgData.data.value_classification || 'Neutral'
-                                };
-                                console.log('✅ Fear & Greed CMC:', fearGreedData.value);
-                                break;
-                            }
-                        }
-                    } catch (e) {
-                        console.log('Proxy CMC falhou, tentando próximo...');
-                    }
-                }
-                
-                // Calcular Altseason Index
-                // Metodologia similar ao CoinMarketCap: % das top 50 altcoins que superaram BTC em 90 dias
-                try {
-                    let btcDom = 60;
-                    let ethDom = 10;
-                    let altValue = null;
-                    
-                    // 1. Buscar dominância do CoinGecko
-                    const globalRes = await fetch('https://api.coingecko.com/api/v3/global');
-                    if (globalRes.ok) {
-                        const globalData = await globalRes.json();
-                        btcDom = globalData.data?.market_cap_percentage?.btc || 60;
-                        ethDom = globalData.data?.market_cap_percentage?.eth || 10;
-                    }
-                    
-                    // 2. Calcular baseado em performance REAL das altcoins vs BTC (similar ao CMC)
-                    // Usar múltiplos timeframes para precisão
-                    try {
-                        // Buscar dados de preço com variação de 7d, 14d, 30d
-                        const topCoinsRes = await fetchWithTimeout(
-                            'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=7d,14d,30d',
-                            {}, 12000
-                        );
-                        
-                        if (topCoinsRes.ok) {
-                            const topCoins = await topCoinsRes.json();
-                            
-                            // Excluir stablecoins, wrapped tokens e derivados
-                            const excludeTerms = ['tether', 'usd-coin', 'binance-usd', 'dai', 'true-usd', 
-                                'wrapped', 'staked', 'bridged', 'paxos', 'frax', 'usdd', 'first-digital',
-                                'ethena', 'maker', 'paypal', 'gemini', 'huobi', 'wbtc', 'weth', 'lido'];
-                            
-                            const btcCoin = topCoins.find(c => c.id === 'bitcoin');
-                            const btc7d = btcCoin?.price_change_percentage_7d_in_currency || 0;
-                            const btc14d = btcCoin?.price_change_percentage_14d_in_currency || 0;
-                            const btc30d = btcCoin?.price_change_percentage_30d_in_currency || 0;
-                            
-                            // Filtrar para top 50 altcoins válidas
-                            const altcoins = topCoins.filter(c => 
-                                c.id !== 'bitcoin' && 
-                                !excludeTerms.some(term => c.id.toLowerCase().includes(term)) &&
-                                !c.name.toLowerCase().includes('usd') &&
-                                c.market_cap_rank && c.market_cap_rank <= 100
-                            ).slice(0, 50);
-                            
-                            // Contar quantas alts superam BTC em cada timeframe
-                            let outperform7d = 0, outperform14d = 0, outperform30d = 0;
-                            let valid7d = 0, valid14d = 0, valid30d = 0;
-                            
-                            altcoins.forEach(coin => {
-                                const change7d = coin.price_change_percentage_7d_in_currency;
-                                const change14d = coin.price_change_percentage_14d_in_currency;
-                                const change30d = coin.price_change_percentage_30d_in_currency;
-                                
-                                if (change7d !== null && change7d !== undefined) {
-                                    valid7d++;
-                                    if (change7d > btc7d) outperform7d++;
-                                }
-                                if (change14d !== null && change14d !== undefined) {
-                                    valid14d++;
-                                    if (change14d > btc14d) outperform14d++;
-                                }
-                                if (change30d !== null && change30d !== undefined) {
-                                    valid30d++;
-                                    if (change30d > btc30d) outperform30d++;
-                                }
-                            });
-                            
-                            // Calcular índice ponderado (peso maior para períodos mais longos)
-                            // Similar ao blockchaincenter que usa 90 dias
-                            let pct7d = valid7d > 0 ? (outperform7d / valid7d) * 100 : 50;
-                            let pct14d = valid14d > 0 ? (outperform14d / valid14d) * 100 : 50;
-                            let pct30d = valid30d > 0 ? (outperform30d / valid30d) * 100 : 50;
-                            
-                            // Ponderar: 30d (50%), 14d (30%), 7d (20%)
-                            altValue = Math.round(pct30d * 0.5 + pct14d * 0.3 + pct7d * 0.2);
-                            
-                            // Ajuste de calibração para alinhar com CMC/Blockchaincenter
-                            // Esses sites usam 90 dias e têm metodologia levemente diferente
-                            // Aplicar fator de correção baseado na dominância BTC
-                            const domFactor = (58 - btcDom) * 0.5; // Se BTC dom < 58%, aumenta altseason
-                            altValue = Math.round(altValue + domFactor);
-                            
-                            // Limitar entre 1-100
-                            altValue = Math.max(1, Math.min(100, altValue));
-                            
-                            console.log(`📊 Altseason calc: 7d=${Math.round(pct7d)}% 14d=${Math.round(pct14d)}% 30d=${Math.round(pct30d)}%, BTC Dom=${btcDom.toFixed(1)}%, Final: ${altValue}`);
-                        }
-                    } catch (calcError) {
-                        console.log('Erro no cálculo de altseason:', calcError.message);
-                    }
-                    
-                    // 3. Fallback: usar fórmula simplificada baseada na dominância
-                    if (altValue === null) {
-                        // Fórmula calibrada: BTC Dom 60% ≈ 30 altseason, BTC Dom 50% ≈ 60 altseason
-                        altValue = Math.round(150 - (btcDom * 2));
-                        altValue = Math.max(10, Math.min(90, altValue));
-                        console.log(`📊 Altseason (via dom ${btcDom.toFixed(1)}%): ${altValue}`);
-                    }
-                    
-                    altseasonData = {
-                        value: altValue,
-                        btcDominance: btcDom,
-                        ethDominance: ethDom
-                    };
-                    console.log('✅ Altseason Index final:', altValue);
-                } catch (e) {
-                    console.log('Erro ao calcular Altseason:', e.message);
-                    altseasonData = null;
-                }
-                
-                // Fallback para Fear & Greed se CMC falhar
-                if (!fearGreedData) {
-                    try {
-                        const response = await fetch('https://api.alternative.me/fng/');
-                        const data = await response.json();
-                        fearGreedData = {
-                            value: parseInt(data.data[0].value),
-                            classification: data.data[0].value_classification
-                        };
-                        console.log('✅ Fear & Greed (fallback):', fearGreedData.value);
-                    } catch (e) {
-                        fearGreedData = { value: 50, classification: 'Neutral' };
-                    }
-                }
-                
-                // Salvar no cache
-                if (fearGreedData || altseasonData) {
-                    setCMCCache(fearGreedData, altseasonData);
-                }
-                
-                return { fearGreed: fearGreedData, altseason: altseasonData, timestamp: Date.now() };
-                
-            } catch (e) {
-                console.error('Erro ao buscar dados CMC:', e);
-                return null;
-            }
-        }
-
-        // ============================================
-        // FEAR & GREED INDEX - CMC API com cache
+        // FEAR & GREED INDEX - API Alternative.me (gratuita, sem limite)
         // ============================================
         async function fetchFearGreed() {
             try {
-                const cmcData = await fetchCMCData();
+                // Mostrar loading
+                document.getElementById('fear-greed-value').textContent = '--';
                 
-                if (cmcData && cmcData.fearGreed) {
-                    const value = cmcData.fearGreed.value;
-                    document.getElementById('fear-greed-value').textContent = value;
-                    document.getElementById('fear-greed-value').className = `meter-value ${value > 50 ? 'pnl-positive' : 'pnl-negative'}`;
-                    document.getElementById('fear-greed-indicator').style.left = `${value}%`;
-                    return;
+                // API Alternative.me - gratuita e confiável
+                const response = await fetchWithTimeout('https://api.alternative.me/fng/', {}, 10000);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && data.data && data.data[0]) {
+                        const value = parseInt(data.data[0].value);
+                        
+                        document.getElementById('fear-greed-value').textContent = value;
+                        document.getElementById('fear-greed-value').className = `meter-value ${value > 50 ? 'pnl-positive' : 'pnl-negative'}`;
+                        document.getElementById('fear-greed-indicator').style.left = `${value}%`;
+                        console.log('✅ Fear & Greed:', value);
+                        return;
+                    }
                 }
                 
-                // Fallback se não há dados
-                const response = await fetch('https://api.alternative.me/fng/');
-                const data = await response.json();
-                const value = parseInt(data.data[0].value);
+                // Se falhar, mostrar indisponível
+                document.getElementById('fear-greed-value').textContent = '--';
+                document.getElementById('fear-greed-indicator').style.left = '50%';
                 
-                document.getElementById('fear-greed-value').textContent = value;
-                document.getElementById('fear-greed-value').className = `meter-value ${value > 50 ? 'pnl-positive' : 'pnl-negative'}`;
-                document.getElementById('fear-greed-indicator').style.left = `${value}%`;
             } catch (e) {
+                console.error('Fear & Greed error:', e);
                 document.getElementById('fear-greed-value').textContent = '--';
                 document.getElementById('fear-greed-indicator').style.left = '50%';
             }
         }
 
         // ============================================
-        // ALTSEASON INDEX - CMC API com cache
+        // ALTSEASON INDEX - Com cache para evitar rate limit
         // ============================================
-        async function fetchAltseasonIndex() {
-            try {
-                const cmcData = await fetchCMCData();
-                
-                if (cmcData && cmcData.altseason && cmcData.altseason.value !== null) {
-                    const altseasonValue = cmcData.altseason.value;
-                    const btcDom = cmcData.altseason.btcDominance;
-                    
-                    // Atualizar UI
-                    const roundedValue = Math.round(altseasonValue);
-                    document.getElementById('altseason-value').textContent = roundedValue;
-                    document.getElementById('altseason-indicator').style.left = `${roundedValue}%`;
-                    
-                    // Status text
-                    let status = '';
-                    if (roundedValue < 25) {
-                        status = '<span style="color: #6366f1;"><i class="fas fa-bitcoin"></i> Bitcoin Season</span> - BTC dominando (' + btcDom.toFixed(1) + '%)';
-                        document.getElementById('altseason-value').style.color = '#6366f1';
-                    } else if (roundedValue < 45) {
-                        status = '<span style="color: #a855f7;">BTC Favorecido</span> - Leve vantagem BTC';
-                        document.getElementById('altseason-value').style.color = '#a855f7';
-                    } else if (roundedValue < 55) {
-                        status = '<span style="color: #f97316;">Mercado Neutro</span> - Equilíbrio';
-                        document.getElementById('altseason-value').style.color = '#f97316';
-                    } else if (roundedValue < 75) {
-                        status = '<span style="color: #84cc16;">Altcoins Favorecidas</span> - Leve vantagem alts';
-                        document.getElementById('altseason-value').style.color = '#84cc16';
-                    } else {
-                        status = '<span style="color: #22c55e;"><i class="fas fa-rocket"></i> ALTSEASON!</span> - Altcoins disparando';
-                        document.getElementById('altseason-value').style.color = '#22c55e';
-                    }
-                    
-                    document.getElementById('altseason-status').innerHTML = status;
-                    return;
-                }
-                
-                // Fallback: Calcular diretamente se cache falhou
-                console.log('🔄 Altseason: calculando diretamente...');
-                await calculateAltseasonDirect();
-                
-            } catch (e) {
-                console.error('Altseason error:', e);
-                // Tentar cálculo direto como último recurso
-                await calculateAltseasonDirect();
-            }
-        }
-        
-        // Cache específico para Altseason (mais longo para evitar rate limits)
         const ALTSEASON_CACHE_KEY = 'altseason_cache_v2';
         const ALTSEASON_CACHE_DURATION = 10 * 60 * 1000; // 10 minutos
         
@@ -6271,39 +6068,40 @@
             } catch (e) {}
         }
         
-        // Cálculo direto do Altseason Index com cache robusto
-        async function calculateAltseasonDirect() {
-            // Verificar cache primeiro (10 minutos)
-            const cached = getAltseasonCache();
-            if (cached && cached.value) {
-                console.log('📦 Altseason (cache válido):', cached.value);
-                updateAltseasonUI(cached.value, cached.btcDom);
-                return;
+        // Cache em memória do Altseason (para não mostrar -- ao falhar após já ter carregado)
+        let lastAltseasonValue = null;
+        let lastAltseasonBtcDom = null;
+        
+        async function fetchAltseasonIndex() {
+            const valueEl = document.getElementById('altseason-value');
+            const statusEl = document.getElementById('altseason-status');
+            
+            // Só mostrar loading se ainda não tiver valor
+            if (!lastAltseasonValue) {
+                if (valueEl) valueEl.textContent = '--';
+                if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Carregando...</span>';
             }
             
-            console.log('🔄 Altseason: buscando dados frescos do CoinGecko...');
+            console.log('🔄 Altseason: buscando dados do CoinGecko...');
             
             try {
                 // Buscar dados do CoinGecko
-                let globalData = null;
-                let topCoins = null;
                 let btcDom = 58;
+                let topCoins = null;
                 
-                // Tentar buscar global data (para BTC dominance)
+                // Buscar global data (para BTC dominance)
                 try {
                     const globalRes = await fetchWithTimeout('https://api.coingecko.com/api/v3/global', {}, 10000);
                     if (globalRes.ok) {
-                        globalData = await globalRes.json();
+                        const globalData = await globalRes.json();
                         btcDom = globalData.data?.market_cap_percentage?.btc || 58;
                         console.log('✅ Global data OK, BTC Dom:', btcDom.toFixed(1) + '%');
-                    } else {
-                        console.log('⚠️ Global data status:', globalRes.status);
                     }
                 } catch (e) {
                     console.log('⚠️ Global data timeout/error');
                 }
                 
-                // Tentar buscar top coins (principal para o cálculo)
+                // Buscar top coins para calcular altseason
                 try {
                     const topCoinsRes = await fetchWithTimeout(
                         'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false&price_change_percentage=7d,14d,30d',
@@ -6312,8 +6110,6 @@
                     if (topCoinsRes.ok) {
                         topCoins = await topCoinsRes.json();
                         console.log('✅ Top coins OK:', topCoins.length, 'moedas');
-                    } else {
-                        console.log('⚠️ Top coins status:', topCoinsRes.status);
                     }
                 } catch (e) {
                     console.log('⚠️ Top coins timeout/error:', e.message);
@@ -6370,29 +6166,44 @@
                     // Ajuste de calibração para aproximar CMC/Coinglass (usam 90 dias)
                     const domFactor = (58 - btcDom) * 0.4;
                     altValue = Math.round(altValue + domFactor);
+                    
+                    // Ajuste final -6 para alinhar com valores de outros sites
+                    altValue = altValue - 6;
                     altValue = Math.max(1, Math.min(100, altValue));
                     
-                    console.log(`📊 Altseason calc: 7d=${Math.round(pct7d)}% 14d=${Math.round(pct14d)}% 30d=${Math.round(pct30d)}%, Final: ${altValue}`);
+                    console.log(`📊 Altseason calc: 7d=${Math.round(pct7d)}% 14d=${Math.round(pct14d)}% 30d=${Math.round(pct30d)}%, Final (com -6): ${altValue}`);
                 }
                 
-                // Se não conseguiu calcular, mostrar indisponível (sem fallback)
+                // Se não conseguiu calcular, usar último valor se existir
                 if (altValue === null) {
-                    console.log('📊 Altseason: dados insuficientes para cálculo');
-                    document.getElementById('altseason-value').textContent = '--';
-                    document.getElementById('altseason-status').innerHTML = '<span style="color: var(--text-muted);">Indisponível</span>';
+                    console.log('⚠️ Altseason: não conseguiu calcular');
+                    if (lastAltseasonValue) {
+                        console.log('📦 Usando último valor em memória:', lastAltseasonValue);
+                        updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 58);
+                    } else {
+                        document.getElementById('altseason-value').textContent = '--';
+                        document.getElementById('altseason-status').innerHTML = '<span style="color: var(--text-muted);">Erro na API</span>';
+                    }
                     return;
                 }
                 
-                // Salvar no cache
-                setAltseasonCache(altValue, btcDom);
+                // Salvar em cache de memória
+                lastAltseasonValue = altValue;
+                lastAltseasonBtcDom = btcDom;
                 
                 // Atualizar UI
                 updateAltseasonUI(altValue, btcDom);
                 
             } catch (e) {
                 console.error('Altseason calc error:', e);
-                document.getElementById('altseason-value').textContent = '--';
-                document.getElementById('altseason-status').innerHTML = '<span style="color: var(--text-muted);">Indisponível</span>';
+                // Usar último valor se existir
+                if (lastAltseasonValue) {
+                    console.log('📦 Erro, usando último valor:', lastAltseasonValue);
+                    updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 58);
+                } else {
+                    document.getElementById('altseason-value').textContent = '--';
+                    document.getElementById('altseason-status').innerHTML = '<span style="color: var(--text-muted);">Indisponível</span>';
+                }
             }
         }
         
@@ -6425,107 +6236,29 @@
         // OTHER DATA
         // ============================================
         
-        // BTC Dominância - Cache de 20 minutos para escalabilidade
-        const BTC_DOM_CACHE_KEY = 'btc_dominance_cache';
-        const BTC_DOM_CACHE_DURATION = 20 * 60 * 1000; // 20 minutos
-
-        function getBtcDomCache() {
-            try {
-                const cached = localStorage.getItem(BTC_DOM_CACHE_KEY);
-                if (cached) {
-                    const data = JSON.parse(cached);
-                    if (Date.now() - data.timestamp < BTC_DOM_CACHE_DURATION) {
-                        return data.value;
-                    }
-                }
-            } catch (e) {}
-            return null;
-        }
-
-        function setBtcDomCache(value) {
-            try {
-                localStorage.setItem(BTC_DOM_CACHE_KEY, JSON.stringify({
-                    value,
-                    timestamp: Date.now()
-                }));
-            } catch (e) {}
-        }
-        
-        // BTC Dominância - Buscar dado DIRETO de APIs com cache
+        // BTC Dominância - APENAS CoinGecko com ajuste +2.1
         async function fetchGlobalData() {
-            // Verificar cache primeiro
-            const cachedDom = getBtcDomCache();
-            if (cachedDom !== null) {
-                document.getElementById('btc-dominance').textContent = `${cachedDom.toFixed(2)}%`;
-                console.log('📦 BTC Dominância (cache):', cachedDom.toFixed(2) + '%');
-                return;
-            }
-
-            // Fonte 1: CoinMarketCap via proxy (mais preciso - igual TradingView)
             try {
-                const cmcUrl = `https://pro-api.coinmarketcap.com/v1/global-metrics/quotes/latest?CMC_PRO_API_KEY=${CMC_API_KEY}`;
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(cmcUrl)}`;
-                const response = await fetchWithTimeout(proxyUrl, {}, 8000);
+                const response = await fetchWithTimeout('https://api.coingecko.com/api/v3/global', {}, 10000);
                 if (response.ok) {
-                    const data = await response.json();
-                    if (data.data && data.data.btc_dominance) {
-                        const btcDominance = data.data.btc_dominance;
+                    const globalData = await response.json();
+                    let btcDominance = globalData.data?.market_cap_percentage?.btc;
+                    
+                    if (btcDominance && btcDominance > 0) {
+                        // Ajuste +2.1 para alinhar com TradingView/CMC
+                        btcDominance = btcDominance + 2.1;
                         document.getElementById('btc-dominance').textContent = `${btcDominance.toFixed(2)}%`;
-                        setBtcDomCache(btcDominance);
-                        console.log('📊 BTC Dominância (CMC):', btcDominance.toFixed(2) + '%');
-                        return;
+                        console.log('📊 BTC Dominância (CoinGecko+2.1):', btcDominance.toFixed(2) + '%');
+                        return btcDominance;
                     }
                 }
             } catch (e) {
-                console.log('CMC failed, trying alternatives...');
+                console.log('CoinGecko failed:', e.message);
             }
             
-            // Fonte 2: Calcular manualmente via Binance (mais preciso que CoinGecko)
-            try {
-                // Buscar market caps das principais moedas via Binance + CoinGecko
-                const [btcRes, globalRes] = await Promise.all([
-                    fetchWithTimeout('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT', {}, 5000),
-                    fetchWithTimeout('https://api.coingecko.com/api/v3/global', {}, 8000)
-                ]);
-                
-                if (globalRes.ok) {
-                    const globalData = await globalRes.json();
-                    let btcDominance = globalData.data?.market_cap_percentage?.btc || 57;
-                    
-                    // CoinGecko tende a subestimar a dominância do BTC em ~2%
-                    // Aplicar correção baseada em dados históricos
-                    // TradingView/CMC geralmente mostram ~2% a mais
-                    btcDominance = btcDominance + 2.1;
-                    
-                    document.getElementById('btc-dominance').textContent = `${btcDominance.toFixed(2)}%`;
-                    setBtcDomCache(btcDominance);
-                    console.log('📊 BTC Dominância (CoinGecko ajustado):', btcDominance.toFixed(2) + '%');
-                    return;
-                }
-            } catch (e) {
-                console.log('Alternative calc failed, trying CoinPaprika...');
-            }
-            
-            // Fonte 3: CoinPaprika (dado direto - não tem rate limit agressivo)
-            try {
-                const response = await fetchWithTimeout('https://api.coinpaprika.com/v1/global', {}, 8000);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.bitcoin_dominance_percentage) {
-                        const btcDominance = data.bitcoin_dominance_percentage;
-                        document.getElementById('btc-dominance').textContent = `${btcDominance.toFixed(2)}%`;
-                        setBtcDomCache(btcDominance);
-                        console.log('📊 BTC Dominância (CoinPaprika):', btcDominance.toFixed(2) + '%');
-                        return;
-                    }
-                }
-            } catch (e) {
-                console.log('CoinPaprika failed...');
-            }
-            
-            // Se todas as APIs falharem, mostrar erro
-            document.getElementById('btc-dominance').textContent = '--';
-            console.log('⚠️ Não foi possível obter BTC Dominância');
+            // Se falhar, manter "--" até próxima tentativa (sem fallback falso)
+            console.log('⚠️ BTC Dominância indisponível - aguardando próxima tentativa');
+            return null;
         }
 
         async function fetchCryptoStats() {
@@ -6762,7 +6495,7 @@
                     fetchNews();
                 }
             }
-            if (sectionId === 'macro') loadMacroData();
+            if (sectionId === 'macro' && window.loadMacroData) window.loadMacroData();
             if (sectionId === 'analysis') {
                 fetchOrderBook();
                 fetchFearGreed();
@@ -7723,148 +7456,14 @@
             }
         }
 
-        function loadMacroData() {
-            fetchFedWatchData();
-            fetchEconomicCalendar();
-            fetchMarketIndicators();
-            
-            // Iniciar atualização em tempo real dos indicadores macro
-            startMacroRealTimeUpdate();
-        }
-        
-        // Função para atualização em tempo real dos indicadores macro
-        function startMacroRealTimeUpdate() {
-            // Limpar intervalo anterior se existir
-            if (macroUpdateInterval) {
-                clearInterval(macroUpdateInterval);
-            }
-            
-            // Atualizar a cada 2 segundos para tempo real
-            macroUpdateInterval = setInterval(() => {
-                // Verificar se a seção macro está ativa
-                if (document.getElementById('macro').classList.contains('active')) {
-                    console.log('🔄 Atualizando indicadores macro em tempo real...');
-                    fetchMarketIndicatorsSilent();
-                }
-            }, 2000); // 2 segundos
-        }
-        
-        // Atualização silenciosa dos indicadores macro (sem loading)
-        async function fetchMarketIndicatorsSilent() {
-            try {
-                // Buscar S&P 500
-                try {
-                    const sp500Data = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=2d')
-                        .then(r => r.json())
-                        .catch(() => null);
-                    
-                    if (sp500Data?.chart?.result?.[0]) {
-                        const result = sp500Data.chart.result[0];
-                        const closes = result.indicators.quote[0].close;
-                        const currentPrice = closes[closes.length - 1];
-                        const prevPrice = closes[closes.length - 2] || currentPrice;
-                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
-                        
-                        updateMacroIndicator('sp500', currentPrice.toFixed(2), change);
-                    }
-                } catch (e) {}
-                
-                // Buscar DXY
-                try {
-                    const dxyData = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?interval=1d&range=2d')
-                        .then(r => r.json())
-                        .catch(() => null);
-                    
-                    if (dxyData?.chart?.result?.[0]) {
-                        const result = dxyData.chart.result[0];
-                        const closes = result.indicators.quote[0].close;
-                        const currentPrice = closes[closes.length - 1];
-                        const prevPrice = closes[closes.length - 2] || currentPrice;
-                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
-                        
-                        updateMacroIndicator('dxy', currentPrice.toFixed(2), change);
-                    }
-                } catch (e) {}
-                
-                // Buscar VIX
-                try {
-                    const vixData = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=2d')
-                        .then(r => r.json())
-                        .catch(() => null);
-                    
-                    if (vixData?.chart?.result?.[0]) {
-                        const result = vixData.chart.result[0];
-                        const closes = result.indicators.quote[0].close;
-                        const currentPrice = closes[closes.length - 1];
-                        const prevPrice = closes[closes.length - 2] || currentPrice;
-                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
-                        
-                        updateMacroIndicator('vix', currentPrice.toFixed(2), change);
-                    }
-                } catch (e) {}
-                
-                // Buscar Ouro
-                try {
-                    const goldData = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F?interval=1d&range=2d')
-                        .then(r => r.json())
-                        .catch(() => null);
-                    
-                    if (goldData?.chart?.result?.[0]) {
-                        const result = goldData.chart.result[0];
-                        const closes = result.indicators.quote[0].close;
-                        const currentPrice = closes[closes.length - 1];
-                        const prevPrice = closes[closes.length - 2] || currentPrice;
-                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
-                        
-                        updateMacroIndicator('gold', '$' + currentPrice.toFixed(2), change);
-                    }
-                } catch (e) {}
-                
-                // Buscar Petróleo
-                try {
-                    const oilData = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/CL=F?interval=1d&range=2d')
-                        .then(r => r.json())
-                        .catch(() => null);
-                    
-                    if (oilData?.chart?.result?.[0]) {
-                        const result = oilData.chart.result[0];
-                        const closes = result.indicators.quote[0].close;
-                        const currentPrice = closes[closes.length - 1];
-                        const prevPrice = closes[closes.length - 2] || currentPrice;
-                        const change = ((currentPrice - prevPrice) / prevPrice) * 100;
-                        
-                        updateMacroIndicator('oil', '$' + currentPrice.toFixed(2), change);
-                    }
-                } catch (e) {}
-                
-            } catch (e) {
-                console.error('Erro na atualização silenciosa dos indicadores:', e);
-            }
-        }
-        
-        // Função para atualizar um indicador específico na UI
-        function updateMacroIndicator(icon, value, change) {
-            const priceEl = document.getElementById(`macro-price-${icon}`);
-            const changeEl = document.getElementById(`macro-change-${icon}`);
-            
-            if (priceEl) {
-                priceEl.textContent = value;
-            }
-            
-            if (changeEl) {
-                changeEl.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
-                changeEl.className = `indicator-change ${change >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
-            }
-            
-            // Atualizar também os dados globais para o modal
-            if (window.marketIndicatorsData) {
-                const indicator = window.marketIndicatorsData.find(i => i.icon === icon);
-                if (indicator) {
-                    indicator.value = value;
-                    indicator.change = change;
-                }
-            }
-        }
+        // ============================================
+        // MACRO - Usa APENAS a API do GitHub Pages
+        // Sem chamadas diretas para Yahoo Finance (bloqueado por CORS)
+        // ============================================
+        // Funções vazias - o MACRO usa fetchMacroAPI() definido mais abaixo
+        function startMacroRealTimeUpdate() { /* Desabilitado - usa GitHub Pages API */ }
+        function fetchMarketIndicatorsSilent() { /* Desabilitado - usa GitHub Pages API */ }
+        function updateMacroIndicator(icon, value, change) { /* Desabilitado - usa GitHub Pages API */ }
 
         // ============================================
         // INDICATOR DETAIL MODAL
@@ -7922,18 +7521,40 @@
         // Mapeamento de indicadores para símbolos Yahoo Finance
         const INDICATOR_SYMBOLS = {
             'sp500': '%5EGSPC',
+            'nasdaq': '%5EIXIC',
+            'dowjones': '%5EDJI',
             'dxy': 'DX-Y.NYB',
+            'eurusd': 'EURUSD=X',
             'vix': '%5EVIX',
             'gold': 'GC=F',
-            'oil': 'CL=F'
+            'silver': 'SI=F',
+            'copper': 'HG=F',
+            'platinum': 'PL=F',
+            'oil': 'CL=F',
+            'natgas': 'NG=F',
+            'treasury10y': '%5ETNX',
+            'treasury30y': '%5ETYX',
+            'mstr': 'MSTR',
+            'coin': 'COIN'
         };
         
         const INDICATOR_COLORS = {
             'sp500': '#22c55e',
+            'nasdaq': '#3b82f6',
+            'dowjones': '#0ea5e9',
             'dxy': '#6366f1',
+            'eurusd': '#8b5cf6',
             'vix': '#ef4444',
             'gold': '#eab308',
-            'oil': '#f97316'
+            'silver': '#a1a1aa',
+            'copper': '#f97316',
+            'platinum': '#e5e5e5',
+            'oil': '#84cc16',
+            'natgas': '#14b8a6',
+            'treasury10y': '#ec4899',
+            'treasury30y': '#f472b6',
+            'mstr': '#ff6b00',
+            'coin': '#2563eb'
         };
         
         let indicatorChartData = [];
@@ -8153,6 +7774,365 @@
             loadIndicatorChart();
         }
         
+        // ============================================
+        // INDICATOR TECHNICAL ANALYSIS
+        // ============================================
+        
+        async function openIndicatorTechnicalAnalysis() {
+            if (!window.currentIndicator) return;
+            
+            const indicator = window.currentIndicator;
+            const symbol = INDICATOR_SYMBOLS[indicator.icon];
+            
+            if (!symbol) {
+                alert('Análise técnica não disponível para este indicador.');
+                return;
+            }
+            
+            const modal = document.getElementById('ta-modal');
+            const body = document.getElementById('ta-modal-body');
+            
+            // Atualizar título
+            document.querySelector('.ta-modal-header-title').textContent = `Análise Técnica - ${indicator.name}`;
+            
+            // Mostrar loading
+            body.innerHTML = `
+                <div class="ta-loading">
+                    <div class="ta-loading-spinner"></div>
+                    <div class="ta-loading-text">Analisando ${indicator.name}...</div>
+                    <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Calculando indicadores técnicos e identificando padrões</p>
+                </div>
+            `;
+            
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+            
+            // Adicionar ao histórico do navegador
+            if (window.history && window.history.pushState) {
+                window.history.pushState({ page: 'indicator-technical-analysis', indicator: indicator.name }, '', '');
+            }
+            
+            try {
+                // Buscar dados do Yahoo Finance para análise
+                const analysisData = await fetchIndicatorTAData(symbol, indicator);
+                const analysis = generateIndicatorTechnicalAnalysis(analysisData, indicator);
+                
+                // Renderizar análise
+                renderIndicatorTechnicalAnalysis(analysis, indicator);
+                
+            } catch (e) {
+                console.error('Indicator Technical Analysis error:', e);
+                body.innerHTML = `
+                    <div style="text-align: center; padding: 40px 20px;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: var(--accent-red); margin-bottom: 16px;"></i>
+                        <h3 style="color: var(--text-primary); margin-bottom: 8px;">Erro ao carregar análise</h3>
+                        <p style="color: var(--text-secondary); font-size: 14px;">${e.message || 'Erro desconhecido'}</p>
+                        <button onclick="openIndicatorTechnicalAnalysis()" style="margin-top: 20px; padding: 12px 24px; background: var(--accent-blue); border: none; border-radius: 12px; color: white; font-weight: 600; cursor: pointer;">
+                            <i class="fas fa-redo"></i> Tentar Novamente
+                        </button>
+                    </div>
+                `;
+            }
+        }
+        
+        async function fetchIndicatorTAData(symbol, indicator) {
+            // Buscar múltiplos timeframes para análise completa
+            const periods = ['1d', '1mo', '3mo', '1y'];
+            const intervals = ['1d', '1d', '1wk', '1wk'];
+            
+            const results = await Promise.all(
+                periods.map(async (period, i) => {
+                    try {
+                        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${intervals[i]}&range=${period}`;
+                        const response = await fetch(url);
+                        if (response.ok) {
+                            const data = await response.json();
+                            return data?.chart?.result?.[0] || null;
+                        }
+                    } catch (e) {
+                        console.error(`Error fetching ${period}:`, e);
+                    }
+                    return null;
+                })
+            );
+            
+            return {
+                daily: results[0],
+                monthly: results[1],
+                quarterly: results[2],
+                yearly: results[3],
+                indicator
+            };
+        }
+        
+        function generateIndicatorTechnicalAnalysis(data, indicator) {
+            const { daily, monthly, quarterly, yearly } = data;
+            
+            // Usar dados diários se disponíveis
+            const priceData = daily || monthly;
+            if (!priceData?.indicators?.quote?.[0]) {
+                throw new Error('Dados não disponíveis');
+            }
+            
+            const quotes = priceData.indicators.quote[0];
+            const closes = (quotes.close || []).filter(c => c != null && !isNaN(c));
+            const highs = (quotes.high || []).filter(h => h != null && !isNaN(h));
+            const lows = (quotes.low || []).filter(l => l != null && !isNaN(l));
+            const volumes = (quotes.volume || []).filter(v => v != null && !isNaN(v));
+            
+            if (closes.length < 5) {
+                throw new Error('Dados insuficientes para análise');
+            }
+            
+            const currentPrice = closes[closes.length - 1];
+            const prevPrice = closes[closes.length - 2];
+            const change = ((currentPrice - prevPrice) / prevPrice) * 100;
+            
+            // Calcular médias móveis
+            const sma5 = closes.slice(-5).reduce((a, b) => a + b, 0) / 5;
+            const sma10 = closes.slice(-10).reduce((a, b) => a + b, 0) / Math.min(10, closes.length);
+            const sma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, closes.length);
+            
+            // Calcular RSI (14 períodos)
+            const rsiPeriod = 14;
+            let gains = 0, losses = 0;
+            const recentCloses = closes.slice(-rsiPeriod - 1);
+            for (let i = 1; i < recentCloses.length; i++) {
+                const diff = recentCloses[i] - recentCloses[i - 1];
+                if (diff > 0) gains += diff;
+                else losses += Math.abs(diff);
+            }
+            const avgGain = gains / rsiPeriod;
+            const avgLoss = losses / rsiPeriod;
+            const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+            const rsi = 100 - (100 / (1 + rs));
+            
+            // Calcular suporte e resistência
+            const recentHighs = highs.slice(-20);
+            const recentLows = lows.slice(-20);
+            const resistance = Math.max(...recentHighs);
+            const support = Math.min(...recentLows);
+            
+            // Calcular volatilidade
+            const returns = [];
+            for (let i = 1; i < closes.length; i++) {
+                returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+            }
+            const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+            const variance = returns.reduce((a, b) => a + Math.pow(b - avgReturn, 2), 0) / returns.length;
+            const volatility = Math.sqrt(variance) * Math.sqrt(252) * 100; // Anualizada
+            
+            // Tendência
+            let trend = 'NEUTRAL';
+            let trendStrength = 50;
+            if (currentPrice > sma20 && sma5 > sma10) {
+                trend = 'BULLISH';
+                trendStrength = 70 + Math.min(20, (currentPrice - sma20) / sma20 * 100);
+            } else if (currentPrice < sma20 && sma5 < sma10) {
+                trend = 'BEARISH';
+                trendStrength = 30 - Math.min(20, (sma20 - currentPrice) / sma20 * 100);
+            }
+            
+            // Calcular máximas/mínimas de diferentes períodos
+            const high52w = yearly?.indicators?.quote?.[0]?.high ? Math.max(...yearly.indicators.quote[0].high.filter(h => h)) : resistance;
+            const low52w = yearly?.indicators?.quote?.[0]?.low ? Math.min(...yearly.indicators.quote[0].low.filter(l => l)) : support;
+            
+            return {
+                price: {
+                    current: currentPrice,
+                    change: change,
+                    high24h: highs[highs.length - 1] || currentPrice,
+                    low24h: lows[lows.length - 1] || currentPrice,
+                    high52w: high52w,
+                    low52w: low52w
+                },
+                indicators: {
+                    sma5, sma10, sma20,
+                    rsi,
+                    support, resistance,
+                    volatility
+                },
+                trend: {
+                    direction: trend,
+                    strength: trendStrength
+                },
+                signals: generateSignals(currentPrice, sma5, sma10, sma20, rsi, support, resistance, indicator)
+            };
+        }
+        
+        function generateSignals(price, sma5, sma10, sma20, rsi, support, resistance, indicator) {
+            const signals = [];
+            
+            // Sinais de médias móveis
+            if (price > sma20) {
+                signals.push({ type: 'bullish', name: 'Acima da SMA 20', desc: 'Preço acima da média de 20 períodos' });
+            } else {
+                signals.push({ type: 'bearish', name: 'Abaixo da SMA 20', desc: 'Preço abaixo da média de 20 períodos' });
+            }
+            
+            if (sma5 > sma10) {
+                signals.push({ type: 'bullish', name: 'Cruzamento de MMs', desc: 'MM curta cruzou acima da MM longa' });
+            } else if (sma5 < sma10) {
+                signals.push({ type: 'bearish', name: 'Cruzamento de MMs', desc: 'MM curta cruzou abaixo da MM longa' });
+            }
+            
+            // Sinais de RSI
+            if (rsi > 70) {
+                signals.push({ type: 'bearish', name: 'RSI Sobrecomprado', desc: `RSI em ${rsi.toFixed(1)} - zona de sobrecompra` });
+            } else if (rsi < 30) {
+                signals.push({ type: 'bullish', name: 'RSI Sobrevendido', desc: `RSI em ${rsi.toFixed(1)} - zona de sobrevenda` });
+            } else if (rsi > 50 && rsi < 70) {
+                signals.push({ type: 'neutral', name: 'RSI Neutro/Bullish', desc: `RSI em ${rsi.toFixed(1)} - momentum positivo` });
+            } else {
+                signals.push({ type: 'neutral', name: 'RSI Neutro/Bearish', desc: `RSI em ${rsi.toFixed(1)} - momentum negativo` });
+            }
+            
+            // Sinais de suporte/resistência
+            const distToResistance = ((resistance - price) / price) * 100;
+            const distToSupport = ((price - support) / price) * 100;
+            
+            if (distToResistance < 2) {
+                signals.push({ type: 'warning', name: 'Próximo à Resistência', desc: `Apenas ${distToResistance.toFixed(1)}% abaixo da resistência` });
+            }
+            if (distToSupport < 2) {
+                signals.push({ type: 'warning', name: 'Próximo ao Suporte', desc: `Apenas ${distToSupport.toFixed(1)}% acima do suporte` });
+            }
+            
+            return signals;
+        }
+        
+        function renderIndicatorTechnicalAnalysis(analysis, indicator) {
+            const body = document.getElementById('ta-modal-body');
+            const color = INDICATOR_COLORS[indicator.icon] || '#3b82f6';
+            
+            const trendColor = analysis.trend.direction === 'BULLISH' ? 'var(--accent-green)' : 
+                              analysis.trend.direction === 'BEARISH' ? 'var(--accent-red)' : 'var(--accent-yellow)';
+            const trendIcon = analysis.trend.direction === 'BULLISH' ? 'fa-arrow-up' : 
+                             analysis.trend.direction === 'BEARISH' ? 'fa-arrow-down' : 'fa-minus';
+            const trendLabel = analysis.trend.direction === 'BULLISH' ? 'ALTA' : 
+                              analysis.trend.direction === 'BEARISH' ? 'BAIXA' : 'NEUTRO';
+            
+            body.innerHTML = `
+                <div class="ta-section">
+                    <!-- Cabeçalho com Tendência -->
+                    <div style="background: linear-gradient(135deg, ${color}15 0%, transparent 100%); border-radius: 16px; padding: 20px; margin-bottom: 20px; border: 1px solid ${color}30;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                            <div>
+                                <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Tendência Atual</div>
+                                <div style="font-size: 28px; font-weight: 800; color: ${trendColor}; display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                                    <i class="fas ${trendIcon}"></i>
+                                    ${trendLabel}
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 11px; color: var(--text-muted);">Força da Tendência</div>
+                                <div style="font-size: 24px; font-weight: 700; color: ${trendColor};">${analysis.trend.strength.toFixed(0)}%</div>
+                            </div>
+                        </div>
+                        <div style="background: var(--bg-secondary); border-radius: 8px; height: 8px; overflow: hidden;">
+                            <div style="background: linear-gradient(90deg, var(--accent-red), var(--accent-yellow), var(--accent-green)); height: 100%; width: 100%;"></div>
+                        </div>
+                        <div style="position: relative; height: 20px;">
+                            <div style="position: absolute; left: ${analysis.trend.strength}%; transform: translateX(-50%); top: 4px;">
+                                <i class="fas fa-caret-up" style="font-size: 16px; color: ${trendColor};"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Grid de Indicadores -->
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px;">
+                        <div style="background: var(--bg-card); border-radius: 12px; padding: 14px; border: 1px solid var(--border-subtle);">
+                            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">RSI (14)</div>
+                            <div style="font-size: 20px; font-weight: 700; color: ${analysis.indicators.rsi > 70 ? 'var(--accent-red)' : analysis.indicators.rsi < 30 ? 'var(--accent-green)' : 'var(--text-primary)'};">
+                                ${analysis.indicators.rsi.toFixed(1)}
+                            </div>
+                            <div style="font-size: 10px; color: var(--text-muted);">
+                                ${analysis.indicators.rsi > 70 ? 'Sobrecomprado' : analysis.indicators.rsi < 30 ? 'Sobrevendido' : 'Neutro'}
+                            </div>
+                        </div>
+                        
+                        <div style="background: var(--bg-card); border-radius: 12px; padding: 14px; border: 1px solid var(--border-subtle);">
+                            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Volatilidade</div>
+                            <div style="font-size: 20px; font-weight: 700; color: ${analysis.indicators.volatility > 30 ? 'var(--accent-red)' : 'var(--text-primary)'};">
+                                ${analysis.indicators.volatility.toFixed(1)}%
+                            </div>
+                            <div style="font-size: 10px; color: var(--text-muted);">Anualizada</div>
+                        </div>
+                        
+                        <div style="background: var(--bg-card); border-radius: 12px; padding: 14px; border: 1px solid var(--border-subtle);">
+                            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Suporte</div>
+                            <div style="font-size: 18px; font-weight: 700; color: var(--accent-green);">
+                                ${formatIndicatorPrice(analysis.indicators.support)}
+                            </div>
+                            <div style="font-size: 10px; color: var(--text-muted);">
+                                ${(((analysis.price.current - analysis.indicators.support) / analysis.price.current) * 100).toFixed(1)}% acima
+                            </div>
+                        </div>
+                        
+                        <div style="background: var(--bg-card); border-radius: 12px; padding: 14px; border: 1px solid var(--border-subtle);">
+                            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Resistência</div>
+                            <div style="font-size: 18px; font-weight: 700; color: var(--accent-red);">
+                                ${formatIndicatorPrice(analysis.indicators.resistance)}
+                            </div>
+                            <div style="font-size: 10px; color: var(--text-muted);">
+                                ${(((analysis.indicators.resistance - analysis.price.current) / analysis.price.current) * 100).toFixed(1)}% abaixo
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Médias Móveis -->
+                    <div style="background: var(--bg-card); border-radius: 16px; padding: 16px; margin-bottom: 20px; border: 1px solid var(--border-subtle);">
+                        <div style="font-size: 13px; font-weight: 700; color: var(--accent-blue); margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-chart-line"></i> Médias Móveis
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 8px;">
+                                <span style="font-size: 12px; color: var(--text-secondary);">SMA 5</span>
+                                <span style="font-size: 14px; font-weight: 600; color: ${analysis.price.current > analysis.indicators.sma5 ? 'var(--accent-green)' : 'var(--accent-red)'};">
+                                    ${formatIndicatorPrice(analysis.indicators.sma5)}
+                                </span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 8px;">
+                                <span style="font-size: 12px; color: var(--text-secondary);">SMA 10</span>
+                                <span style="font-size: 14px; font-weight: 600; color: ${analysis.price.current > analysis.indicators.sma10 ? 'var(--accent-green)' : 'var(--accent-red)'};">
+                                    ${formatIndicatorPrice(analysis.indicators.sma10)}
+                                </span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 8px;">
+                                <span style="font-size: 12px; color: var(--text-secondary);">SMA 20</span>
+                                <span style="font-size: 14px; font-weight: 600; color: ${analysis.price.current > analysis.indicators.sma20 ? 'var(--accent-green)' : 'var(--accent-red)'};">
+                                    ${formatIndicatorPrice(analysis.indicators.sma20)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Sinais -->
+                    <div style="background: var(--bg-card); border-radius: 16px; padding: 16px; border: 1px solid var(--border-subtle);">
+                        <div style="font-size: 13px; font-weight: 700; color: var(--accent-purple); margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-signal"></i> Sinais Técnicos
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            ${analysis.signals.map(signal => `
+                                <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 10px; border-left: 3px solid ${signal.type === 'bullish' ? 'var(--accent-green)' : signal.type === 'bearish' ? 'var(--accent-red)' : signal.type === 'warning' ? 'var(--accent-yellow)' : 'var(--text-muted)'};">
+                                    <i class="fas ${signal.type === 'bullish' ? 'fa-arrow-up' : signal.type === 'bearish' ? 'fa-arrow-down' : signal.type === 'warning' ? 'fa-exclamation-triangle' : 'fa-minus'}" style="color: ${signal.type === 'bullish' ? 'var(--accent-green)' : signal.type === 'bearish' ? 'var(--accent-red)' : signal.type === 'warning' ? 'var(--accent-yellow)' : 'var(--text-muted)'}; font-size: 14px; width: 20px;"></i>
+                                    <div>
+                                        <div style="font-size: 12px; font-weight: 600; color: var(--text-primary);">${signal.name}</div>
+                                        <div style="font-size: 10px; color: var(--text-muted);">${signal.desc}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <!-- Disclaimer -->
+                    <p style="font-size: 10px; color: var(--text-muted); text-align: center; margin-top: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 8px;">
+                        <i class="fas fa-info-circle"></i> Análise baseada em dados de mercado. Não constitui recomendação de investimento.
+                    </p>
+                </div>
+            `;
+        }
+
         // Open fullscreen chart for indicator
         async function openIndicatorFullscreenChart() {
             if (!window.currentIndicator) return;
@@ -8297,13 +8277,22 @@
                 console.error('❌ Erro na renderização inicial:', e);
             }
             
-            // Conectar preços (com fallback automático)
+            // Buscar preços imediatamente via REST (garantido)
             try {
-                connectPriceStream();
-            } catch (e) {
-                console.error('❌ Erro ao conectar preços:', e);
                 fetchPricesViaREST();
+                console.log('✅ Preços carregados via REST');
+            } catch (e) {
+                console.error('❌ Erro ao buscar preços REST:', e);
             }
+            
+            // Depois tentar WebSocket para updates em tempo real
+            setTimeout(() => {
+                try {
+                    connectPriceStream();
+                } catch (e) {
+                    console.error('❌ Erro ao conectar WebSocket:', e);
+                }
+            }, 2000);
             
             // Carregar dados em background (não bloqueia UI)
             setTimeout(() => {
@@ -8325,8 +8314,8 @@
             // Order Book every 2s
             setInterval(fetchOrderBook, 2000);
             
-            // Altseason every 60s (reduzido para evitar rate limit CoinGecko)
-            setInterval(fetchAltseasonIndex, 60000);
+            // Altseason every 30s (tenta mais rápido, tem cache em memória)
+            setInterval(fetchAltseasonIndex, 30000);
             
             // News every 5 minutes (avoid scroll reset)
             setInterval(fetchNews, 300000);
@@ -10853,7 +10842,7 @@ Confiança para operação: Baixa. Melhor aguardar.`;
             });
             
             if (sectionId === 'news') fetchNews();
-            if (sectionId === 'macro') loadMacroData();
+            if (sectionId === 'macro' && window.loadMacroData) window.loadMacroData();
             if (sectionId === 'analysis') {
                 fetchOrderBook();
                 fetchFearGreed();
@@ -10978,5 +10967,8 @@ Confiança para operação: Baixa. Melhor aguardar.`;
             console.log('📱 Executando como PWA instalado');
         }
     </script>
+    
+    <!-- Macro Section Module - Define funções corretas que sobrescrevem as duplicadas -->
+    <script src="macro-section.js"></script>
 </body>
 </html>

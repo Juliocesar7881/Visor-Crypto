@@ -20,9 +20,9 @@ android {
     signingConfigs {
         release {
             storeFile file('visor-crypto.keystore')
-            storePassword 'visorcrypto123'
+            storePassword 'visorcrypto2024'
             keyAlias 'visor-crypto'
-            keyPassword 'visorcrypto123'
+            keyPassword 'visorcrypto2024'
         }
     }
     
