@@ -369,9 +369,11 @@
         // Maximize button
         document.getElementById('indicator-maximize-btn').addEventListener('click', () => openFullscreenChart(symbol));
         
-        // Carregar dados
-        loadIndicatorChartData(symbol);
-        loadIndicatorStats(symbol);
+        // Carregar dados com delay para garantir que o canvas tenha dimensões
+        setTimeout(() => {
+            loadIndicatorChartData(symbol);
+            loadIndicatorStats(symbol);
+        }, 100);
     }
 
     // ============================================
@@ -1183,33 +1185,42 @@
             ]);
             
             // Processar taxa de juros do Fed
-            let currentRate = { lower: 4.25, upper: 4.50 }; // Default caso API falhe
+            let currentRate = null;
             if (fedRateData && fedRateData.length > 0) {
-                const rate = parseFloat(fedRateData[0].value) || parseFloat(fedRateData[0].last) || 4.375;
-                // Fed anuncia em range (ex: 4.25-4.50)
-                currentRate = {
-                    lower: Math.floor(rate * 4) / 4, // Arredondar para .25 mais próximo
-                    upper: Math.ceil(rate * 4) / 4
-                };
-                if (currentRate.lower === currentRate.upper) {
-                    currentRate.lower -= 0.25;
+                const rate = parseFloat(fedRateData[0].value) || parseFloat(fedRateData[0].last);
+                if (rate && !isNaN(rate)) {
+                    // Fed anuncia em range (ex: 4.25-4.50)
+                    currentRate = {
+                        lower: Math.floor(rate * 4) / 4, // Arredondar para .25 mais próximo
+                        upper: Math.ceil(rate * 4) / 4
+                    };
+                    if (currentRate.lower === currentRate.upper) {
+                        currentRate.lower -= 0.25;
+                    }
+                    macroLog(`✅ Taxa Fed real: ${currentRate.lower}-${currentRate.upper}%`, 'success');
                 }
-                macroLog(`✅ Taxa Fed real: ${currentRate.lower}-${currentRate.upper}%`, 'success');
             }
+            if (!currentRate) throw new Error('Não foi possível obter taxa do Fed');
             
             // Processar inflação
-            let inflation = 2.9; // Default
+            let inflation = null;
             if (inflationData && inflationData.length > 0) {
-                inflation = parseFloat(inflationData[0].value) || parseFloat(inflationData[0].last) || 2.9;
-                macroLog(`✅ Inflação real: ${inflation}%`, 'success');
+                inflation = parseFloat(inflationData[0].value) || parseFloat(inflationData[0].last);
+                if (inflation && !isNaN(inflation)) {
+                    macroLog(`✅ Inflação real: ${inflation}%`, 'success');
+                }
             }
+            if (!inflation) throw new Error('Não foi possível obter dados de inflação');
             
             // Processar desemprego
-            let unemployment = 4.1; // Default
+            let unemployment = null;
             if (unemploymentData && unemploymentData.length > 0) {
-                unemployment = parseFloat(unemploymentData[0].value) || parseFloat(unemploymentData[0].last) || 4.1;
-                macroLog(`✅ Desemprego real: ${unemployment}%`, 'success');
+                unemployment = parseFloat(unemploymentData[0].value) || parseFloat(unemploymentData[0].last);
+                if (unemployment && !isNaN(unemployment)) {
+                    macroLog(`✅ Desemprego real: ${unemployment}%`, 'success');
+                }
             }
+            if (!unemployment) throw new Error('Não foi possível obter dados de desemprego');
             
             // Calcular probabilidades baseadas nos dados reais
             const probabilities = calculateFedProbabilitiesFromData(inflation, unemployment, currentRate);
@@ -1255,24 +1266,31 @@
             const response = await fetch(url);
             const data = await response.json();
             
-            let inflation = 2.9;
-            let unemployment = 4.1;
-            let fedRate = 4.375;
+            let inflation = null;
+            let unemployment = null;
+            let fedRate = null;
             
             if (Array.isArray(data)) {
                 // Procurar dados relevantes
                 for (const event of data) {
                     const name = (event.event || '').toLowerCase();
                     if (name.includes('cpi') && name.includes('yoy') && event.actual) {
-                        inflation = parseFloat(event.actual) || inflation;
+                        const val = parseFloat(event.actual);
+                        if (!isNaN(val)) inflation = val;
                     }
                     if (name.includes('unemployment') && name.includes('rate') && event.actual) {
-                        unemployment = parseFloat(event.actual) || unemployment;
+                        const val = parseFloat(event.actual);
+                        if (!isNaN(val)) unemployment = val;
                     }
                     if (name.includes('fed') && name.includes('rate') && event.actual) {
-                        fedRate = parseFloat(event.actual) || fedRate;
+                        const val = parseFloat(event.actual);
+                        if (!isNaN(val)) fedRate = val;
                     }
                 }
+            }
+            
+            if (!fedRate || !inflation || !unemployment) {
+                throw new Error('FMP não retornou dados completos');
             }
             
             const currentRate = {
@@ -1297,15 +1315,9 @@
             return fedDataCache;
         } catch (e) {
             macroLog('❌ FMP também falhou: ' + e.message, 'error');
-            // Último recurso - retornar cache ou defaults
+            // Retornar cache se disponível, senão null para mostrar erro
             if (fedDataCache.lastUpdate) return fedDataCache;
-            return {
-                currentRate: { lower: 4.25, upper: 4.50 },
-                probabilities: { cut: 30, hold: 55, hike: 15 },
-                inflation: 2.9,
-                unemployment: 4.1,
-                lastUpdate: new Date()
-            };
+            return null; // Vai mostrar erro na UI
         }
     }
     
@@ -1417,10 +1429,26 @@
         
         if (nextMeetingEl) nextMeetingEl.innerHTML = `Próxima: <strong>${nextMeeting.label}</strong> (${nextMeeting.daysUntil} dias)`;
         
-        const rate = fedData?.currentRate || { lower: 4.25, upper: 4.50 };
-        const probs = fedData?.probabilities || { cut: 25, hold: 60, hike: 15 };
-        const inflation = fedData?.inflation || probs.inflation;
-        const unemployment = fedData?.unemployment || probs.unemployment;
+        // Se não há dados da API, mostrar erro
+        if (!fedData || !fedData.currentRate) {
+            if (currentRateEl) currentRateEl.textContent = '--';
+            container.innerHTML = `
+                <div style="text-align: center; padding: 30px; color: #ef4444;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 32px; margin-bottom: 12px; opacity: 0.7;"></i>
+                    <p style="margin: 0; font-weight: 600;">Erro ao carregar dados</p>
+                    <p style="margin: 8px 0 0; font-size: 12px; color: #888;">Não foi possível obter dados das APIs.<br>Verifique sua conexão.</p>
+                    <button onclick="window.updateFedWatch()" style="margin-top: 12px; padding: 8px 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white; cursor: pointer; font-size: 12px;">
+                        <i class="fas fa-sync-alt"></i> Tentar novamente
+                    </button>
+                </div>
+            `;
+            return;
+        }
+        
+        const rate = fedData.currentRate;
+        const probs = fedData.probabilities;
+        const inflation = fedData.inflation;
+        const unemployment = fedData.unemployment;
         
         if (currentRateEl) currentRateEl.textContent = `${rate.lower.toFixed(2)}-${rate.upper.toFixed(2)}%`;
         
@@ -1464,24 +1492,8 @@
     // CALENDÁRIO ECONÔMICO COM DADOS REAIS VIA FMP API
     // ============================================
     
-    // Dados históricos de eventos econômicos (backup para quando API não tiver histórico)
-    const ECONOMIC_HISTORY = {
-        'Non-Farm Payrolls': [
-            { date: '2025-01-10', actual: '+256K', forecast: '+160K', previous: '+212K', impact: 'Mercado subiu - dados fortes' },
-            { date: '2024-12-06', actual: '+227K', forecast: '+220K', previous: '+36K', impact: 'Neutro - dentro do esperado' },
-            { date: '2024-11-01', actual: '+12K', forecast: '+113K', previous: '+223K', impact: 'Mercado caiu - dados fracos (greves)' }
-        ],
-        'CPI (Inflação)': [
-            { date: '2025-01-15', actual: '2.9%', forecast: '2.9%', previous: '2.7%', impact: 'Neutro - dentro do esperado' },
-            { date: '2024-12-11', actual: '2.7%', forecast: '2.7%', previous: '2.6%', impact: 'Neutro - inflação sob controle' },
-            { date: '2024-11-13', actual: '2.6%', forecast: '2.6%', previous: '2.4%', impact: 'Neutro - leve alta esperada' }
-        ],
-        'Decisão FOMC': [
-            { date: '2024-12-18', actual: '4.25-4.50%', forecast: '4.25-4.50%', previous: '4.50-4.75%', impact: 'Corte de 25bps - esperado' },
-            { date: '2024-11-07', actual: '4.50-4.75%', forecast: '4.50-4.75%', previous: '4.75-5.00%', impact: 'Corte de 25bps - esperado' },
-            { date: '2024-09-18', actual: '4.75-5.00%', forecast: '4.75-5.00%', previous: '5.25-5.50%', impact: 'Corte de 50bps - agressivo' }
-        ]
-    };
+    // Cache para histórico de eventos (será preenchido via API)
+    let ECONOMIC_HISTORY_CACHE = {};
     
     // Buscar calendário econômico real via FMP API
     async function fetchEconomicCalendarFromAPI() {
@@ -1671,7 +1683,7 @@
             
             if (history.length > 0) {
                 // Atualizar cache local
-                ECONOMIC_HISTORY[eventTitle] = history;
+                ECONOMIC_HISTORY_CACHE[eventTitle] = history;
             }
             
             return history;
@@ -1686,12 +1698,29 @@
         const container = document.getElementById('economic-calendar');
         if (!container) return;
         
-        // Tentar buscar dados reais primeiro
+        // Mostrar loading
+        container.innerHTML = `
+            <div style="text-align: center; padding: 30px; color: #888;">
+                <i class="fas fa-spinner fa-spin" style="font-size: 20px; margin-bottom: 8px;"></i>
+                <p style="margin: 0;">Carregando eventos...</p>
+            </div>
+        `;
+        
+        // Tentar buscar dados reais
         let events = await fetchEconomicCalendarFromAPI();
         
         if (!events || events.length === 0) {
-            macroLog('⚠️ Usando geração local de calendário como backup', 'warn');
-            events = generateLocalCalendarEvents();
+            container.innerHTML = `
+                <div style="text-align: center; padding: 30px; color: #ef4444;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 32px; margin-bottom: 12px; opacity: 0.7;"></i>
+                    <p style="margin: 0; font-weight: 600;">Erro ao carregar calendário</p>
+                    <p style="margin: 8px 0 0; font-size: 12px; color: #888;">Não foi possível obter eventos da API.</p>
+                    <button onclick="window.updateEconomicCalendar()" style="margin-top: 12px; padding: 8px 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white; cursor: pointer; font-size: 12px;">
+                        <i class="fas fa-sync-alt"></i> Tentar novamente
+                    </button>
+                </div>
+            `;
+            return;
         }
         
         container.innerHTML = events.slice(0, 6).map((e, idx) => `
@@ -1718,81 +1747,17 @@
         // Mostrar última atualização
         const updateInfo = document.createElement('div');
         updateInfo.style.cssText = 'font-size: 10px; color: #555; text-align: right; margin-top: 8px; padding-right: 8px;';
-        updateInfo.textContent = `Atualizado: ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+        updateInfo.textContent = `Atualizado: ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • Fonte: FMP API`;
         container.appendChild(updateInfo);
     }
     
-    // Gerar eventos locais como fallback
-    function generateLocalCalendarEvents() {
-        const today = new Date();
-        const events = [];
-        
-        // Adicionar reuniões FOMC
-        for (const m of ALL_FOMC_MEETINGS) {
-            const d = new Date(m.date);
-            if (d >= today && d <= new Date(today.getTime() + 60 * 86400000)) {
-                events.push({ 
-                    day: d.getDate(), 
-                    month: d.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase(), 
-                    time: '16:00', 
-                    title: 'Decisão FOMC', 
-                    country: 'EUA', 
-                    impact: 'high',
-                    fullDate: m.date,
-                    hasHistory: true
-                });
-            }
-        }
-        
-        // Adicionar NFP e CPI para os próximos 2 meses
-        for (let m = today.getMonth(); m <= today.getMonth() + 2; m++) {
-            const month = m % 12;
-            const year = today.getFullYear() + Math.floor(m / 12);
-            
-            // NFP - primeira sexta-feira do mês
-            const nfp = new Date(year, month, 1);
-            while (nfp.getDay() !== 5) nfp.setDate(nfp.getDate() + 1);
-            if (nfp > today) {
-                events.push({ 
-                    day: nfp.getDate(), 
-                    month: nfp.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase(), 
-                    time: '10:30', 
-                    title: 'Non-Farm Payrolls', 
-                    country: 'EUA', 
-                    impact: 'high',
-                    fullDate: nfp.toISOString().split('T')[0],
-                    hasHistory: true
-                });
-            }
-            
-            // CPI - geralmente dia 12-14 do mês
-            const cpi = new Date(year, month, 12);
-            if (cpi > today) {
-                events.push({ 
-                    day: 12, 
-                    month: cpi.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase(), 
-                    time: '10:30', 
-                    title: 'CPI (Inflação)', 
-                    country: 'EUA', 
-                    impact: 'high',
-                    fullDate: cpi.toISOString().split('T')[0],
-                    hasHistory: true
-                });
-            }
-        }
-        
-        // Ordenar por data
-        events.sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate));
-        return events;
-    }
-    
     async function showEventDetails(eventTitle, eventDate) {
-        // Buscar histórico real da API primeiro
+        // Buscar histórico real da API
         let history = await fetchEventHistoryFromAPI(eventTitle);
         
-        // Fallback para dados locais se API falhar
+        // Usar cache se disponível
         if (!history || history.length === 0) {
-            history = ECONOMIC_HISTORY[eventTitle] || [];
+            history = ECONOMIC_HISTORY_CACHE[eventTitle] || [];
         }
         
         // Remover modal antigo
@@ -1856,7 +1821,11 @@
                             `).join('')}
                         </div>
                     ` : `
-                        <p style="color: #666; text-align: center; padding: 20px;">Sem histórico disponível</p>
+                        <div style="text-align: center; padding: 20px; color: #888;">
+                            <i class="fas fa-database" style="font-size: 24px; margin-bottom: 8px; opacity: 0.5;"></i>
+                            <p style="margin: 0;">Histórico não disponível via API</p>
+                            <p style="margin: 4px 0 0; font-size: 11px; color: #666;">Dados históricos serão exibidos quando disponíveis</p>
+                        </div>
                     `}
                     
                     <!-- Expectativa -->
