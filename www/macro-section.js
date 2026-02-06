@@ -432,7 +432,11 @@
                     
                     <!-- Timeframe Buttons -->
                     <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <div style="display: flex; gap: 6px; flex-wrap: wrap; flex: 1;">
+                        <div style="display: flex; gap: 4px; flex-wrap: wrap; flex: 1;">
+                            <button class="ind-tf-btn" data-period="15m">15m</button>
+                            <button class="ind-tf-btn" data-period="30m">30m</button>
+                            <button class="ind-tf-btn" data-period="4h">4H</button>
+                            <button class="ind-tf-btn" data-period="12h">12H</button>
                             <button class="ind-tf-btn active" data-period="1d">1D</button>
                             <button class="ind-tf-btn" data-period="1w">1S</button>
                             <button class="ind-tf-btn" data-period="1M">1M</button>
@@ -571,24 +575,28 @@
             <div style="flex: 1; padding: 8px; position: relative;">
                 <canvas id="fs-chart-canvas" style="width: 100%; height: 100%;"></canvas>
             </div>
-            <div style="padding: 12px; display: flex; gap: 8px; justify-content: center; background: rgba(0,0,0,0.5);">
+            <div style="padding: 12px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; background: rgba(0,0,0,0.5);">
+                <button class="fs-tf-btn ${indicatorChartPeriod === '15m' ? 'active' : ''}" data-period="15m">15m</button>
+                <button class="fs-tf-btn ${indicatorChartPeriod === '30m' ? 'active' : ''}" data-period="30m">30m</button>
+                <button class="fs-tf-btn ${indicatorChartPeriod === '4h' ? 'active' : ''}" data-period="4h">4H</button>
+                <button class="fs-tf-btn ${indicatorChartPeriod === '12h' ? 'active' : ''}" data-period="12h">12H</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '1d' ? 'active' : ''}" data-period="1d">1D</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '1w' ? 'active' : ''}" data-period="1w">1S</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '1M' ? 'active' : ''}" data-period="1M">1M</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '6M' ? 'active' : ''}" data-period="6M">6M</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '1Y' ? 'active' : ''}" data-period="1Y">1A</button>
-                <div style="width: 1px; background: rgba(255,255,255,0.2); margin: 0 8px;"></div>
+                <div style="width: 1px; background: rgba(255,255,255,0.2); margin: 0 4px;"></div>
                 <button class="fs-type-btn ${indicatorChartType === 'line' ? 'active' : ''}" data-type="line"><i class="fas fa-chart-line"></i></button>
                 <button class="fs-type-btn ${indicatorChartType === 'candle' ? 'active' : ''}" data-type="candle"><i class="fas fa-chart-bar"></i></button>
             </div>
             <style>
                 .fs-tf-btn, .fs-type-btn {
-                    padding: 10px 16px;
+                    padding: 8px 12px;
                     background: rgba(255,255,255,0.05);
                     border: 1px solid rgba(255,255,255,0.1);
                     border-radius: 10px;
                     color: #888;
-                    font-size: 14px;
+                    font-size: 12px;
                     font-weight: 600;
                     cursor: pointer;
                 }
@@ -640,6 +648,10 @@
 
     async function loadFullscreenChartData(symbol) {
         const periodMap = {
+            '15m': { interval: '1m', range: '1d' },
+            '30m': { interval: '5m', range: '1d' },
+            '4h': { interval: '5m', range: '1d' },
+            '12h': { interval: '15m', range: '1d' },
             '1d': { interval: '15m', range: '1d' },
             '1w': { interval: '1h', range: '5d' },
             '1M': { interval: '1d', range: '1mo' },
@@ -660,12 +672,12 @@
             for (const url of proxyUrls) {
                 try {
                     const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 5000);
+                    const timeout = setTimeout(() => controller.abort(), 6000);
                     const response = await fetch(url, { signal: controller.signal });
                     clearTimeout(timeout);
                     if (response.ok) {
                         data = await response.json();
-                        break;
+                        if (data?.chart?.result?.[0]) break;
                     }
                 } catch (e) {
                     continue;
@@ -902,11 +914,15 @@
         try {
             // Mapear período para Yahoo Finance
             const periodMap = {
-                '1d': { interval: '15m', range: '1d' },   // 15min candles, último dia
-                '1w': { interval: '1h', range: '5d' },    // 1h candles, 5 dias
-                '1M': { interval: '1d', range: '1mo' },   // 1 dia candles, 1 mês
-                '6M': { interval: '1d', range: '6mo' },   // 1 dia candles, 6 meses
-                '1Y': { interval: '1wk', range: '1y' },   // 1 semana candles, 1 ano
+                '15m': { interval: '1m', range: '1d' },    // 1min candles, último dia
+                '30m': { interval: '5m', range: '1d' },    // 5min candles, último dia
+                '4h': { interval: '5m', range: '1d' },     // 5min candles, último dia
+                '12h': { interval: '15m', range: '1d' },   // 15min candles, último dia
+                '1d': { interval: '15m', range: '1d' },    // 15min candles, último dia
+                '1w': { interval: '1h', range: '5d' },     // 1h candles, 5 dias
+                '1M': { interval: '1d', range: '1mo' },    // 1 dia candles, 1 mês
+                '6M': { interval: '1d', range: '6mo' },    // 1 dia candles, 6 meses
+                '1Y': { interval: '1wk', range: '1y' },    // 1 semana candles, 1 ano
             };
             
             const config = periodMap[indicatorChartPeriod] || periodMap['1d'];
@@ -923,12 +939,12 @@
             for (const url of proxyUrls) {
                 try {
                     const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 5000);
+                    const timeout = setTimeout(() => controller.abort(), 6000);
                     const response = await fetch(url, { signal: controller.signal });
                     clearTimeout(timeout);
                     if (response.ok) {
                         data = await response.json();
-                        break;
+                        if (data?.chart?.result?.[0]) break;
                     }
                 } catch (e) {
                     continue;
