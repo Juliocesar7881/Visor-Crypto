@@ -3137,8 +3137,9 @@
                 </div>
                 <div class="chart-fullscreen-body">
                     <div class="chart-fullscreen-periods">
-                        <button class="chart-fullscreen-period-btn active" data-period="1m" onclick="selectFullscreenPeriod('1m')">1m</button>
+                        <button class="chart-fullscreen-period-btn" data-period="1m" onclick="selectFullscreenPeriod('1m')">1m</button>
                         <button class="chart-fullscreen-period-btn" data-period="5m" onclick="selectFullscreenPeriod('5m')">5m</button>
+                        <button class="chart-fullscreen-period-btn active" data-period="15m" onclick="selectFullscreenPeriod('15m')">15m</button>
                         <button class="chart-fullscreen-period-btn" data-period="30m" onclick="selectFullscreenPeriod('30m')">30m</button>
                         <button class="chart-fullscreen-period-btn" data-period="1h" onclick="selectFullscreenPeriod('1h')">1h</button>
                         <button class="chart-fullscreen-period-btn" data-period="4h" onclick="selectFullscreenPeriod('4h')">4h</button>
@@ -3177,17 +3178,21 @@
                             <div class="timeframe-selector" onclick="toggleTimeframeDropdown()">
                                 <span class="timeframe-selector-label">
                                     <i class="fas fa-clock"></i>
-                                    <span id="selected-timeframe">1 minuto</span>
+                                    <span id="selected-timeframe">15 minutos</span>
                                 </span>
                                 <i class="fas fa-chevron-down timeframe-selector-arrow"></i>
                             </div>
                             <div class="timeframe-options">
-                                <div class="timeframe-option active" data-period="1m" onclick="selectTimeframe('1m', '1 minuto')">
+                                <div class="timeframe-option" data-period="1m" onclick="selectTimeframe('1m', '1 minuto')">
                                     <span>1 minuto</span>
                                     <i class="fas fa-check timeframe-option-check"></i>
                                 </div>
                                 <div class="timeframe-option" data-period="5m" onclick="selectTimeframe('5m', '5 minutos')">
                                     <span>5 minutos</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                                <div class="timeframe-option active" data-period="15m" onclick="selectTimeframe('15m', '15 minutos')">
+                                    <span>15 minutos</span>
                                     <i class="fas fa-check timeframe-option-check"></i>
                                 </div>
                                 <div class="timeframe-option" data-period="30m" onclick="selectTimeframe('30m', '30 minutos')">
@@ -3633,10 +3638,20 @@
                                     <div class="ma-value" id="ma-7">--</div>
                                     <div class="ma-signal" id="ma-7-signal"></div>
                                 </div>
+                                <div class="ma-item" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, transparent 100%); border: 1px solid rgba(34, 197, 94, 0.3);">
+                                    <div class="ma-label" style="color: #22c55e;">EMA 20</div>
+                                    <div class="ma-value" id="ema-20">--</div>
+                                    <div class="ma-signal" id="ema-20-signal"></div>
+                                </div>
                                 <div class="ma-item">
                                     <div class="ma-label">MA 25</div>
                                     <div class="ma-value" id="ma-25">--</div>
                                     <div class="ma-signal" id="ma-25-signal"></div>
+                                </div>
+                                <div class="ma-item" style="background: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, transparent 100%); border: 1px solid rgba(249, 115, 22, 0.3);">
+                                    <div class="ma-label" style="color: #f97316;">EMA 50</div>
+                                    <div class="ma-value" id="ema-50">--</div>
+                                    <div class="ma-signal" id="ema-50-signal"></div>
                                 </div>
                                 <div class="ma-item">
                                     <div class="ma-label">MA 99</div>
@@ -3649,6 +3664,35 @@
                                     <div class="ma-signal" id="ma-200-signal"></div>
                                 </div>
                             </div>
+                            
+                            <!-- Support and Resistance Confluence -->
+                            <div style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; border: 1px solid var(--border-subtle);">
+                                <div style="font-size: 12px; font-weight: 700; color: var(--accent-purple); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                                    <i class="fas fa-layer-group"></i> Suporte & Resistência (Confluência)
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #22c55e;">
+                                        <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">SUPORTE</div>
+                                        <div style="font-size: 14px; font-weight: 700; color: #22c55e;" id="sr-support">--</div>
+                                        <div style="font-size: 10px; color: var(--text-muted);" id="sr-support-dist">-- abaixo</div>
+                                    </div>
+                                    <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #ef4444;">
+                                        <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">RESISTÊNCIA</div>
+                                        <div style="font-size: 14px; font-weight: 700; color: #ef4444;" id="sr-resistance">--</div>
+                                        <div style="font-size: 10px; color: var(--text-muted);" id="sr-resistance-dist">-- acima</div>
+                                    </div>
+                                </div>
+                                <div style="margin-top: 10px; padding: 8px; background: var(--bg-secondary); border-radius: 8px;">
+                                    <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">FORÇA DA CONFLUÊNCIA</div>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <div style="flex: 1; height: 6px; background: var(--bg-primary); border-radius: 3px; overflow: hidden;">
+                                            <div id="sr-confluence-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e, #f97316); border-radius: 3px; transition: width 0.5s ease;"></div>
+                                        </div>
+                                        <span id="sr-confluence-value" style="font-size: 12px; font-weight: 700; color: var(--text-primary);">--</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <div class="ma-summary" id="ma-summary">
                                 <i class="fas fa-spinner fa-spin"></i> Calculando...
                             </div>
@@ -3757,7 +3801,7 @@
                         <div class="fed-current-rate">
                             <div>
                                 <div class="fed-rate-label">Taxa de Juros Atual (Fed Funds)</div>
-                                <div class="fed-rate-value" id="current-fed-rate">5.25-5.50%</div>
+                                <div class="fed-rate-value" id="current-fed-rate">--</div>
                             </div>
                             <div style="text-align: right;">
                                 <div class="fed-rate-label">Última Decisão</div>
@@ -4649,10 +4693,16 @@
         });
 
         // ============================================
-        // BINANCE WEBSOCKET - PREÇOS
+        // BINANCE WEBSOCKET - PREÇOS EM TEMPO REAL
         // ============================================
         let wsRetryCount = 0;
         const MAX_WS_RETRIES = 3;
+        const CORS_PROXY = 'https://corsproxy.io/?';
+        
+        // Verificar se WebSocket está disponível e funcionando
+        function isWebSocketSupported() {
+            return typeof WebSocket !== 'undefined';
+        }
         
         function connectPriceStream() {
             try {
@@ -4704,27 +4754,83 @@
             }
         }
         
-        // Fallback: Buscar preços via REST API
+        // Fallback: Buscar preços via REST API com múltiplos proxies
         async function fetchPricesViaREST() {
+            const symbols = selectedCryptos.map(s => `"${s}"`).join(',');
+            const binanceUrl = `https://api.binance.com/api/v3/ticker/24hr?symbols=[${symbols}]`;
+            
+            // Lista de proxies CORS para tentar
+            const proxies = [
+                '', // Direto primeiro
+                'https://corsproxy.io/?',
+                'https://api.allorigins.win/raw?url=',
+                'https://cors-anywhere.herokuapp.com/'
+            ];
+            
+            for (const proxy of proxies) {
+                try {
+                    const url = proxy ? `${proxy}${encodeURIComponent(binanceUrl)}` : binanceUrl;
+                    const response = await fetch(url, { 
+                        timeout: 5000,
+                        headers: proxy.includes('herokuapp') ? { 'X-Requested-With': 'XMLHttpRequest' } : {}
+                    });
+                    
+                    if (!response.ok) continue;
+                    
+                    const data = await response.json();
+                    
+                    if (Array.isArray(data) && data.length > 0) {
+                        data.forEach(ticker => {
+                            const symbol = ticker.symbol;
+                            previousPrices[symbol] = prices[symbol] || parseFloat(ticker.lastPrice);
+                            prices[symbol] = parseFloat(ticker.lastPrice);
+                            priceChanges[symbol] = parseFloat(ticker.priceChangePercent);
+                            updatePriceDisplay(symbol);
+                        });
+                        
+                        renderAllPrices();
+                        updateAIRecommendation();
+                        console.log(`✅ Preços via ${proxy || 'Binance direto'}`);
+                        return; // Sucesso!
+                    }
+                } catch (e) {
+                    console.log(`⚠️ Proxy ${proxy || 'direto'} falhou:`, e.message);
+                }
+            }
+            
+            // Se todos falharam, tentar CoinGecko como último recurso
             try {
-                const symbols = selectedCryptos.map(s => `"${s}"`).join(',');
-                const response = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=[${symbols}]`);
+                await fetchPricesViaCoinGecko();
+            } catch (e) {
+                console.error('❌ Todos os métodos de preço falharam');
+            }
+        }
+        
+        // Fallback secundário: CoinGecko API
+        async function fetchPricesViaCoinGecko() {
+            const cgIds = selectedCryptos.map(s => CRYPTO_DATABASE[s]?.cgId).filter(id => id).join(',');
+            
+            try {
+                const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cgIds}&vs_currencies=usd&include_24hr_change=true`;
+                const response = await fetch(url);
                 const data = await response.json();
                 
-                data.forEach(ticker => {
-                    const symbol = ticker.symbol;
-                    previousPrices[symbol] = prices[symbol] || parseFloat(ticker.lastPrice);
-                    prices[symbol] = parseFloat(ticker.lastPrice);
-                    priceChanges[symbol] = parseFloat(ticker.priceChangePercent);
-                    updatePriceDisplay(symbol);
+                selectedCryptos.forEach(symbol => {
+                    const info = CRYPTO_DATABASE[symbol];
+                    if (info?.cgId && data[info.cgId]) {
+                        const cgData = data[info.cgId];
+                        previousPrices[symbol] = prices[symbol] || cgData.usd;
+                        prices[symbol] = cgData.usd;
+                        priceChanges[symbol] = cgData.usd_24h_change || 0;
+                        updatePriceDisplay(symbol);
+                    }
                 });
                 
-                // Atualizar AI e renderizar
                 renderAllPrices();
                 updateAIRecommendation();
-                console.log('✅ Preços atualizados via REST API');
+                console.log('✅ Preços via CoinGecko');
             } catch (e) {
-                console.error('❌ Erro ao buscar preços REST:', e);
+                console.error('❌ CoinGecko também falhou:', e);
             }
         }
 
@@ -6390,21 +6496,57 @@
                     throw new Error('Dados insuficientes');
                 }
                 
-                // Extrair preços de fechamento
+                // Extrair preços
                 const closePrices = klines.map(k => parseFloat(k[4]));
+                const highPrices = klines.map(k => parseFloat(k[2]));
+                const lowPrices = klines.map(k => parseFloat(k[3]));
                 const currentPrice = closePrices[closePrices.length - 1];
                 
-                // Calcular MAs
+                // Calcular MAs (Média Móvel Simples)
                 const calculateMA = (prices, period) => {
                     if (prices.length < period) return null;
                     const slice = prices.slice(-period);
                     return slice.reduce((a, b) => a + b, 0) / period;
                 };
                 
+                // Calcular EMA (Média Móvel Exponencial)
+                const calculateEMAFromPrices = (prices, period) => {
+                    if (prices.length < period) return null;
+                    const multiplier = 2 / (period + 1);
+                    let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period;
+                    for (let i = period; i < prices.length; i++) {
+                        ema = (prices[i] - ema) * multiplier + ema;
+                    }
+                    return ema;
+                };
+                
                 const ma7 = calculateMA(closePrices, 7);
+                const ema20 = calculateEMAFromPrices(closePrices, 20);
                 const ma25 = calculateMA(closePrices, 25);
+                const ema50 = calculateEMAFromPrices(closePrices, 50);
                 const ma99 = calculateMA(closePrices, 99);
                 const ma200 = closePrices.length >= 200 ? calculateMA(closePrices, 200) : null;
+                
+                // Calcular Suporte e Resistência por Confluência
+                const recentPeriod = 20; // Últimos 20 dias
+                const recentHighs = highPrices.slice(-recentPeriod);
+                const recentLows = lowPrices.slice(-recentPeriod);
+                
+                // Encontrar níveis de pivô
+                const resistance = Math.max(...recentHighs);
+                const support = Math.min(...recentLows);
+                
+                // Calcular confluência (quantas MAs estão próximas do suporte/resistência)
+                const allMAs = [ma7, ema20, ma25, ema50, ma99, ma200].filter(m => m !== null);
+                let confluenceScore = 0;
+                const confluenceThreshold = 0.02; // 2% de tolerância
+                
+                allMAs.forEach(ma => {
+                    const distToSupport = Math.abs(ma - support) / support;
+                    const distToResistance = Math.abs(ma - resistance) / resistance;
+                    if (distToSupport < confluenceThreshold) confluenceScore += 1;
+                    if (distToResistance < confluenceThreshold) confluenceScore += 1;
+                });
                 
                 // Formatar preço
                 const formatMAPrice = (price) => {
@@ -6423,36 +6565,59 @@
                     return { class: 'neutral', text: '→ NEUTRO' };
                 };
                 
-                // Atualizar UI
+                // Atualizar UI - MAs
                 document.getElementById('ma-7').textContent = formatMAPrice(ma7);
+                document.getElementById('ema-20').textContent = formatMAPrice(ema20);
                 document.getElementById('ma-25').textContent = formatMAPrice(ma25);
+                document.getElementById('ema-50').textContent = formatMAPrice(ema50);
                 document.getElementById('ma-99').textContent = formatMAPrice(ma99);
                 document.getElementById('ma-200').textContent = formatMAPrice(ma200);
                 
                 const signal7 = getSignal(ma7);
+                const signalEma20 = getSignal(ema20);
                 const signal25 = getSignal(ma25);
+                const signalEma50 = getSignal(ema50);
                 const signal99 = getSignal(ma99);
                 const signal200 = getSignal(ma200);
                 
                 document.getElementById('ma-7-signal').className = `ma-signal ${signal7.class}`;
                 document.getElementById('ma-7-signal').textContent = signal7.text;
+                document.getElementById('ema-20-signal').className = `ma-signal ${signalEma20.class}`;
+                document.getElementById('ema-20-signal').textContent = signalEma20.text;
                 document.getElementById('ma-25-signal').className = `ma-signal ${signal25.class}`;
                 document.getElementById('ma-25-signal').textContent = signal25.text;
+                document.getElementById('ema-50-signal').className = `ma-signal ${signalEma50.class}`;
+                document.getElementById('ema-50-signal').textContent = signalEma50.text;
                 document.getElementById('ma-99-signal').className = `ma-signal ${signal99.class}`;
                 document.getElementById('ma-99-signal').textContent = signal99.text;
                 document.getElementById('ma-200-signal').className = `ma-signal ${signal200.class}`;
                 document.getElementById('ma-200-signal').textContent = signal200.text;
                 
+                // Atualizar UI - Suporte e Resistência
+                document.getElementById('sr-support').textContent = formatMAPrice(support);
+                document.getElementById('sr-resistance').textContent = formatMAPrice(resistance);
+                
+                const distToSupport = ((currentPrice - support) / currentPrice) * 100;
+                const distToResistance = ((resistance - currentPrice) / currentPrice) * 100;
+                document.getElementById('sr-support-dist').textContent = `${distToSupport.toFixed(1)}% abaixo`;
+                document.getElementById('sr-resistance-dist').textContent = `${distToResistance.toFixed(1)}% acima`;
+                
+                // Confluência (0-12 possível, normalizar para 0-100%)
+                const maxConfluence = allMAs.length * 2;
+                const confluencePercent = Math.min(100, Math.round((confluenceScore / maxConfluence) * 100));
+                document.getElementById('sr-confluence-bar').style.width = `${confluencePercent}%`;
+                document.getElementById('sr-confluence-value').textContent = `${confluencePercent}%`;
+                
                 // Resumo geral
-                const signals = [signal7, signal25, signal99, signal200].filter(s => s.text !== '--');
+                const signals = [signal7, signalEma20, signal25, signalEma50, signal99, signal200].filter(s => s.text !== '--');
                 const buyCount = signals.filter(s => s.class === 'buy').length;
                 const sellCount = signals.filter(s => s.class === 'sell').length;
                 
                 const summaryEl = document.getElementById('ma-summary');
                 if (buyCount > sellCount) {
-                    summaryEl.innerHTML = `<span style="color: var(--accent-green);"><i class="fas fa-arrow-trend-up"></i> TENDÊNCIA DE ALTA</span> - Preço acima de ${buyCount} de ${signals.length} MAs`;
+                    summaryEl.innerHTML = `<span style="color: var(--accent-green);"><i class="fas fa-arrow-trend-up"></i> TENDÊNCIA DE ALTA</span> - Preço acima de ${buyCount} de ${signals.length} MAs/EMAs`;
                 } else if (sellCount > buyCount) {
-                    summaryEl.innerHTML = `<span style="color: var(--accent-red);"><i class="fas fa-arrow-trend-down"></i> TENDÊNCIA DE BAIXA</span> - Preço abaixo de ${sellCount} de ${signals.length} MAs`;
+                    summaryEl.innerHTML = `<span style="color: var(--accent-red);"><i class="fas fa-arrow-trend-down"></i> TENDÊNCIA DE BAIXA</span> - Preço abaixo de ${sellCount} de ${signals.length} MAs/EMAs`;
                 } else {
                     summaryEl.innerHTML = `<span style="color: var(--accent-yellow);"><i class="fas fa-minus"></i> CONSOLIDAÇÃO</span> - Preço próximo das médias`;
                 }
@@ -8311,6 +8476,9 @@
             // AI update every 2s
             setInterval(updateAIRecommendation, 2000);
             
+            // Preços via REST a cada 3s como fallback do WebSocket
+            setInterval(fetchPricesViaREST, 3000);
+            
             // Order Book every 2s
             setInterval(fetchOrderBook, 2000);
             
@@ -8354,7 +8522,7 @@
         // CHART MODAL - Gráfico de Preços
         // ============================================
         let currentChartSymbol = null;
-        let currentChartPeriod = '1m';
+        let currentChartPeriod = '15m';
         let currentChartType = 'line';
         let chartInstance = null;
         let candleData = null;
@@ -8376,15 +8544,15 @@
             document.getElementById('chart-modal').classList.add('active');
             document.body.style.overflow = 'hidden';
             
-            // Reset filtro para 1m
-            currentChartPeriod = '1m';
+            // Reset filtro para 15m (padrão)
+            currentChartPeriod = '15m';
             currentChartType = 'line';
             candleData = null; // Limpar dados anteriores
             
-            // Reset dropdown
-            document.getElementById('selected-timeframe').textContent = '1 minuto';
+            // Reset dropdown para 15 minutos
+            document.getElementById('selected-timeframe').textContent = '15 minutos';
             document.querySelectorAll('.timeframe-option').forEach(opt => opt.classList.remove('active'));
-            const firstOption = document.querySelector('.timeframe-option[data-period="1m"]');
+            const firstOption = document.querySelector('.timeframe-option[data-period="15m"]');
             if (firstOption) firstOption.classList.add('active');
             
             // Reset tipo de gráfico
@@ -9757,7 +9925,7 @@ Confiança para operação: Baixa. Melhor aguardar.`;
         });
         let fullscreenChartInstance = null;
         let fullscreenChartType = 'line';
-        let fullscreenPeriod = '1m';
+        let fullscreenPeriod = '15m';
         let fullscreenRefreshInterval = null;
         let fullscreenCandleData = []; // Dados separados para fullscreen
 
@@ -9781,7 +9949,7 @@ Confiança para operação: Baixa. Melhor aguardar.`;
             
             // Copiar configurações atuais
             fullscreenChartType = currentChartType || 'line';
-            fullscreenPeriod = currentChartPeriod || '1m';
+            fullscreenPeriod = currentChartPeriod || '15m';
             
             // Atualizar UI do fullscreen
             document.querySelectorAll('#chart-fullscreen-modal .chart-type-btn').forEach(btn => {
@@ -10789,6 +10957,13 @@ Confiança para operação: Baixa. Melhor aguardar.`;
 
         function handleBackButton() {
             console.log('🔙 Back button pressed, current section:', currentSection);
+            
+            // Se modal de análise técnica está aberto, fechar e voltar para o gráfico
+            const taModal = document.getElementById('ta-modal');
+            if (taModal && taModal.classList.contains('active')) {
+                closeTechnicalAnalysis();
+                return true;
+            }
             
             // Se modal de indicador está aberto, fechar (volta para MACRO)
             const indicatorModal = document.getElementById('indicator-detail-modal');
