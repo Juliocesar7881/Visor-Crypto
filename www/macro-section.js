@@ -381,7 +381,7 @@
     function openIndicatorModal(symbol) {
         macroLog(`Abrindo modal para ${symbol}`, 'info');
         currentIndicatorSymbol = symbol;
-        indicatorChartPeriod = '15m';
+        indicatorChartPeriod = '1d';
         indicatorChartType = 'line';
         indicatorCandleData = null;
         
@@ -433,11 +433,11 @@
                     <!-- Timeframe Buttons -->
                     <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <div style="display: flex; gap: 6px; flex-wrap: wrap; flex: 1;">
-                            <button class="ind-tf-btn active" data-period="15m">15m</button>
-                            <button class="ind-tf-btn" data-period="1h">1H</button>
-                            <button class="ind-tf-btn" data-period="4h">4H</button>
-                            <button class="ind-tf-btn" data-period="1d">1D</button>
+                            <button class="ind-tf-btn active" data-period="1d">1D</button>
                             <button class="ind-tf-btn" data-period="1w">1S</button>
+                            <button class="ind-tf-btn" data-period="1M">1M</button>
+                            <button class="ind-tf-btn" data-period="6M">6M</button>
+                            <button class="ind-tf-btn" data-period="1Y">1A</button>
                         </div>
                         <div style="display: flex; gap: 6px;">
                             <button class="ind-type-btn active" data-type="line" title="Linha"><i class="fas fa-chart-line"></i></button>
@@ -533,12 +533,11 @@
         // Maximize button
         document.getElementById('indicator-maximize-btn').addEventListener('click', () => openFullscreenChart(symbol));
         
-        // Carregar dados com delay para garantir que o canvas tenha dimensões
-        // Usar delay maior para garantir que animação terminou
+        // Carregar dados imediatamente
         setTimeout(() => {
             loadIndicatorChartData(symbol);
             loadIndicatorStats(symbol);
-        }, 300);
+        }, 50);
     }
 
     // ============================================
@@ -573,11 +572,11 @@
                 <canvas id="fs-chart-canvas" style="width: 100%; height: 100%;"></canvas>
             </div>
             <div style="padding: 12px; display: flex; gap: 8px; justify-content: center; background: rgba(0,0,0,0.5);">
-                <button class="fs-tf-btn ${indicatorChartPeriod === '15m' ? 'active' : ''}" data-period="15m">15m</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '1h' ? 'active' : ''}" data-period="1h">1H</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '4h' ? 'active' : ''}" data-period="4h">4H</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '1d' ? 'active' : ''}" data-period="1d">1D</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '1w' ? 'active' : ''}" data-period="1w">1S</button>
+                <button class="fs-tf-btn ${indicatorChartPeriod === '1M' ? 'active' : ''}" data-period="1M">1M</button>
+                <button class="fs-tf-btn ${indicatorChartPeriod === '6M' ? 'active' : ''}" data-period="6M">6M</button>
+                <button class="fs-tf-btn ${indicatorChartPeriod === '1Y' ? 'active' : ''}" data-period="1Y">1A</button>
                 <div style="width: 1px; background: rgba(255,255,255,0.2); margin: 0 8px;"></div>
                 <button class="fs-type-btn ${indicatorChartType === 'line' ? 'active' : ''}" data-type="line"><i class="fas fa-chart-line"></i></button>
                 <button class="fs-type-btn ${indicatorChartType === 'candle' ? 'active' : ''}" data-type="candle"><i class="fas fa-chart-bar"></i></button>
@@ -641,14 +640,14 @@
 
     async function loadFullscreenChartData(symbol) {
         const periodMap = {
-            '15m': { interval: '5m', range: '1d' },
-            '1h': { interval: '5m', range: '1d' },
-            '4h': { interval: '15m', range: '1d' },
             '1d': { interval: '15m', range: '1d' },
-            '1w': { interval: '1h', range: '5d' }
+            '1w': { interval: '1h', range: '5d' },
+            '1M': { interval: '1d', range: '1mo' },
+            '6M': { interval: '1d', range: '6mo' },
+            '1Y': { interval: '1wk', range: '1y' }
         };
         
-        const config = periodMap[indicatorChartPeriod] || periodMap['15m'];
+        const config = periodMap[indicatorChartPeriod] || periodMap['1d'];
         const encodedSymbol = encodeURIComponent(symbol);
         const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedSymbol}?interval=${config.interval}&range=${config.range}`;
         const proxyUrls = [
@@ -661,7 +660,7 @@
             for (const url of proxyUrls) {
                 try {
                     const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 8000);
+                    const timeout = setTimeout(() => controller.abort(), 5000);
                     const response = await fetch(url, { signal: controller.signal });
                     clearTimeout(timeout);
                     if (response.ok) {
@@ -781,7 +780,7 @@
             const x = padding.left + (i / (timestamps.length - 1)) * chartWidth;
             const date = new Date(timestamps[i]);
             let label;
-            if (indicatorChartPeriod === '15m' || indicatorChartPeriod === '1h' || indicatorChartPeriod === '4h' || indicatorChartPeriod === '1d') {
+            if (indicatorChartPeriod === '1d') {
                 label = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             } else {
                 label = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
@@ -873,7 +872,7 @@
             const x = padding.left + i * candleSpacing + candleSpacing / 2;
             const date = new Date(candleData[i][0]);
             let label;
-            if (indicatorChartPeriod === '15m' || indicatorChartPeriod === '1h' || indicatorChartPeriod === '4h' || indicatorChartPeriod === '1d') {
+            if (indicatorChartPeriod === '1d') {
                 label = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             } else {
                 label = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
@@ -901,13 +900,13 @@
         loadingEl.style.display = 'flex';
         
         try {
-            // Mapear período para Yahoo Finance (mais rápido)
+            // Mapear período para Yahoo Finance
             const periodMap = {
-                '15m': { interval: '5m', range: '1d' },   // 5min candles, último dia
-                '1h': { interval: '5m', range: '1d' },    // 5min candles, último dia
-                '4h': { interval: '15m', range: '1d' },   // 15min candles, último dia
                 '1d': { interval: '15m', range: '1d' },   // 15min candles, último dia
                 '1w': { interval: '1h', range: '5d' },    // 1h candles, 5 dias
+                '1M': { interval: '1d', range: '1mo' },   // 1 dia candles, 1 mês
+                '6M': { interval: '1d', range: '6mo' },   // 1 dia candles, 6 meses
+                '1Y': { interval: '1wk', range: '1y' },   // 1 semana candles, 1 ano
             };
             
             const config = periodMap[indicatorChartPeriod] || periodMap['1d'];
@@ -924,7 +923,7 @@
             for (const url of proxyUrls) {
                 try {
                     const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 8000);
+                    const timeout = setTimeout(() => controller.abort(), 5000);
                     const response = await fetch(url, { signal: controller.signal });
                     clearTimeout(timeout);
                     if (response.ok) {
@@ -1075,7 +1074,7 @@
             const x = padding.left + (i / (timestamps.length - 1)) * chartWidth;
             const date = new Date(timestamps[i]);
             let label;
-            if (indicatorChartPeriod === '15m' || indicatorChartPeriod === '1h' || indicatorChartPeriod === '4h' || indicatorChartPeriod === '1d') {
+            if (indicatorChartPeriod === '1d') {
                 label = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             } else {
                 label = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
@@ -1184,7 +1183,7 @@
             const x = padding.left + i * candleSpacing + candleSpacing / 2;
             const date = new Date(candleData[i][0]);
             let label;
-            if (indicatorChartPeriod === '15m' || indicatorChartPeriod === '1h' || indicatorChartPeriod === '4h' || indicatorChartPeriod === '1d') {
+            if (indicatorChartPeriod === '1d') {
                 label = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             } else {
                 label = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
