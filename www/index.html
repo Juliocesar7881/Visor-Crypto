@@ -3747,7 +3747,7 @@
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/microstrategy', 'MicroStrategy')">
-                        <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #d4200c, #ff4433); display: flex; align-items: center; justify-content: center; font-weight: 800; color: white; font-size: 14px;">M</div>
+                        <img src="microstrategy.png" alt="MicroStrategy" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
                             <div class="external-link-title">MicroStrategy</div>
                             <div class="external-link-desc">Arkham - Maior holder corporativo de BTC</div>
@@ -3755,9 +3755,7 @@
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/metamask', 'MetaMask')">
-                        <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #e27625, #f5841f); display: flex; align-items: center; justify-content: center;">
-                            <i class="fas fa-fox" style="color: white; font-size: 16px;">🦊</i>
-                        </div>
+                        <img src="metamask.png" alt="MetaMask" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
                             <div class="external-link-title">MetaMask</div>
                             <div class="external-link-desc">Arkham - Carteira Web3 popular</div>
@@ -3811,8 +3809,8 @@
                                 <div class="fed-rate-value" id="current-fed-rate">--</div>
                             </div>
                             <div style="text-align: right;">
-                                <div class="fed-rate-label">Última Decisão</div>
-                                <div style="font-size: 14px; font-weight: 600; color: var(--accent-yellow);">Manutenção</div>
+                                <div class="fed-rate-label">Taxa Efetiva (Fed Funds)</div>
+                                <div style="font-size: 14px; font-weight: 600;" id="last-fed-decision"><span style="color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i></span></div>
                             </div>
                         </div>
                         <div class="fed-next-meeting">
@@ -3841,7 +3839,7 @@
                         </div>
                         <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.7;">
                             O Fed Watch Tool mostra as probabilidades de mercado para mudanças nas taxas de juros do Federal Reserve. 
-                            Dados baseados nos futuros de Fed Funds negociados na CME. Um <strong style="color: var(--accent-green);">corte</strong> geralmente 
+                            Probabilidades calculadas com base em dados reais do Federal Reserve (FRED API): taxa efetiva, inflação (CPI) e desemprego, usando modelo econométrico (Regra de Taylor adaptada). Um <strong style="color: var(--accent-green);">corte</strong> geralmente 
                             é positivo para ativos de risco como cripto, enquanto <strong style="color: var(--accent-red);">aumento</strong> tende a ser negativo.
                         </p>
                     </div>
@@ -5342,8 +5340,42 @@
         function analyzeSentiment(title) {
             const lower = title.toLowerCase();
             // Lista expandida para capturar mais sentimentos e reduzir neutros
-            const positive = ['surge', 'surges', 'surging', 'rally', 'rallies', 'rallying', 'bull', 'bullish', 'high', 'highs', 'gain', 'gains', 'gaining', 'profit', 'profits', 'up', 'rise', 'rises', 'rising', 'soar', 'soars', 'soaring', 'boom', 'booming', 'record', 'records', 'adoption', 'approval', 'approved', 'approves', 'etf approved', 'breakthrough', 'milestone', 'skyrocket', 'skyrockets', 'pump', 'pumps', 'pumping', 'moon', 'mooning', 'outperform', 'outperforms', 'breakout', 'breaks out', 'growth', 'grows', 'growing', 'success', 'successful', 'win', 'wins', 'winning', 'positive', 'optimistic', 'strong', 'stronger', 'highest', 'peak', 'peaks', 'ath', 'all-time high', 'recovery', 'recovers', 'recovering', 'launch', 'launches', 'launched', 'partnership', 'partners', 'integration', 'upgrade', 'upgrades', 'buy', 'buying', 'accumulate', 'accumulating', 'inflows', 'inflow', 'support', 'supports', 'backed', 'backing', 'invest', 'invests', 'investing', 'investment', 'accept', 'accepts', 'accepting', 'expand', 'expands', 'expanding', 'expansion'];
-            const negative = ['crash', 'crashes', 'crashing', 'drop', 'drops', 'dropping', 'bear', 'bearish', 'low', 'lows', 'loss', 'losses', 'losing', 'down', 'fall', 'falls', 'falling', 'dump', 'dumps', 'dumping', 'fear', 'fears', 'hack', 'hacks', 'hacked', 'scam', 'scams', 'fraud', 'frauds', 'ban', 'bans', 'banned', 'reject', 'rejects', 'rejected', 'plunge', 'plunges', 'plunging', 'tumble', 'tumbles', 'tumbling', 'collapse', 'collapses', 'collapsing', 'sell', 'sells', 'selling', 'selloff', 'sell-off', 'decline', 'declines', 'declining', 'slump', 'slumps', 'slumping', 'slide', 'slides', 'sliding', 'tank', 'tanks', 'tanking', 'plummet', 'plummets', 'plummeting', 'weak', 'weaker', 'weakness', 'concern', 'concerns', 'concerned', 'worry', 'worries', 'worried', 'risk', 'risks', 'risky', 'danger', 'dangerous', 'warn', 'warns', 'warning', 'threat', 'threatens', 'threatening', 'trouble', 'troubles', 'problem', 'problems', 'issue', 'issues', 'crisis', 'lawsuit', 'sue', 'sues', 'sued', 'suing', 'investigation', 'investigate', 'investigates', 'fine', 'fines', 'fined', 'penalty', 'penalties', 'outflows', 'outflow', 'withdraw', 'withdraws', 'withdrawal', 'layoff', 'layoffs', 'cut', 'cuts', 'cutting', 'delay', 'delays', 'delayed', 'fail', 'fails', 'failed', 'failure', 'bubble', 'overvalued', 'manipulation'];
+            // === POSITIVO: Segurança OK, Exchanges positivas, Institucional, Regulação favorável ===
+            const positive = [
+                // Exchanges - positivo
+                'listing', 'proof of reserves',
+                // Institucional / Big Money
+                'blackrock', 'fidelity', 'grayscale', 'microstrategy', 'institutional adoption',
+                'fund inflows', 'inflows', 'inflow', 'whales', 'otc desk',
+                // Regulação favorável
+                'etf', 'approval', 'approved', 'approves', 'etf approved', 'regulatory clarity', 'mica',
+                'rate cut', 'cut rate',
+                // Sentimento positivo geral
+                'surge', 'surges', 'surging', 'rally', 'rallies', 'rallying', 'bull', 'bullish',
+                'gain', 'gains', 'gaining', 'rise', 'rises', 'rising', 'soar', 'soars', 'soaring',
+                'boom', 'booming', 'record', 'ath', 'all-time high', 'breakout', 'breaks out',
+                'recovery', 'recovers', 'accumulate', 'accumulating', 'buy', 'buying',
+                'adoption', 'partnership', 'integration', 'upgrade', 'launch', 'launches'
+            ];
+            // === NEGATIVO: Segurança, Exchanges negativas, Regulação contra ===
+            const negative = [
+                // Segurança (impacto rápido)
+                'hack', 'hacks', 'hacked', 'exploit', 'exploited', 'security breach', 'funds stolen',
+                'phishing', 'wallet risk', 'smart contract bug',
+                // Exchanges - negativo
+                'delisting', 'delisted', 'suspension', 'suspended', 'withdrawals paused',
+                // Regulação contra
+                'sec', 'rejection', 'rejected', 'rejects', 'ban', 'bans', 'banned',
+                'lawsuit', 'sue', 'sues', 'sued', 'suing', 'investigation', 'fine', 'fines', 'fined',
+                'penalty', 'penalties', 'cbdc',
+                // Sentimento negativo geral
+                'crash', 'crashes', 'crashing', 'drop', 'drops', 'dropping', 'bear', 'bearish',
+                'dump', 'dumps', 'dumping', 'fear', 'fears', 'scam', 'scams', 'fraud',
+                'plunge', 'plunges', 'plunging', 'collapse', 'collapses', 'collapsing',
+                'selloff', 'sell-off', 'decline', 'declines', 'slump', 'tank', 'tanks',
+                'outflows', 'outflow', 'withdrawal', 'layoff', 'layoffs', 'failure',
+                'fund outflows', 'rate hike', 'interest rate increase'
+            ];
             
             let positiveScore = 0;
             let negativeScore = 0;
@@ -5453,34 +5485,43 @@
         let hotNewsLastFetch = 0;
         let hotNewsFetchInProgress = null; // Promise para evitar múltiplas requisições simultâneas
         
-        // PALAVRAS-CHAVE ULTRA-RIGOROSAS - APENAS eventos que REALMENTE movem o mercado
-        // Máximo 5-10 notícias importantes por dia, não mais que isso
+        // PALAVRAS-CHAVE IMPORTANTES - Eventos geopolíticos, crises e macro que movem mercados
         const HOT_KEYWORDS = {
-            // GUERRA e CONFLITOS - apenas início/fim de guerras
-            war: [
-                'war declared', 'declares war', 'invasion begins', 'invades',
-                'nuclear strike', 'nuclear attack', 'peace treaty signed', 'ceasefire agreement'
+            // 🌍 Guerra / Conflitos Geopolíticos
+            geopolitical: [
+                'war', 'conflict', 'invasion', 'airstrike', 'missile', 'ceasefire',
+                'escalation', 'military action', 'nato', 'middle east', 'ukraine',
+                'israel', 'iran', 'taiwan', 'china tensions', 'red sea',
+                'oil supply disruption'
             ],
-            // FED e JUROS - apenas decisões oficiais
-            fed: [
-                'fed raises rates', 'fed cuts rates', 'fed hikes', 
-                'rate hike decision', 'rate cut decision', 'fomc rate decision',
-                'interest rate increase', 'interest rate decrease'
+            // 🏛️ Política extrema / Poder
+            politics: [
+                'biden', 'us election', 'presidential election',
+                'impeachment', 'coup', 'martial law', 'state of emergency',
+                'government shutdown'
             ],
-            // ACORDOS COMERCIAIS de grande escala
-            trade: [
-                'trade deal signed', 'trade agreement signed', 'tariff war',
-                'trade war begins', 'sanctions announced'
+            // 💣 Tarifas / Guerra Comercial
+            trade_war: [
+                'tariffs', 'tariff', 'trade war', 'sanctions', 'embargo', 'export ban',
+                'china-us trade', 'china us trade', 'retaliation', 'restrictions',
+                'supply chain disruption'
             ],
-            // CRISES FINANCEIRAS - colapsos reais
-            crisis: [
-                'bank collapses', 'bank failure', 'exchange collapses',
-                'market crash', 'stock market crashes', 'recession begins'
+            // 🏦 Colapso financeiro / Sistema
+            financial_collapse: [
+                'bank collapse', 'bank collapses', 'liquidity crisis', 'credit crunch',
+                'debt default', 'sovereign default', 'emergency bailout', 'capital controls',
+                'bank run', 'systemic risk'
             ],
-            // CRYPTO - apenas ETFs e regulação massiva
-            crypto_regulation: [
-                'bitcoin etf approved', 'ethereum etf approved', 'spot etf approved',
-                'crypto banned', 'bitcoin banned', 'bitcoin legal tender'
+            // 📉 Macroeconomia de choque
+            macro_shock: [
+                'recession', 'depression', 'inflation spike', 'hyperinflation',
+                'rate shock', 'emergency rate cut', 'emergency rate hike',
+                'yield curve inversion', 'unemployment surge'
+            ],
+            // 🛢️ Commodities estratégicas
+            commodities: [
+                'oil shock', 'gas supply', 'opec', 'production cut',
+                'energy crisis'
             ]
         };
         
@@ -5705,10 +5746,19 @@
         function analyzeSentimentForHot(title, category) {
             const lower = title.toLowerCase();
             
-            // Palavras positivas para mercado - EXPANDIDO
-            const positive = ['approve', 'approved', 'approval', 'adopt', 'adoption', 'adopted', 'rally', 'rallies', 'rallying', 'surge', 'surges', 'surging', 'peace', 'deal', 'agreement', 'stimulus', 'cut rate', 'rate cut', 'growth', 'grows', 'growing', 'gain', 'gains', 'gaining', 'rise', 'rises', 'rising', 'soar', 'soars', 'boom', 'booming', 'record', 'high', 'highs', 'bullish', 'bull', 'launch', 'launches', 'partnership', 'partners', 'integration', 'upgrade', 'invest', 'invests', 'investment', 'buy', 'buys', 'buying', 'accumulate', 'inflow', 'inflows', 'positive', 'optimistic', 'strong', 'milestone', 'breakthrough', 'success'];
-            // Palavras negativas para mercado - EXPANDIDO
-            const negative = ['ban', 'bans', 'banned', 'war', 'wars', 'attack', 'attacks', 'attacking', 'crash', 'crashes', 'crashing', 'crisis', 'sanction', 'sanctions', 'tariff', 'tariffs', 'conflict', 'conflicts', 'recession', 'default', 'defaults', 'collapse', 'collapses', 'collapsing', 'drop', 'drops', 'dropping', 'fall', 'falls', 'falling', 'plunge', 'plunges', 'plunging', 'dump', 'dumps', 'dumping', 'fear', 'fears', 'hack', 'hacks', 'hacked', 'scam', 'fraud', 'reject', 'rejects', 'rejected', 'decline', 'declines', 'slump', 'slide', 'tank', 'tanks', 'weak', 'weakness', 'concern', 'concerns', 'worry', 'worries', 'risk', 'risks', 'danger', 'warn', 'warns', 'warning', 'threat', 'threatens', 'trouble', 'lawsuit', 'sue', 'investigation', 'fine', 'fines', 'penalty', 'outflow', 'outflows', 'withdraw', 'layoff', 'layoffs', 'fail', 'fails', 'failure', 'bearish', 'bear', 'panic', 'selloff', 'sell-off', 'capitulation', 'liquidation', 'wipeout'];
+            // Palavras positivas - notícias importantes
+            const positive = ['peace', 'ceasefire', 'deal', 'agreement', 'stimulus', 'rate cut', 'cut rate',
+                'approval', 'approved', 'rally', 'surge', 'recovery', 'growth', 'boom', 'bullish',
+                'inflow', 'inflows', 'adoption', 'breakthrough', 'milestone'];
+            // Palavras negativas - notícias importantes
+            const negative = ['war', 'conflict', 'invasion', 'airstrike', 'missile', 'escalation',
+                'tariff', 'tariffs', 'sanctions', 'embargo', 'trade war', 'retaliation',
+                'crash', 'collapse', 'crisis', 'default', 'recession', 'depression',
+                'bank run', 'liquidity crisis', 'inflation spike', 'hyperinflation',
+                'rate hike', 'rate shock', 'oil shock', 'energy crisis',
+                'coup', 'martial law', 'government shutdown', 'impeachment',
+                'capitulation', 'liquidation', 'wipeout', 'panic', 'selloff', 'sell-off',
+                'bearish', 'fear', 'dump', 'plunge'];
             
             let score = 0;
             positive.forEach(word => { if (lower.includes(word)) score += 1; });
@@ -6777,7 +6827,7 @@
                 let cutProb = 0;
                 let holdProb = 0;
                 let hikeProb = 0;
-                let currentRate = '4.25-4.50%';
+                let currentRate = '--';
                 let lastDecisions = [];
                 let dataSource = 'estimated';
                 
@@ -6818,7 +6868,7 @@
                 
                 // 2. Tentar buscar taxa atual do FRED
                 try {
-                    const fredApiKey = 'your_fred_api_key'; // API pública do FRED
+                    const fredApiKey = '289c022214958a3eb611142e8dc34f6b'; // FRED API key
                     const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=FEDFUNDS&api_key=${fredApiKey}&file_type=json&limit=3&sort_order=desc`;
                     
                     const fredRes = await fetchWithTimeout(fredUrl, {}, 5000);
@@ -6903,76 +6953,146 @@
                     </div>
                 </div>
                 
-                <!-- Próximas 2 reuniões com todas as probabilidades -->
-                ${nextMeeting2 ? `
+                <!-- Histórico FOMC - Dados reais via FRED API -->
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
                     <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-                        <i class="fas fa-calendar-alt"></i> Próximas 2 Reuniões - Probabilidades Completas
+                        <i class="fas fa-history"></i> Últimas Decisões FOMC
                     </div>
-                    <div style="display: flex; gap: 10px;">
-                        <!-- Próxima reunião -->
-                        <div style="flex: 1; background: var(--bg-secondary); border-radius: 12px; padding: 14px; border: 2px solid var(--accent-blue);">
-                            <div style="font-size: 11px; color: var(--accent-blue); margin-bottom: 8px; font-weight: 600; text-align: center;">${nextMeeting?.label || 'Próxima'}</div>
-                            <div style="display: flex; flex-direction: column; gap: 6px;">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <span style="font-size: 10px; color: var(--text-muted);">Corte</span>
-                                    <span style="font-size: 12px; font-weight: 700; color: var(--accent-green);">${cutProb}%</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <span style="font-size: 10px; color: var(--text-muted);">Manutenção</span>
-                                    <span style="font-size: 12px; font-weight: 700; color: var(--accent-yellow);">${holdProb}%</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <span style="font-size: 10px; color: var(--text-muted);">Aumento</span>
-                                    <span style="font-size: 12px; font-weight: 700; color: var(--accent-red);">${hikeProb}%</span>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- Segunda reunião (estimativas ajustadas) -->
-                        <div style="flex: 1; background: var(--bg-secondary); border-radius: 12px; padding: 14px;">
-                            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; text-align: center;">${nextMeeting2.label}</div>
-                            <div style="display: flex; flex-direction: column; gap: 6px;">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <span style="font-size: 10px; color: var(--text-muted);">Corte</span>
-                                    <span style="font-size: 12px; font-weight: 700; color: var(--accent-green);">~${Math.max(15, Math.min(60, cutProb - 5))}%</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <span style="font-size: 10px; color: var(--text-muted);">Manutenção</span>
-                                    <span style="font-size: 12px; font-weight: 700; color: var(--accent-yellow);">~${Math.max(30, Math.min(70, holdProb + 5))}%</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <span style="font-size: 10px; color: var(--text-muted);">Aumento</span>
-                                    <span style="font-size: 12px; font-weight: 700; color: var(--accent-red);">~${Math.max(5, hikeProb)}%</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                ` : ''}
-                
-                <!-- Histórico das últimas 2 decisões -->
-                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
-                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-                        <i class="fas fa-history"></i> Últimas Decisões
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <div style="flex: 1; background: var(--bg-secondary); border-radius: 10px; padding: 12px; text-align: center;">
-                            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">Dez/25</div>
-                            <div style="font-size: 16px; font-weight: 800; color: var(--accent-green);">4.25%</div>
-                            <div style="font-size: 9px; color: var(--accent-green); margin-top: 2px;">↓ Corte 25pb</div>
-                        </div>
-                        <div style="flex: 1; background: var(--bg-secondary); border-radius: 10px; padding: 12px; text-align: center;">
-                            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">Nov/25</div>
-                            <div style="font-size: 16px; font-weight: 800; color: var(--accent-green);">4.50%</div>
-                            <div style="font-size: 9px; color: var(--accent-green); margin-top: 2px;">↓ Corte 25pb</div>
+                    <div id="fed-history-container" style="display: flex; gap: 10px;">
+                        <div style="flex: 1; text-align: center; padding: 12px; background: var(--bg-secondary); border-radius: 10px;">
+                            <div style="color: var(--text-muted); font-size: 11px;"><i class="fas fa-spinner fa-spin"></i> Carregando...</div>
                         </div>
                     </div>
                 </div>
                 
                 <p style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 12px;">
-                    <i class="fas fa-info-circle"></i> Fonte: ${dataSource === 'polymarket' ? 'Polymarket (Gamma API)' : 'Estimativa de mercado'}
+                    <i class="fas fa-info-circle"></i> Fonte: ${dataSource === 'polymarket' ? 'Polymarket (Gamma API)' : 'FRED API (Federal Reserve)'}
                 </p>
             `;
+            
+            // Buscar histórico real do FRED e última decisão em background
+            fetchFedHistoryAndDecision();
+        }
+
+        // Buscar histórico REAL de decisões do Fed e última decisão via FRED API
+        async function fetchFedHistoryAndDecision() {
+            const container = document.getElementById('fed-history-container');
+            const lastDecisionEl = document.getElementById('last-fed-decision');
+            
+            const FRED_KEY = '289c022214958a3eb611142e8dc34f6b';
+            const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+            
+            try {
+                // Buscar últimas 400 observações do DFEDTARU (Target Rate Upper) para encontrar mudanças
+                // ~400 business days = ~1.5 anos, suficiente para 3+ decisões
+                const baseUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&api_key=${FRED_KEY}&file_type=json&sort_order=desc&limit=400`;
+                
+                let response = null;
+                const proxies = [
+                    baseUrl, // Direto (funciona em muitos contextos)
+                    `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}`, // AllOrigins (comprovado)
+                    `https://corsproxy.io/?${encodeURIComponent(baseUrl)}` // CorsProxy
+                ];
+                
+                for (const proxyUrl of proxies) {
+                    try {
+                        response = await fetchWithTimeout(proxyUrl, {}, 10000);
+                        if (response.ok) break;
+                        response = null;
+                    } catch(e) {
+                        response = null;
+                        continue;
+                    }
+                }
+                
+                if (!response || !response.ok) throw new Error('Todas as tentativas FRED falharam');
+                const fredData = await response.json();
+                
+                if (!fredData.observations || fredData.observations.length < 2) throw new Error('No data');
+                
+                // Dados vêm em ordem DESC (mais recente primeiro)
+                // Encontrar mudanças reais na taxa
+                const decisions = [];
+                let prevValue = null; // prevValue = valor mais recente (cronologicamente posterior)
+                
+                for (const obs of fredData.observations) {
+                    const value = parseFloat(obs.value);
+                    if (isNaN(value) || String(obs.value).trim() === '.') continue;
+                    
+                    if (prevValue !== null && value !== prevValue) {
+                        // obs.date = último dia da taxa ANTIGA
+                        // prevValue = taxa NOVA (mais recente), value = taxa ANTIGA
+                        // Mudança real: prevValue - value (novo - antigo)
+                        const realChange = prevValue - value;
+                        decisions.push({
+                            date: obs.date,
+                            rate: prevValue, // Taxa que entrou em vigor (nova)
+                            prevRate: value, // Taxa anterior
+                            change: realChange.toFixed(2)
+                        });
+                        if (decisions.length >= 3) break;
+                    }
+                    prevValue = value;
+                }
+                
+                // Atualizar "Última Decisão" 
+                if (lastDecisionEl) {
+                    if (decisions.length > 0) {
+                        const lastChange = parseFloat(decisions[0].change);
+                        const bps = Math.abs(lastChange * 100).toFixed(0);
+                        if (lastChange < 0) {
+                            lastDecisionEl.innerHTML = `<span style="color: var(--accent-green);"><i class="fas fa-arrow-down"></i> Corte ${bps}pb</span>`;
+                        } else if (lastChange > 0) {
+                            lastDecisionEl.innerHTML = `<span style="color: var(--accent-red);"><i class="fas fa-arrow-up"></i> Aumento ${bps}pb</span>`;
+                        } else {
+                            lastDecisionEl.innerHTML = `<span style="color: var(--accent-yellow);"><i class="fas fa-equals"></i> Manutenção</span>`;
+                        }
+                    } else {
+                        lastDecisionEl.innerHTML = `<span style="color: var(--accent-yellow);"><i class="fas fa-equals"></i> Manutenção</span>`;
+                    }
+                }
+                
+                // Renderizar histórico de decisões reais
+                if (container && decisions.length > 0) {
+                    container.innerHTML = decisions.slice(0, 3).map(d => {
+                        const dt = new Date(d.date + 'T00:00:00');
+                        const monthStr = months[dt.getMonth()];
+                        const year = dt.getFullYear().toString().slice(-2);
+                        const changeBps = Math.abs(parseFloat(d.change) * 100).toFixed(0);
+                        const iscut = parseFloat(d.change) < 0;
+                        const color = iscut ? 'var(--accent-green)' : 'var(--accent-red)';
+                        const arrow = iscut ? '↓' : '↑';
+                        const label = iscut ? `Corte ${changeBps}pb` : `Aumento ${changeBps}pb`;
+                        
+                        return `
+                            <div style="flex: 1; background: var(--bg-secondary); border-radius: 10px; padding: 12px; text-align: center;">
+                                <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">${monthStr}/${year}</div>
+                                <div style="font-size: 16px; font-weight: 800; color: ${color};">${d.rate.toFixed(2)}%</div>
+                                <div style="font-size: 9px; color: ${color}; margin-top: 2px;">${arrow} ${label}</div>
+                            </div>
+                        `;
+                    }).join('');
+                } else if (container) {
+                    container.innerHTML = `
+                        <div style="flex: 1; text-align: center; padding: 12px; background: var(--bg-secondary); border-radius: 10px;">
+                            <div style="color: var(--text-muted); font-size: 11px;">Sem mudanças recentes na taxa</div>
+                        </div>
+                    `;
+                }
+                
+            } catch (e) {
+                console.error('Fed History error:', e);
+                if (container) {
+                    container.innerHTML = `
+                        <div style="flex: 1; text-align: center; padding: 12px; background: var(--bg-secondary); border-radius: 10px;">
+                            <div style="color: var(--accent-red); font-size: 11px;"><i class="fas fa-exclamation-triangle"></i> Erro ao carregar histórico</div>
+                        </div>
+                    `;
+                }
+                if (lastDecisionEl) {
+                    lastDecisionEl.innerHTML = `<span style="color: var(--text-muted);"><i class="fas fa-exclamation-circle"></i> N/D</span>`;
+                }
+            }
         }
 
         // ============================================
@@ -7075,98 +7195,60 @@
             const probContent = document.getElementById('event-probabilities-content');
             
             if (event.title === 'Decisão FOMC' || event.title.includes('Decisão')) {
-                probSection.style.display = 'block';
-                probContent.innerHTML = `
-                    <div class="event-prob-item">
-                        <div class="event-prob-header">
-                            <span class="event-prob-label" style="color: var(--accent-green);"><i class="fas fa-arrow-down"></i> Corte de Juros</span>
-                            <span class="event-prob-value pnl-positive">45%</span>
+                // Usar dados REAIS do cache do Fed Watch (Polymarket)
+                const fedCache = getFedCache();
+                if (fedCache && fedCache.probabilities && fedCache.dataSource === 'polymarket') {
+                    const { cutProb, holdProb, hikeProb } = fedCache.probabilities;
+                    probSection.style.display = 'block';
+                    probContent.innerHTML = `
+                        <div class="event-prob-item">
+                            <div class="event-prob-header">
+                                <span class="event-prob-label" style="color: var(--accent-green);"><i class="fas fa-arrow-down"></i> Corte de Juros</span>
+                                <span class="event-prob-value pnl-positive">${cutProb}%</span>
+                            </div>
+                            <div class="event-prob-bar">
+                                <div class="event-prob-fill" style="width: ${cutProb}%; background: linear-gradient(90deg, var(--accent-green), #4ade80);"></div>
+                            </div>
                         </div>
-                        <div class="event-prob-bar">
-                            <div class="event-prob-fill" style="width: 45%; background: linear-gradient(90deg, var(--accent-green), #4ade80);"></div>
+                        <div class="event-prob-item">
+                            <div class="event-prob-header">
+                                <span class="event-prob-label" style="color: var(--accent-yellow);"><i class="fas fa-equals"></i> Manutenção</span>
+                                <span class="event-prob-value" style="color: var(--accent-yellow);">${holdProb}%</span>
+                            </div>
+                            <div class="event-prob-bar">
+                                <div class="event-prob-fill" style="width: ${holdProb}%; background: linear-gradient(90deg, var(--accent-yellow), #fcd34d);"></div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="event-prob-item">
-                        <div class="event-prob-header">
-                            <span class="event-prob-label" style="color: var(--accent-yellow);"><i class="fas fa-equals"></i> Manutenção</span>
-                            <span class="event-prob-value" style="color: var(--accent-yellow);">50%</span>
+                        <div class="event-prob-item">
+                            <div class="event-prob-header">
+                                <span class="event-prob-label" style="color: var(--accent-red);"><i class="fas fa-arrow-up"></i> Aumento</span>
+                                <span class="event-prob-value pnl-negative">${hikeProb}%</span>
+                            </div>
+                            <div class="event-prob-bar">
+                                <div class="event-prob-fill" style="width: ${hikeProb}%; background: linear-gradient(90deg, var(--accent-red), #f87171);"></div>
+                            </div>
                         </div>
-                        <div class="event-prob-bar">
-                            <div class="event-prob-fill" style="width: 50%; background: linear-gradient(90deg, var(--accent-yellow), #fcd34d);"></div>
+                        <p style="font-size: 10px; color: var(--text-muted); text-align: center; margin-top: 8px;">
+                            <i class="fas fa-info-circle"></i> Fonte: Polymarket (Gamma API) - Dados em tempo real
+                        </p>
+                    `;
+                } else {
+                    // Sem dados reais disponíveis - não mostrar probabilidades falsas
+                    probSection.style.display = 'block';
+                    probContent.innerHTML = `
+                        <div style="text-align: center; padding: 16px; color: var(--text-muted);">
+                            <i class="fas fa-chart-pie" style="font-size: 24px; margin-bottom: 8px; opacity: 0.5;"></i>
+                            <p style="margin: 0; font-size: 12px;">Probabilidades não disponíveis no momento.</p>
+                            <p style="margin: 4px 0 0; font-size: 10px;">Acesse a aba Macro → Fed Watch para dados atualizados.</p>
                         </div>
-                    </div>
-                    <div class="event-prob-item">
-                        <div class="event-prob-header">
-                            <span class="event-prob-label" style="color: var(--accent-red);"><i class="fas fa-arrow-up"></i> Aumento</span>
-                            <span class="event-prob-value pnl-negative">5%</span>
-                        </div>
-                        <div class="event-prob-bar">
-                            <div class="event-prob-fill" style="width: 5%; background: linear-gradient(90deg, var(--accent-red), #f87171);"></div>
-                        </div>
-                    </div>
-                `;
+                    `;
+                }
             } else if (event.title.includes('CPI') || event.title.includes('Inflação')) {
-                probSection.style.display = 'block';
-                probContent.innerHTML = `
-                    <div class="event-prob-item">
-                        <div class="event-prob-header">
-                            <span class="event-prob-label" style="color: var(--accent-green);"><i class="fas fa-arrow-down"></i> Abaixo do esperado</span>
-                            <span class="event-prob-value pnl-positive">35%</span>
-                        </div>
-                        <div class="event-prob-bar">
-                            <div class="event-prob-fill" style="width: 35%; background: linear-gradient(90deg, var(--accent-green), #4ade80);"></div>
-                        </div>
-                    </div>
-                    <div class="event-prob-item">
-                        <div class="event-prob-header">
-                            <span class="event-prob-label" style="color: var(--accent-yellow);"><i class="fas fa-equals"></i> Dentro do esperado</span>
-                            <span class="event-prob-value" style="color: var(--accent-yellow);">45%</span>
-                        </div>
-                        <div class="event-prob-bar">
-                            <div class="event-prob-fill" style="width: 45%; background: linear-gradient(90deg, var(--accent-yellow), #fcd34d);"></div>
-                        </div>
-                    </div>
-                    <div class="event-prob-item">
-                        <div class="event-prob-header">
-                            <span class="event-prob-label" style="color: var(--accent-red);"><i class="fas fa-arrow-up"></i> Acima do esperado</span>
-                            <span class="event-prob-value pnl-negative">20%</span>
-                        </div>
-                        <div class="event-prob-bar">
-                            <div class="event-prob-fill" style="width: 20%; background: linear-gradient(90deg, var(--accent-red), #f87171);"></div>
-                        </div>
-                    </div>
-                `;
+                // Não exibir probabilidades inventadas para CPI - sem fonte real
+                probSection.style.display = 'none';
             } else if (event.title.includes('Non-Farm') || event.title.includes('Payrolls')) {
-                probSection.style.display = 'block';
-                probContent.innerHTML = `
-                    <div class="event-prob-item">
-                        <div class="event-prob-header">
-                            <span class="event-prob-label" style="color: var(--accent-green);"><i class="fas fa-chart-line"></i> Acima de 200K (Forte)</span>
-                            <span class="event-prob-value pnl-positive">40%</span>
-                        </div>
-                        <div class="event-prob-bar">
-                            <div class="event-prob-fill" style="width: 40%; background: linear-gradient(90deg, var(--accent-green), #4ade80);"></div>
-                        </div>
-                    </div>
-                    <div class="event-prob-item">
-                        <div class="event-prob-header">
-                            <span class="event-prob-label" style="color: var(--accent-yellow);"><i class="fas fa-equals"></i> 150K-200K (Moderado)</span>
-                            <span class="event-prob-value" style="color: var(--accent-yellow);">35%</span>
-                        </div>
-                        <div class="event-prob-bar">
-                            <div class="event-prob-fill" style="width: 35%; background: linear-gradient(90deg, var(--accent-yellow), #fcd34d);"></div>
-                        </div>
-                    </div>
-                    <div class="event-prob-item">
-                        <div class="event-prob-header">
-                            <span class="event-prob-label" style="color: var(--accent-red);"><i class="fas fa-arrow-down"></i> Abaixo de 150K (Fraco)</span>
-                            <span class="event-prob-value pnl-negative">25%</span>
-                        </div>
-                        <div class="event-prob-bar">
-                            <div class="event-prob-fill" style="width: 25%; background: linear-gradient(90deg, var(--accent-red), #f87171);"></div>
-                        </div>
-                    </div>
-                `;
+                // Não exibir probabilidades inventadas para NFP - sem fonte real
+                probSection.style.display = 'none';
             } else {
                 probSection.style.display = 'none';
             }

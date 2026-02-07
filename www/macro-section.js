@@ -36,7 +36,7 @@
     const MARKET_INDICATORS = {
         'GC=F': { name: 'Ouro', short: 'XAU/USD', desc: 'Gold Futures', img: 'OURO.png', color: '#FFD700', prefix: '$', decimals: 2 },
         'SI=F': { name: 'Prata', short: 'XAG/USD', desc: 'Silver Futures', img: 'PRATA.png', color: '#C0C0C0', prefix: '$', decimals: 2 },
-        'CL=F': { name: 'Petróleo WTI', short: 'WTI', desc: 'WTI Crude Oil Futures', img: 'Petroleo.png', color: '#795548', prefix: '$', decimals: 2 },
+        'CL=F': { name: 'Petróleo WTI', short: 'WTI', desc: 'WTI Crude Oil Futures', img: 'petroleo.png', color: '#795548', prefix: '$', decimals: 2 },
         'DX-Y.NYB': { name: 'Dólar Index', short: 'DXY', desc: 'US Dollar Index', img: 'DXY.png', color: '#2E7D32', prefix: '', decimals: 3 },
         '^GSPC': { name: 'S&P 500', short: 'SPX', desc: 'S&P 500 Index', img: 'S&P500.png', color: '#4CAF50', prefix: '', decimals: 2 },
         '^NDX': { name: 'Nasdaq 100', short: 'NDX', desc: 'Nasdaq 100 Index', img: 'NASDAQ100.png', color: '#00D4AA', prefix: '', decimals: 2 },
@@ -436,7 +436,6 @@
                             <button class="ind-tf-btn" data-period="15m">15m</button>
                             <button class="ind-tf-btn" data-period="30m">30m</button>
                             <button class="ind-tf-btn" data-period="4h">4H</button>
-                            <button class="ind-tf-btn" data-period="12h">12H</button>
                             <button class="ind-tf-btn active" data-period="1d">1D</button>
                             <button class="ind-tf-btn" data-period="1w">1S</button>
                             <button class="ind-tf-btn" data-period="1M">1M</button>
@@ -579,7 +578,6 @@
                 <button class="fs-tf-btn ${indicatorChartPeriod === '15m' ? 'active' : ''}" data-period="15m">15m</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '30m' ? 'active' : ''}" data-period="30m">30m</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '4h' ? 'active' : ''}" data-period="4h">4H</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '12h' ? 'active' : ''}" data-period="12h">12H</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '1d' ? 'active' : ''}" data-period="1d">1D</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '1w' ? 'active' : ''}" data-period="1w">1S</button>
                 <button class="fs-tf-btn ${indicatorChartPeriod === '1M' ? 'active' : ''}" data-period="1M">1M</button>
@@ -651,7 +649,6 @@
             '15m': { interval: '1m', range: '1d' },
             '30m': { interval: '5m', range: '1d' },
             '4h': { interval: '5m', range: '1d' },
-            '12h': { interval: '15m', range: '1d' },
             '1d': { interval: '15m', range: '1d' },
             '1w': { interval: '1h', range: '5d' },
             '1M': { interval: '1d', range: '1mo' },
@@ -661,6 +658,21 @@
         
         const config = periodMap[indicatorChartPeriod] || periodMap['1d'];
         const encodedSymbol = encodeURIComponent(symbol);
+        
+        // Verificar cache
+        const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
+        const cached = chartDataCache[cacheKey];
+        if (cached && (Date.now() - cached.timestamp) < CHART_CACHE_TTL) {
+            macroLog(`📦 Fullscreen ${symbol} (${indicatorChartPeriod}) do cache`, 'info');
+            indicatorCandleData = cached.data;
+            if (indicatorChartType === 'candle') {
+                drawFullscreenCandleChart(indicatorCandleData, symbol);
+            } else {
+                drawFullscreenLineChart(indicatorCandleData, symbol);
+            }
+            return;
+        }
+        
         const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedSymbol}?interval=${config.interval}&range=${config.range}`;
         const proxyUrls = [
             `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
@@ -697,6 +709,9 @@
                     quotes.close?.[i],
                     quotes.volume?.[i] || 0
                 ]).filter(d => d[4] != null && d[4] > 0);
+                
+                // Salvar no cache
+                chartDataCache[cacheKey] = { data: indicatorCandleData, timestamp: Date.now() };
                 
                 if (indicatorChartType === 'candle') {
                     drawFullscreenCandleChart(indicatorCandleData, symbol);
@@ -904,10 +919,34 @@
     // ============================================
     // CARREGAR DADOS DO GRÁFICO (YAHOO FINANCE - GRATUITO E ILIMITADO)
     // ============================================
+    
+    // Cache de dados de gráfico para evitar re-fetch ao trocar timeframes
+    const chartDataCache = {};
+    const CHART_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+    
+    function getChartCacheKey(symbol, period) {
+        return `${symbol}_${period}`;
+    }
+    
     async function loadIndicatorChartData(symbol) {
         const loadingEl = document.getElementById('indicator-chart-loading');
         const canvas = document.getElementById('indicator-chart-canvas');
         if (!loadingEl || !canvas) return;
+        
+        // Verificar cache
+        const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
+        const cached = chartDataCache[cacheKey];
+        if (cached && (Date.now() - cached.timestamp) < CHART_CACHE_TTL) {
+            macroLog(`📦 Gráfico ${symbol} (${indicatorChartPeriod}) do cache`, 'info');
+            indicatorCandleData = cached.data;
+            loadingEl.style.display = 'none';
+            if (indicatorChartType === 'candle') {
+                drawIndicatorCandleChart(indicatorCandleData, symbol);
+            } else {
+                drawIndicatorLineChart(indicatorCandleData, symbol);
+            }
+            return;
+        }
         
         loadingEl.style.display = 'flex';
         
@@ -917,7 +956,6 @@
                 '15m': { interval: '1m', range: '1d' },    // 1min candles, último dia
                 '30m': { interval: '5m', range: '1d' },    // 5min candles, último dia
                 '4h': { interval: '5m', range: '1d' },     // 5min candles, último dia
-                '12h': { interval: '15m', range: '1d' },   // 15min candles, último dia
                 '1d': { interval: '15m', range: '1d' },    // 15min candles, último dia
                 '1w': { interval: '1h', range: '5d' },     // 1h candles, 5 dias
                 '1M': { interval: '1d', range: '1mo' },    // 1 dia candles, 1 mês
@@ -967,6 +1005,9 @@
                 ]).filter(d => d[4] != null && !isNaN(d[4]) && d[4] > 0);
                 
                 macroLog(`✅ Gráfico carregado: ${indicatorCandleData.length} candles`, 'success');
+                
+                // Salvar no cache
+                chartDataCache[cacheKey] = { data: indicatorCandleData, timestamp: Date.now() };
                 
                 if (indicatorChartType === 'candle') {
                     drawIndicatorCandleChart(indicatorCandleData);
@@ -1220,34 +1261,42 @@
         const config = MARKET_INDICATORS[symbol];
         const price = indicatorPrices[symbol] || 0;
         const prevPrice = previousIndicatorPrices[symbol] || price;
+        const prefix = config.prefix || '$';
+        const decimals = config.decimals || 2;
         
-        const high = price * 1.015;
-        const low = price * 0.985;
+        // Obter Máxima e Mínima REAIS dos candles (Yahoo Finance data)
+        let high = null;
+        let low = null;
+        if (indicatorCandleData && indicatorCandleData.length > 0) {
+            // indicatorCandleData format: [timestamp, open, high, low, close, volume]
+            high = Math.max(...indicatorCandleData.map(c => c[2]).filter(v => v > 0));
+            low = Math.min(...indicatorCandleData.filter(c => c[3] > 0).map(c => c[3]));
+        }
         
         container.innerHTML = `
             <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 10px;">
                 <div style="color: #888; font-size: 11px;">Abertura</div>
-                <div style="font-weight: 600; color: white;">$${prevPrice.toFixed(2)}</div>
+                <div style="font-weight: 600; color: white;">${prefix}${prevPrice.toFixed(decimals)}</div>
             </div>
             <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 10px;">
                 <div style="color: #888; font-size: 11px;">Fech. Anterior</div>
-                <div style="font-weight: 600; color: white;">$${prevPrice.toFixed(2)}</div>
+                <div style="font-weight: 600; color: white;">${prefix}${prevPrice.toFixed(decimals)}</div>
             </div>
             <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 10px;">
                 <div style="color: #888; font-size: 11px;">Máxima</div>
-                <div style="font-weight: 600; color: #00ff88;">$${high.toFixed(2)}</div>
+                <div style="font-weight: 600; color: #00ff88;">${high !== null ? prefix + high.toFixed(decimals) : '--'}</div>
             </div>
             <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 10px;">
                 <div style="color: #888; font-size: 11px;">Mínima</div>
-                <div style="font-weight: 600; color: #ff4444;">$${low.toFixed(2)}</div>
+                <div style="font-weight: 600; color: #ff4444;">${low !== null ? prefix + low.toFixed(decimals) : '--'}</div>
             </div>
         `;
     }
 
     // ============================================
-    // ANÁLISE TÉCNICA
+    // ANÁLISE TÉCNICA - DADOS REAIS VIA YAHOO FINANCE
     // ============================================
-    function openIndicatorTA(symbol) {
+    async function openIndicatorTA(symbol) {
         const config = MARKET_INDICATORS[symbol];
         const price = indicatorPrices[symbol] || 0;
         const change = indicatorChanges[symbol] || 0;
@@ -1256,18 +1305,12 @@
         const oldModal = document.getElementById('indicator-ta-modal');
         if (oldModal) oldModal.remove();
         
-        const rsi = 45 + Math.random() * 30;
-        const macd = (Math.random() - 0.5) * 2;
-        const trend = change > 0.5 ? 'ALTA' : change < -0.5 ? 'BAIXA' : 'LATERAL';
-        const trendColor = change > 0.5 ? '#00ff88' : change < -0.5 ? '#ff4444' : '#ffaa00';
-        const signal = rsi < 30 ? 'COMPRA' : rsi > 70 ? 'VENDA' : 'NEUTRO';
-        const signalColor = rsi < 30 ? '#00ff88' : rsi > 70 ? '#ff4444' : '#ffaa00';
-        
         const taModal = document.createElement('div');
         taModal.id = 'indicator-ta-modal';
         taModal.className = 'modal active';
         taModal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 10000; display: flex; align-items: flex-end; justify-content: center;';
         
+        // Show loading first
         taModal.innerHTML = `
             <div style="background: var(--bg-secondary, #1a1a2e); width: 100%; max-width: 500px; max-height: 90vh; border-radius: 20px 20px 0 0; overflow-y: auto; animation: slideUp 0.3s ease;">
                 <div style="padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); position: sticky; top: 0; background: var(--bg-secondary, #1a1a2e); z-index: 10; display: flex; align-items: center; gap: 12px;">
@@ -1276,7 +1319,31 @@
                     </button>
                     <h3 style="margin: 0; font-size: 16px; color: white;">Análise Técnica - ${config.short}</h3>
                 </div>
-                <div style="padding: 16px;">
+                <div style="padding: 40px 16px; text-align: center;">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 32px; color: ${config.color}; margin-bottom: 12px;"></i>
+                    <p style="color: #888; margin: 0;">Buscando dados reais do mercado...</p>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(taModal);
+        
+        document.getElementById('close-ta-btn').addEventListener('click', () => taModal.remove());
+        taModal.addEventListener('click', function(e) {
+            if (e.target === taModal) taModal.remove();
+        });
+        
+        try {
+            // Fetch real data from Yahoo Finance
+            const taData = await fetchRealTAData(symbol);
+            
+            const { rsi, macd, macdSignal, sma20, sma50, support, resistance, trend, trendColor, signal, signalColor, volatility } = taData;
+            
+            // Re-render with real data
+            const contentDiv = taModal.querySelector('div > div:last-child');
+            contentDiv.style.padding = '16px';
+            contentDiv.style.textAlign = '';
+            contentDiv.innerHTML = `
                     <div style="background: linear-gradient(135deg, ${config.color}20, transparent); border-radius: 16px; padding: 20px; margin-bottom: 16px;">
                         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
                             <img src="${config.img}" alt="${config.name}" style="width: ${imgSize}px; height: ${imgSize}px; border-radius: 50%; object-fit: cover; background: ${config.color}30;">
@@ -1308,7 +1375,7 @@
                     
                     <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 16px; margin-bottom: 16px;">
                         <h4 style="margin: 0 0 12px 0; color: white; display: flex; align-items: center; gap: 8px;">
-                            <i class="fas fa-chart-bar" style="color: ${config.color};"></i> Indicadores
+                            <i class="fas fa-chart-bar" style="color: ${config.color};"></i> Indicadores Técnicos
                         </h4>
                         <div style="display: flex; flex-direction: column; gap: 12px;">
                             <div style="display: flex; justify-content: space-between; color: white;">
@@ -1316,20 +1383,28 @@
                                 <span style="color: ${macd > 0 ? '#00ff88' : '#ff4444'};">${macd > 0 ? '+' : ''}${macd.toFixed(4)}</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; color: white;">
-                                <span style="color: #888;">MA 20</span>
-                                <span>$${(price * 0.98).toFixed(2)}</span>
+                                <span style="color: #888;">MACD Signal</span>
+                                <span style="color: ${macdSignal > 0 ? '#00ff88' : '#ff4444'};">${macdSignal > 0 ? '+' : ''}${macdSignal.toFixed(4)}</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; color: white;">
-                                <span style="color: #888;">MA 50</span>
-                                <span>$${(price * 0.95).toFixed(2)}</span>
+                                <span style="color: #888;">SMA 20</span>
+                                <span style="color: ${price > sma20 ? '#00ff88' : '#ff4444'};">${config.prefix || '$'}${sma20.toFixed(config.decimals || 2)}</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; color: white;">
-                                <span style="color: #888;">Suporte</span>
-                                <span style="color: #00ff88;">$${(price * 0.93).toFixed(2)}</span>
+                                <span style="color: #888;">SMA 50</span>
+                                <span style="color: ${price > sma50 ? '#00ff88' : '#ff4444'};">${config.prefix || '$'}${sma50.toFixed(config.decimals || 2)}</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; color: white;">
-                                <span style="color: #888;">Resistência</span>
-                                <span style="color: #ff4444;">$${(price * 1.07).toFixed(2)}</span>
+                                <span style="color: #888;">Suporte (20d)</span>
+                                <span style="color: #00ff88;">${config.prefix || '$'}${support.toFixed(config.decimals || 2)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; color: white;">
+                                <span style="color: #888;">Resistência (20d)</span>
+                                <span style="color: #ff4444;">${config.prefix || '$'}${resistance.toFixed(config.decimals || 2)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; color: white;">
+                                <span style="color: #888;">Volatilidade (20d)</span>
+                                <span style="color: ${volatility > 30 ? '#ff4444' : '#ffaa00'};">${volatility.toFixed(1)}%</span>
                             </div>
                         </div>
                     </div>
@@ -1342,18 +1417,120 @@
                             ${config.name} está em tendência de <strong style="color: ${trendColor};">${trend.toLowerCase()}</strong> 
                             com RSI em ${rsi.toFixed(0)}, indicando ${rsi < 30 ? 'condição de sobrevenda - possível reversão para alta' : rsi > 70 ? 'condição de sobrecompra - possível correção' : 'momentum neutro'}.
                             O MACD está ${macd > 0 ? 'positivo, sugerindo força compradora' : 'negativo, sugerindo pressão vendedora'}.
+                            ${macd > macdSignal ? 'MACD acima da linha de sinal (bullish).' : 'MACD abaixo da linha de sinal (bearish).'}
                         </p>
                     </div>
+                    
+                    <p style="font-size: 10px; color: #555; text-align: center; margin-top: 12px;">
+                        <i class="fas fa-info-circle"></i> Dados reais via Yahoo Finance. Não constitui recomendação de investimento.
+                    </p>
+            `;
+            
+        } catch (e) {
+            console.error('TA Error:', e);
+            const contentDiv = taModal.querySelector('div > div:last-child');
+            contentDiv.innerHTML = `
+                <div style="text-align: center; padding: 30px;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 32px; color: #ff4444; margin-bottom: 12px;"></i>
+                    <p style="color: #aaa; margin: 0;">Não foi possível buscar dados técnicos reais.</p>
+                    <p style="color: #666; font-size: 12px; margin-top: 8px;">${e.message || 'Erro desconhecido'}</p>
+                    <button onclick="document.getElementById('indicator-ta-modal').remove(); openIndicatorTA('${symbol}')" style="margin-top: 16px; padding: 10px 20px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white; cursor: pointer;">
+                        <i class="fas fa-redo"></i> Tentar novamente
+                    </button>
                 </div>
-            </div>
-        `;
+            `;
+        }
+    }
+    
+    // Fetch real technical analysis data from Yahoo Finance
+    async function fetchRealTAData(symbol) {
+        // Try Yahoo Finance v8 chart API
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`;
         
-        document.body.appendChild(taModal);
+        let data;
+        try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Yahoo API ${res.status}`);
+            data = await res.json();
+        } catch(e) {
+            // Try with CORS proxy
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+            const res = await fetch(proxyUrl);
+            if (!res.ok) throw new Error('Dados indisponíveis');
+            data = await res.json();
+        }
         
-        document.getElementById('close-ta-btn').addEventListener('click', () => taModal.remove());
-        taModal.addEventListener('click', function(e) {
-            if (e.target === taModal) taModal.remove();
-        });
+        const result = data?.chart?.result?.[0];
+        if (!result?.indicators?.quote?.[0]) throw new Error('Sem dados de preço');
+        
+        const quotes = result.indicators.quote[0];
+        const closes = (quotes.close || []).filter(c => c != null && !isNaN(c));
+        const highs = (quotes.high || []).filter(h => h != null && !isNaN(h));
+        const lows = (quotes.low || []).filter(l => l != null && !isNaN(l));
+        
+        if (closes.length < 14) throw new Error('Dados insuficientes para análise');
+        
+        const currentPrice = closes[closes.length - 1];
+        const change = indicatorChanges[symbol] || 0;
+        
+        // Calculate RSI (14 periods) - REAL calculation
+        const rsiPeriod = 14;
+        let gains = 0, losses = 0;
+        const rsiCloses = closes.slice(-rsiPeriod - 1);
+        for (let i = 1; i < rsiCloses.length; i++) {
+            const diff = rsiCloses[i] - rsiCloses[i - 1];
+            if (diff > 0) gains += diff;
+            else losses += Math.abs(diff);
+        }
+        const avgGain = gains / rsiPeriod;
+        const avgLoss = losses / rsiPeriod;
+        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+        const rsi = 100 - (100 / (1 + rs));
+        
+        // Calculate MACD (12, 26, 9) - REAL calculation
+        function ema(arr, period) {
+            const k = 2 / (period + 1);
+            let result = [arr[0]];
+            for (let i = 1; i < arr.length; i++) {
+                result.push(arr[i] * k + result[i - 1] * (1 - k));
+            }
+            return result;
+        }
+        
+        const ema12 = ema(closes, 12);
+        const ema26 = ema(closes, 26);
+        const macdLine = ema12.map((v, i) => v - ema26[i]);
+        const signalLine = ema(macdLine, 9);
+        const macd = macdLine[macdLine.length - 1];
+        const macdSignal = signalLine[signalLine.length - 1];
+        
+        // Calculate SMA 20 and SMA 50 - REAL
+        const sma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, closes.length);
+        const sma50 = closes.slice(-50).reduce((a, b) => a + b, 0) / Math.min(50, closes.length);
+        
+        // Support & Resistance from actual 20-day highs/lows
+        const recentHighs = highs.slice(-20);
+        const recentLows = lows.slice(-20);
+        const support = Math.min(...recentLows);
+        const resistance = Math.max(...recentHighs);
+        
+        // Volatility (20-day annualized)
+        const returns = [];
+        const volCloses = closes.slice(-21);
+        for (let i = 1; i < volCloses.length; i++) {
+            returns.push((volCloses[i] - volCloses[i - 1]) / volCloses[i - 1]);
+        }
+        const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+        const variance = returns.reduce((a, b) => a + Math.pow(b - avgReturn, 2), 0) / returns.length;
+        const volatility = Math.sqrt(variance) * Math.sqrt(252) * 100;
+        
+        // Determine trend and signal
+        const trend = currentPrice > sma20 && sma20 > sma50 ? 'ALTA' : currentPrice < sma20 && sma20 < sma50 ? 'BAIXA' : 'LATERAL';
+        const trendColor = trend === 'ALTA' ? '#00ff88' : trend === 'BAIXA' ? '#ff4444' : '#ffaa00';
+        const signal = rsi < 30 ? 'COMPRA' : rsi > 70 ? 'VENDA' : macd > macdSignal ? 'COMPRA' : 'NEUTRO';
+        const signalColor = signal === 'COMPRA' ? '#00ff88' : signal === 'VENDA' ? '#ff4444' : '#ffaa00';
+        
+        return { rsi, macd, macdSignal, sma20, sma50, support, resistance, trend, trendColor, signal, signalColor, volatility };
     }
 
     // ============================================
@@ -1524,15 +1701,10 @@
                 macroLog('⚠️ Desemprego não disponível: ' + e.message, 'warn');
             }
             
-            // Se não conseguiu NENHUM dado da FRED, usar valores conhecidos como fallback
+            // Se não conseguiu NENHUM dado da FRED, retornar null (sem dados fake)
             if (!effectiveRate && !targetUpper) {
-                macroLog('⚠️ FRED indisponível, usando dados de fallback', 'warn');
-                // Valores aproximados baseados no último dado conhecido
-                effectiveRate = 3.64; // Valor atual do FRED (testado)
-                targetLower = 3.50;
-                targetUpper = 3.75;
-                cpi = cpi || 2.4;
-                unemployment = unemployment || 4.1;
+                macroLog('⚠️ FRED indisponível, sem dados reais disponíveis', 'warn');
+                return null; // Vai mostrar mensagem de erro real
             }
             
             // Calcular probabilidades com modelo avançado
@@ -1562,27 +1734,14 @@
         } catch (e) {
             macroLog('❌ Erro FRED API: ' + e.message, 'error');
             
-            // Fallback final com valores conhecidos
-            const fallbackData = {
-                effectiveRate: 3.64,
-                targetLower: 3.50,
-                targetUpper: 3.75,
-                currentRate: { lower: 3.50, upper: 3.75 },
-                cpi: 2.4,
-                unemployment: 4.1,
-                probabilities: { cut: 35, hold: 55, hike: 10 },
-                lastUpdate: Date.now(),
-                dataSource: 'Fallback'
-            };
-            
-            // Usar cache expirado se disponível, senão fallback
+            // Usar cache expirado se disponível, senão retornar null
             if (fedDataCache.effectiveRate) {
                 macroLog('⚠️ Usando cache expirado', 'warn');
                 return fedDataCache;
             }
             
-            macroLog('⚠️ Usando dados de fallback', 'warn');
-            return fallbackData;
+            macroLog('❌ Sem dados disponíveis para Fed Watch', 'error');
+            return null; // Sem dados fake - vai mostrar erro
         }
     }
     
@@ -1594,7 +1753,7 @@
         const { effectiveRate, targetUpper, targetLower, cpi, unemployment } = data;
         
         if (!effectiveRate && !targetUpper) {
-            return { cut: 25, hold: 65, hike: 10 };
+            return null; // Sem dados reais, não inventar probabilidades
         }
         
         const currentRate = effectiveRate || ((targetUpper + targetLower) / 2);
@@ -1720,7 +1879,7 @@
         const totalScore = cutScore + holdScore + hikeScore;
         
         if (totalScore === 0) {
-            return { cut: 20, hold: 65, hike: 15 };
+            return null; // Sem dados suficientes para calcular - não inventar
         }
         
         let cut = Math.round((cutScore / totalScore) * 100);
@@ -1778,6 +1937,8 @@
         // Se não há dados da API, mostrar erro
         if (!fedData || !fedData.currentRate) {
             if (currentRateEl) currentRateEl.textContent = '--';
+            const lastDecisionEl = document.getElementById('last-fed-decision');
+            if (lastDecisionEl) lastDecisionEl.innerHTML = `<span style="color: var(--text-muted);">--</span>`;
             container.innerHTML = `
                 <div style="text-align: center; padding: 30px; color: #ef4444;">
                     <i class="fas fa-exclamation-triangle" style="font-size: 32px; margin-bottom: 12px; opacity: 0.7;"></i>
@@ -1795,6 +1956,14 @@
         const probs = fedData.probabilities;
         
         if (currentRateEl) currentRateEl.textContent = `${rate.lower.toFixed(2)}% - ${rate.upper.toFixed(2)}%`;
+        
+        // Atualizar "Taxa Efetiva" (midpoint) - substitui o antigo "Última Decisão"
+        const lastDecisionEl = document.getElementById('last-fed-decision');
+        if (lastDecisionEl) {
+            // Taxa efetiva = DFF (effective federal funds rate) ou midpoint da banda
+            const effectiveRate = fedData.effectiveRate || ((rate.lower + rate.upper) / 2);
+            lastDecisionEl.innerHTML = `<span style="color: var(--accent-blue, #3b82f6); font-size: 16px; font-weight: 800;">${effectiveRate.toFixed(2)}%</span>`;
+        }
         
         // Se não há probabilidades, mostrar mensagem
         if (!probs) {
@@ -1818,7 +1987,7 @@
         const hikeTargetUpper = (rate.upper + 0.25).toFixed(2);
         
         // Fonte dos dados
-        const dataSource = fedData.dataSource || fedWatchDataSource || 'API';
+        const dataSource = fedData.dataSource || 'FRED';
         
         container.innerHTML = `
             <div class="fed-prob-item">
@@ -1891,22 +2060,68 @@
         'Duráveis': 'DGORDER'
     };
     
-    // Histórico REAL de decisões do FOMC (taxas em %)
-    // Atualizado manualmente com base nas decisões oficiais
-    const FOMC_DECISIONS_HISTORY = [
-        { date: '2026-01-29', rate: 3.75, previous: 4.00, action: 'Corte 25bp' },
-        { date: '2025-12-18', rate: 4.00, previous: 4.25, action: 'Corte 25bp' },
-        { date: '2025-11-07', rate: 4.25, previous: 4.50, action: 'Corte 25bp' },
-        { date: '2025-09-18', rate: 4.50, previous: 4.75, action: 'Corte 25bp' },
-        { date: '2025-07-30', rate: 4.75, previous: 5.00, action: 'Corte 25bp' },
-        { date: '2025-06-18', rate: 5.00, previous: 5.25, action: 'Corte 25bp' },
-        { date: '2025-05-07', rate: 5.25, previous: 5.25, action: 'Manutenção' },
-        { date: '2025-03-19', rate: 5.25, previous: 5.25, action: 'Manutenção' },
-        { date: '2025-01-29', rate: 5.25, previous: 5.25, action: 'Manutenção' },
-        { date: '2024-12-18', rate: 5.25, previous: 5.50, action: 'Corte 25bp' },
-        { date: '2024-11-07', rate: 5.50, previous: 5.50, action: 'Manutenção' },
-        { date: '2024-09-18', rate: 5.50, previous: 5.50, action: 'Manutenção' }
-    ];
+    // Histórico de decisões do FOMC - carregado dinamicamente via FRED API
+    // NÃO usar dados hardcoded - buscar do FRED (DFEDTARU series)
+    let FOMC_DECISIONS_HISTORY_CACHE = null;
+    
+    async function fetchFOMCDecisionsFromFRED() {
+        if (FOMC_DECISIONS_HISTORY_CACHE) return FOMC_DECISIONS_HISTORY_CACHE;
+        
+        try {
+            const url = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=500`;
+            let data = null;
+            
+            const urls = [
+                url,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                `https://corsproxy.io/?${encodeURIComponent(url)}`
+            ];
+            
+            for (const u of urls) {
+                try {
+                    const resp = await fetch(u, { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined });
+                    if (resp.ok) {
+                        data = await resp.json();
+                        if (data.observations) break;
+                    }
+                } catch(e) { continue; }
+            }
+            
+            if (!data || !data.observations) return [];
+            
+            // Encontrar mudanças de taxa (dados em ordem DESC - mais recente primeiro)
+            const decisions = [];
+            let prevValue = null;
+            
+            for (const obs of data.observations) {
+                const value = parseFloat(obs.value);
+                if (isNaN(value) || String(obs.value).trim() === '.') continue;
+                
+                if (prevValue !== null && value !== prevValue) {
+                    const realChange = prevValue - value; // novo - antigo
+                    const changeBps = Math.abs(realChange * 100).toFixed(0);
+                    let action = 'Manutenção';
+                    if (realChange < 0) action = `Corte ${changeBps}bp`;
+                    else if (realChange > 0) action = `Aumento ${changeBps}bp`;
+                    
+                    decisions.push({
+                        date: obs.date,
+                        rate: prevValue,
+                        previous: value,
+                        action: action
+                    });
+                    if (decisions.length >= 12) break;
+                }
+                prevValue = value;
+            }
+            
+            FOMC_DECISIONS_HISTORY_CACHE = decisions;
+            return decisions;
+        } catch(e) {
+            macroLog('❌ Erro ao buscar histórico FOMC: ' + e.message, 'error');
+            return [];
+        }
+    }
     
     // Buscar histórico de eventos via FRED API (mais confiável que Alpha Vantage)
     async function fetchEconomicHistoryFromAI(eventTitle) {
@@ -1922,17 +2137,21 @@
         const isFOMCEvent = ['fomc', 'fed', 'taxa', 'juros', 'interest', 'rate decision'].some(k => titleLower.includes(k));
         
         if (isFOMCEvent) {
-            macroLog(`📊 Usando histórico de decisões FOMC pré-definido`, 'info');
-            const history = FOMC_DECISIONS_HISTORY.slice(0, 6).map(d => ({
-                date: d.date,
-                actual: `${d.rate.toFixed(2)}%`,
-                previous: `${d.previous.toFixed(2)}%`,
-                forecast: '-',
-                impact: 'high',
-                action: d.action
-            }));
-            ECONOMIC_HISTORY_CACHE[eventTitle] = history;
-            return history;
+            macroLog(`📊 Buscando histórico de decisões FOMC via FRED`, 'info');
+            const fomcDecisions = await fetchFOMCDecisionsFromFRED();
+            if (fomcDecisions.length > 0) {
+                const history = fomcDecisions.slice(0, 6).map(d => ({
+                    date: d.date,
+                    actual: `${d.rate.toFixed(2)}%`,
+                    previous: `${d.previous.toFixed(2)}%`,
+                    forecast: '-',
+                    impact: 'high',
+                    action: d.action
+                }));
+                ECONOMIC_HISTORY_CACHE[eventTitle] = history;
+                return history;
+            }
+            return [];
         }
         
         try {
@@ -2054,7 +2273,8 @@
         'Import Prices', 'Export Prices', 'Leading Indicators'
     ];
     
-    // Buscar calendário econômico via FMP
+    // Buscar calendário econômico - Fonte primária: Forex Factory (gratuito, dados reais)
+    // Fallback: Datas oficiais publicadas pelo BLS/Federal Reserve
     async function fetchEconomicCalendarFromAPI() {
         try {
             // Verificar cache
@@ -2064,35 +2284,147 @@
                 return calendarCache.events;
             }
             
-            macroLog('🔄 Carregando calendário econômico via FMP...', 'info');
+            macroLog('🔄 Carregando calendário econômico...', 'info');
             
-            // Período: hoje até 30 dias no futuro
+            // ====== FONTE 1: Forex Factory (dados reais, gratuito) ======
+            let events = await fetchCalendarFromForexFactory();
+            
+            // ====== FONTE 2: FMP API (backup, se disponível) ======
+            if (!events || events.length === 0) {
+                events = await fetchCalendarFromFMP();
+            }
+            
+            // ====== FONTE 3: Calendário oficial BLS/Fed (sempre funciona) ======
+            if (!events || events.length === 0) {
+                macroLog('⚠️ APIs indisponíveis, usando calendário oficial BLS/Fed', 'warn');
+                return calculateFallbackEvents();
+            }
+            
+            // Atualizar cache
+            calendarCache = { events, lastUpdate: Date.now() };
+            return events;
+            
+        } catch (e) {
+            macroLog('❌ Erro Calendar: ' + e.message, 'error');
+            return calculateFallbackEvents();
+        }
+    }
+    
+    // Forex Factory - API gratuita com dados reais de calendário econômico
+    async function fetchCalendarFromForexFactory() {
+        try {
+            const ffUrl = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
+            const urls = [
+                ffUrl,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(ffUrl)}`,
+                `https://corsproxy.io/?${encodeURIComponent(ffUrl)}`
+            ];
+            
+            let data = null;
+            for (const url of urls) {
+                try {
+                    const response = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+                    if (!response.ok) continue;
+                    const result = await response.json();
+                    if (Array.isArray(result) && result.length > 0) {
+                        data = result;
+                        break;
+                    }
+                } catch(e) {
+                    continue;
+                }
+            }
+            
+            if (!data || data.length === 0) return null;
+            
+            // Filtrar apenas eventos dos EUA com impacto alto/médio
+            const today = new Date();
+            const usEvents = data.filter(e => {
+                if (e.country !== 'USD') return false;
+                if (e.impact !== 'High' && e.impact !== 'Medium') return false;
+                const eventDate = new Date(e.date);
+                return eventDate >= new Date(today.toDateString()); // Hoje ou futuro
+            });
+            
+            if (usEvents.length === 0) return null;
+            
+            // Converter para nosso formato
+            const events = usEvents.slice(0, 15).map(e => {
+                const eventDate = new Date(e.date);
+                return {
+                    day: eventDate.getDate(),
+                    month: eventDate.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase(),
+                    time: eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                    title: translateEventName(e.title),
+                    fullDate: e.date.split('T')[0],
+                    country: 'EUA',
+                    impact: e.impact?.toLowerCase() || 'high',
+                    hasHistory: true,
+                    estimate: e.forecast || null,
+                    previous: e.previous || null,
+                    actual: null,
+                    source: 'Forex Factory'
+                };
+            });
+            
+            events.sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate));
+            macroLog(`✅ Calendário Forex Factory: ${events.length} eventos reais`, 'success');
+            return events;
+            
+        } catch(e) {
+            macroLog('⚠️ Forex Factory indisponível: ' + e.message, 'warn');
+            return null;
+        }
+    }
+    
+    // FMP API - Backup (requer plano ativo)
+    async function fetchCalendarFromFMP() {
+        try {
             const today = new Date();
             const fromDate = today.toISOString().split('T')[0];
             const toDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             
-            const url = `https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`;
-            const response = await fetch(url);
-            const data = await response.json();
+            // Tentar endpoint novo (stable) e legado (v3)
+            const urls = [
+                `https://financialmodelingprep.com/stable/economic-calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`,
+                `https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`
+            ];
             
-            if (!Array.isArray(data) || data.length === 0) {
-                macroLog('⚠️ FMP não retornou eventos, usando fallback', 'warn');
-                return calculateFallbackEvents();
+            let data = null;
+            for (const baseUrl of urls) {
+                const proxyUrls = [
+                    baseUrl,
+                    `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}`,
+                    `https://corsproxy.io/?${encodeURIComponent(baseUrl)}`
+                ];
+                for (const url of proxyUrls) {
+                    try {
+                        const response = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+                        if (!response.ok) continue;
+                        const result = await response.json();
+                        if (Array.isArray(result) && result.length > 0) {
+                            data = result;
+                            break;
+                        }
+                    } catch(e) {
+                        continue;
+                    }
+                }
+                if (data) break;
             }
+            
+            if (!data || data.length === 0) return null;
             
             // Filtrar apenas eventos de alto impacto dos EUA
             const usEvents = data.filter(e => {
                 if (e.country !== 'US') return false;
                 if (e.impact !== 'High' && e.impact !== 'Medium') return false;
-                
-                // Verificar se é um evento importante
                 const eventName = e.event?.toLowerCase() || '';
                 return HIGH_IMPACT_EVENTS.some(keyword => 
                     eventName.includes(keyword.toLowerCase())
                 );
             });
             
-            // Converter para nosso formato
             const events = usEvents.slice(0, 15).map(e => {
                 const eventDate = new Date(e.date);
                 return {
@@ -2106,57 +2438,81 @@
                     hasHistory: true,
                     estimate: e.estimate,
                     previous: e.previous,
-                    actual: e.actual
+                    actual: e.actual,
+                    source: 'FMP'
                 };
             });
             
-            // Ordenar por data
             events.sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate));
-            
-            // Atualizar cache
-            calendarCache = { events, lastUpdate: Date.now() };
-            
             macroLog(`✅ Calendário FMP: ${events.length} eventos`, 'success');
             return events;
             
-        } catch (e) {
-            macroLog('❌ Erro FMP Calendar: ' + e.message, 'error');
-            return calculateFallbackEvents();
+        } catch(e) {
+            macroLog('⚠️ FMP Calendar indisponível: ' + e.message, 'warn');
+            return null;
         }
     }
     
-    // Traduzir nomes de eventos para português
+    // Traduzir nomes de eventos para português (compatível com FMP e Forex Factory)
     function translateEventName(name) {
         const translations = {
             'Consumer Price Index': 'CPI (Inflação)',
-            'CPI': 'CPI (Inflação)',
+            'CPI m/m': 'CPI (Inflação) m/m',
+            'CPI y/y': 'CPI (Inflação) a/a',
             'Core CPI': 'CPI Core',
             'Non-Farm Payroll': 'Non-Farm Payrolls',
+            'Non-Farm Employment Change': 'Non-Farm Payrolls',
+            'ADP Non-Farm Employment': 'ADP Empregos Privados',
             'Nonfarm Payrolls': 'Non-Farm Payrolls',
             'Employment': 'Emprego',
             'Unemployment Rate': 'Taxa de Desemprego',
+            'Unemployment Claims': 'Pedidos Seguro-Desemprego',
             'Initial Jobless Claims': 'Pedidos Seguro-Desemprego',
+            'JOLTS Job Openings': 'JOLTS Vagas de Emprego',
             'GDP': 'PIB',
+            'Advance GDP': 'PIB (Preliminar)',
+            'Final GDP': 'PIB (Final)',
+            'Prelim GDP': 'PIB (Revisão)',
             'Gross Domestic Product': 'PIB',
             'FOMC': 'Decisão FOMC',
+            'Federal Funds Rate': 'Taxa de Juros Fed',
+            'FOMC Statement': 'Comunicado FOMC',
+            'FOMC Press Conference': 'Coletiva FOMC',
+            'FOMC Meeting Minutes': 'Ata do FOMC',
             'Federal Reserve': 'Fed',
             'Interest Rate Decision': 'Decisão de Juros',
             'Fed Interest Rate': 'Taxa de Juros Fed',
             'Retail Sales': 'Vendas no Varejo',
+            'Core Retail Sales': 'Vendas no Varejo Core',
             'Consumer Confidence': 'Confiança do Consumidor',
+            'UoM Consumer Sentiment': 'Sentimento Michigan',
+            'CB Consumer Confidence': 'Confiança CB',
+            'ISM Manufacturing PMI': 'ISM Manufatura',
             'ISM Manufacturing': 'ISM Manufatura',
+            'ISM Services PMI': 'ISM Serviços',
             'ISM Services': 'ISM Serviços',
             'PMI': 'PMI',
+            'PPI m/m': 'PPI m/m',
+            'PPI y/y': 'PPI a/a',
             'PPI': 'PPI (Preços ao Produtor)',
             'Producer Price Index': 'PPI',
             'Housing Starts': 'Início de Construções',
             'Building Permits': 'Licenças de Construção',
+            'New Home Sales': 'Vendas Casas Novas',
+            'Existing Home Sales': 'Vendas Casas Existentes',
             'Trade Balance': 'Balança Comercial',
             'Durable Goods': 'Bens Duráveis',
+            'Core Durable Goods': 'Bens Duráveis Core',
             'Personal Spending': 'Gastos Pessoais',
             'Personal Income': 'Renda Pessoal',
             'PCE Price Index': 'PCE (Inflação)',
-            'Core PCE': 'PCE Core'
+            'Core PCE Price Index': 'PCE Core',
+            'Core PCE': 'PCE Core',
+            'President Trump Speaks': 'Discurso Trump',
+            'Industrial Production': 'Produção Industrial',
+            'Capacity Utilization': 'Utilização da Capacidade',
+            'Factory Orders': 'Encomendas à Indústria',
+            'UoM Inflation Expectations': 'Expectativas de Inflação Michigan'
         };
         
         for (const [eng, pt] of Object.entries(translations)) {
@@ -2167,115 +2523,139 @@
         return name || 'Evento Econômico';
     }
     
-    // Fallback: eventos calculados se FMP falhar
+    // Fallback: Calendário com datas OFICIAIS publicadas por agências do governo
+    // Fontes: Federal Reserve (FOMC), Bureau of Labor Statistics (CPI, NFP, PPI), BEA (GDP/PCE)
+    // Estas NÃO são estimativas - são datas reais dos calendários oficiais
     function calculateFallbackEvents() {
         const today = new Date();
+        const maxDate = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000);
         const events = [];
         
-        // Helper para criar eventos
-        function addEvent(date, title, time, impact, hasHistory = true) {
-            const d = new Date(date);
-            if (d > today && d < new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000)) {
+        // ===== FOMC Meetings - Federal Reserve Official =====
+        for (const meeting of ALL_FOMC_MEETINGS) {
+            const d = new Date(meeting.date);
+            if (d > today && d < maxDate) {
                 events.push({
                     day: d.getDate(),
                     month: d.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase(),
-                    time: time,
-                    title: title,
-                    fullDate: date,
+                    time: '14:00',
+                    title: 'Decisão FOMC',
+                    fullDate: meeting.date,
                     country: 'EUA',
-                    impact: impact,
-                    hasHistory: hasHistory
+                    impact: 'high',
+                    hasHistory: true,
+                    description: meeting.label,
+                    source: 'Federal Reserve'
                 });
             }
         }
         
-        // FOMC meetings (todos os meetings)
-        for (const meeting of ALL_FOMC_MEETINGS) {
-            addEvent(meeting.date, 'Decisão FOMC', '14:00', 'high', true);
+        // ===== CPI (Consumer Price Index) - BLS Official Schedule 2026 =====
+        const CPI_RELEASES_2026 = [
+            { date: '2026-02-13', ref: 'Janeiro 2026' },
+            { date: '2026-03-11', ref: 'Fevereiro 2026' },
+            { date: '2026-04-10', ref: 'Março 2026' },
+            { date: '2026-05-12', ref: 'Abril 2026' },
+            { date: '2026-06-10', ref: 'Maio 2026' },
+            { date: '2026-07-14', ref: 'Junho 2026' },
+            { date: '2026-08-12', ref: 'Julho 2026' },
+            { date: '2026-09-11', ref: 'Agosto 2026' },
+            { date: '2026-10-14', ref: 'Setembro 2026' },
+            { date: '2026-11-10', ref: 'Outubro 2026' },
+            { date: '2026-12-10', ref: 'Novembro 2026' }
+        ];
+        for (const rel of CPI_RELEASES_2026) {
+            const d = new Date(rel.date);
+            if (d > today && d < maxDate) {
+                events.push({
+                    day: d.getDate(),
+                    month: d.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase(),
+                    time: '08:30',
+                    title: 'CPI (Inflação)',
+                    fullDate: rel.date,
+                    country: 'EUA',
+                    impact: 'high',
+                    hasHistory: true,
+                    description: `Dados de ${rel.ref}`,
+                    source: 'Bureau of Labor Statistics'
+                });
+            }
         }
         
-        // Eventos econômicos REAIS de 2026
-        // IMPORTANTE: Datas aproximadas baseadas no calendário econômico real
+        // ===== NFP (Employment Situation) - BLS Official Schedule 2026 =====
+        const NFP_RELEASES_2026 = [
+            { date: '2026-02-11', ref: 'Janeiro 2026' },
+            { date: '2026-03-06', ref: 'Fevereiro 2026' },
+            { date: '2026-04-03', ref: 'Março 2026' },
+            { date: '2026-05-08', ref: 'Abril 2026' },
+            { date: '2026-06-05', ref: 'Maio 2026' },
+            { date: '2026-07-02', ref: 'Junho 2026' },
+            { date: '2026-08-07', ref: 'Julho 2026' },
+            { date: '2026-09-04', ref: 'Agosto 2026' },
+            { date: '2026-10-02', ref: 'Setembro 2026' },
+            { date: '2026-11-06', ref: 'Outubro 2026' },
+            { date: '2026-12-04', ref: 'Novembro 2026' }
+        ];
+        for (const rel of NFP_RELEASES_2026) {
+            const d = new Date(rel.date);
+            if (d > today && d < maxDate) {
+                events.push({
+                    day: d.getDate(),
+                    month: d.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase(),
+                    time: '08:30',
+                    title: 'Non-Farm Payrolls',
+                    fullDate: rel.date,
+                    country: 'EUA',
+                    impact: 'high',
+                    hasHistory: true,
+                    description: `Dados de ${rel.ref}`,
+                    source: 'Bureau of Labor Statistics'
+                });
+            }
+        }
         
-        // ===== FEVEREIRO 2026 =====
-        addEvent('2026-02-06', 'Non-Farm Payrolls', '08:30', 'high');
-        addEvent('2026-02-11', 'CPI (Inflação)', '08:30', 'high');
-        addEvent('2026-02-12', 'PPI (Preços Produtor)', '08:30', 'medium');
-        addEvent('2026-02-13', 'Vendas no Varejo', '08:30', 'high');
-        addEvent('2026-02-19', 'Pedidos Seguro-Desemprego', '08:30', 'medium');
-        addEvent('2026-02-24', 'Confiança do Consumidor', '10:00', 'medium');
-        addEvent('2026-02-26', 'PIB Q4 (Segunda Est.)', '08:30', 'high');
-        addEvent('2026-02-27', 'PCE (Inflação)', '08:30', 'high');
+        // ===== PPI (Producer Price Index) - BLS Official Schedule 2026 =====
+        const PPI_RELEASES_2026 = [
+            { date: '2026-02-27', ref: 'Janeiro 2026' },
+            { date: '2026-03-12', ref: 'Fevereiro 2026' },
+            { date: '2026-04-14', ref: 'Março 2026' },
+            { date: '2026-05-13', ref: 'Abril 2026' },
+            { date: '2026-06-11', ref: 'Maio 2026' },
+            { date: '2026-07-15', ref: 'Junho 2026' },
+            { date: '2026-08-13', ref: 'Julho 2026' },
+            { date: '2026-09-10', ref: 'Agosto 2026' },
+            { date: '2026-10-15', ref: 'Setembro 2026' },
+            { date: '2026-11-13', ref: 'Outubro 2026' },
+            { date: '2026-12-15', ref: 'Novembro 2026' }
+        ];
+        for (const rel of PPI_RELEASES_2026) {
+            const d = new Date(rel.date);
+            if (d > today && d < maxDate) {
+                events.push({
+                    day: d.getDate(),
+                    month: d.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase(),
+                    time: '08:30',
+                    title: 'PPI (Preços ao Produtor)',
+                    fullDate: rel.date,
+                    country: 'EUA',
+                    impact: 'medium',
+                    hasHistory: true,
+                    description: `Dados de ${rel.ref}`,
+                    source: 'Bureau of Labor Statistics'
+                });
+            }
+        }
         
-        // ===== MARÇO 2026 =====
-        addEvent('2026-03-02', 'ISM Manufatura', '10:00', 'high');
-        addEvent('2026-03-04', 'ISM Serviços', '10:00', 'high');
-        addEvent('2026-03-06', 'Non-Farm Payrolls', '08:30', 'high');
-        addEvent('2026-03-11', 'CPI (Inflação)', '08:30', 'high');
-        addEvent('2026-03-12', 'PPI (Preços Produtor)', '08:30', 'medium');
-        addEvent('2026-03-17', 'Vendas no Varejo', '08:30', 'high');
-        addEvent('2026-03-24', 'Pedidos Bens Duráveis', '08:30', 'medium');
-        addEvent('2026-03-26', 'PIB Q4 (Final)', '08:30', 'high');
-        addEvent('2026-03-27', 'PCE (Inflação)', '08:30', 'high');
-        addEvent('2026-03-31', 'Confiança do Consumidor', '10:00', 'medium');
+        if (events.length === 0) {
+            macroLog('⚠️ Nenhum evento futuro encontrado no fallback', 'warn');
+            return null;
+        }
         
-        // ===== ABRIL 2026 =====
-        addEvent('2026-04-01', 'ISM Manufatura', '10:00', 'high');
-        addEvent('2026-04-03', 'Non-Farm Payrolls', '08:30', 'high');
-        addEvent('2026-04-03', 'ISM Serviços', '10:00', 'high');
-        addEvent('2026-04-10', 'CPI (Inflação)', '08:30', 'high');
-        addEvent('2026-04-14', 'PPI (Preços Produtor)', '08:30', 'medium');
-        addEvent('2026-04-15', 'Vendas no Varejo', '08:30', 'high');
-        addEvent('2026-04-28', 'Confiança do Consumidor', '10:00', 'medium');
-        addEvent('2026-04-29', 'PIB Q1 (Avançado)', '08:30', 'high');
-        addEvent('2026-04-30', 'PCE (Inflação)', '08:30', 'high');
-        
-        // ===== MAIO 2026 =====
-        addEvent('2026-05-01', 'ISM Manufatura', '10:00', 'high');
-        addEvent('2026-05-05', 'ISM Serviços', '10:00', 'high');
-        addEvent('2026-05-08', 'Non-Farm Payrolls', '08:30', 'high');
-        addEvent('2026-05-13', 'CPI (Inflação)', '08:30', 'high');
-        addEvent('2026-05-14', 'PPI (Preços Produtor)', '08:30', 'medium');
-        addEvent('2026-05-15', 'Vendas no Varejo', '08:30', 'high');
-        addEvent('2026-05-26', 'Confiança do Consumidor', '10:00', 'medium');
-        addEvent('2026-05-28', 'PIB Q1 (Segunda Est.)', '08:30', 'high');
-        addEvent('2026-05-29', 'PCE (Inflação)', '08:30', 'high');
-        
-        // ===== JUNHO 2026 =====
-        addEvent('2026-06-01', 'ISM Manufatura', '10:00', 'high');
-        addEvent('2026-06-03', 'ISM Serviços', '10:00', 'high');
-        addEvent('2026-06-05', 'Non-Farm Payrolls', '08:30', 'high');
-        addEvent('2026-06-10', 'CPI (Inflação)', '08:30', 'high');
-        addEvent('2026-06-11', 'PPI (Preços Produtor)', '08:30', 'medium');
-        addEvent('2026-06-16', 'Vendas no Varejo', '08:30', 'high');
-        addEvent('2026-06-25', 'PIB Q1 (Final)', '08:30', 'high');
-        addEvent('2026-06-26', 'PCE (Inflação)', '08:30', 'high');
-        addEvent('2026-06-30', 'Confiança do Consumidor', '10:00', 'medium');
-        
-        // ===== JULHO 2026 =====
-        addEvent('2026-07-01', 'ISM Manufatura', '10:00', 'high');
-        addEvent('2026-07-02', 'Non-Farm Payrolls', '08:30', 'high');
-        addEvent('2026-07-06', 'ISM Serviços', '10:00', 'high');
-        addEvent('2026-07-14', 'CPI (Inflação)', '08:30', 'high');
-        addEvent('2026-07-15', 'PPI (Preços Produtor)', '08:30', 'medium');
-        addEvent('2026-07-16', 'Vendas no Varejo', '08:30', 'high');
-        addEvent('2026-07-28', 'Confiança do Consumidor', '10:00', 'medium');
-        addEvent('2026-07-29', 'PIB Q2 (Avançado)', '08:30', 'high');
-        addEvent('2026-07-31', 'PCE (Inflação)', '08:30', 'high');
-        
-        // ===== AGOSTO 2026 =====
-        addEvent('2026-08-03', 'ISM Manufatura', '10:00', 'high');
-        addEvent('2026-08-05', 'ISM Serviços', '10:00', 'high');
-        addEvent('2026-08-07', 'Non-Farm Payrolls', '08:30', 'high');
-        addEvent('2026-08-12', 'CPI (Inflação)', '08:30', 'high');
-        addEvent('2026-08-13', 'PPI (Preços Produtor)', '08:30', 'medium');
-        addEvent('2026-08-14', 'Vendas no Varejo', '08:30', 'high');
-        addEvent('2026-08-25', 'Confiança do Consumidor', '10:00', 'medium');
-        addEvent('2026-08-27', 'PIB Q2 (Segunda Est.)', '08:30', 'high');
-        addEvent('2026-08-28', 'PCE (Inflação)', '08:30', 'high');
-        
+        // Ordenar por data
         events.sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate));
-        return events.slice(0, 15);
+        
+        macroLog(`⚠️ Fallback: ${events.length} eventos de calendário oficial (BLS/Fed)`, 'warn');
+        return events;
     }
     
     // Buscar histórico de um evento via Alpha Vantage
@@ -2312,20 +2692,32 @@
             return;
         }
         
-        container.innerHTML = events.slice(0, 10).map((e, idx) => `
+        container.innerHTML = events.slice(0, 10).map((e, idx) => {
+            // Formatar data no estilo brasileiro DD/MM
+            const fullDateObj = new Date(e.fullDate + 'T12:00:00');
+            const dayStr = String(fullDateObj.getDate()).padStart(2, '0');
+            const monthStr = String(fullDateObj.getMonth() + 1).padStart(2, '0');
+            
+            // Informação de resultado anterior
+            let prevInfo = '';
+            if (e.previous && e.previous !== 'null' && e.previous !== '') {
+                prevInfo = ` • Ant: ${e.previous}`;
+            }
+            
+            return `
             <div class="calendar-event" data-event-idx="${idx}" data-event-title="${e.title}" style="cursor: pointer; transition: background 0.2s;" onclick="window.MacroAPI.showEventDetails('${e.title}', '${e.fullDate}')">
                 <div class="calendar-date">
-                    <div class="calendar-day">${e.day}</div>
-                    <div class="calendar-month">${e.month}</div>
+                    <div class="calendar-day">${dayStr}</div>
+                    <div class="calendar-month">${monthStr}</div>
                 </div>
                 <div class="calendar-info">
                     <div class="calendar-title">${e.title}</div>
-                    <div class="calendar-country">${e.country} • ${e.time}${e.estimate ? ` • Est: ${e.estimate}` : ''}</div>
+                    <div class="calendar-country">${e.country} • ${e.time}${e.estimate ? ` • Est: ${e.estimate}` : ''}${prevInfo}</div>
                 </div>
                 <div class="calendar-impact ${e.impact}">${e.impact === 'high' ? 'ALTO' : 'MÉDIO'}</div>
                 <i class="fas fa-chevron-right" style="color: var(--text-muted); font-size: 12px; margin-left: 8px;"></i>
             </div>
-        `).join('') || '<p style="color: var(--text-muted); text-align: center;">Nenhum evento</p>';
+        `}).join('') || '<p style="color: var(--text-muted); text-align: center;">Nenhum evento</p>';
         
         // Adicionar hover effect
         container.querySelectorAll('.calendar-event').forEach(el => {
@@ -2336,7 +2728,7 @@
         // Mostrar última atualização
         const updateInfo = document.createElement('div');
         updateInfo.style.cssText = 'font-size: 10px; color: #555; text-align: right; margin-top: 8px; padding-right: 8px;';
-        updateInfo.textContent = `Atualizado: ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • Fonte: FMP • Histórico: FRED`;
+        updateInfo.textContent = `Atualizado: ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • Histórico: FRED API`;
         container.appendChild(updateInfo);
     }
     
@@ -2419,14 +2811,27 @@
                         <div style="display: flex; flex-direction: column; gap: 10px;">
                             ${history.map((h, idx) => {
                                 // Calcular variação entre actual e previous
-                                const actualNum = parseFloat(String(h.actual).replace(/[^0-9.-]/g, ''));
-                                const prevNum = parseFloat(String(h.previous).replace(/[^0-9.-]/g, ''));
+                                const actualStr = String(h.actual);
+                                const prevStr = String(h.previous);
+                                const actualNum = parseFloat(actualStr.replace(/[^0-9.-]/g, ''));
+                                const prevNum = parseFloat(prevStr.replace(/[^0-9.-]/g, ''));
                                 let variacao = '';
                                 let varColor = '#888';
-                                if (!isNaN(actualNum) && !isNaN(prevNum) && prevNum !== 0 && h.previous !== '-') {
+                                
+                                if (!isNaN(actualNum) && !isNaN(prevNum) && h.previous !== '-') {
                                     const diff = actualNum - prevNum;
-                                    const diffPct = ((diff / Math.abs(prevNum)) * 100).toFixed(1);
-                                    variacao = diff >= 0 ? `+${diffPct}%` : `${diffPct}%`;
+                                    // Se os valores são percentuais (contém % ou valor < 50), mostrar diferença em pp
+                                    const isPercentageValue = actualStr.includes('%') || prevStr.includes('%') || 
+                                        (Math.abs(actualNum) < 50 && Math.abs(prevNum) < 50 && !actualStr.includes('K') && !actualStr.includes('M'));
+                                    
+                                    if (isPercentageValue) {
+                                        // Para valores em %, mostrar diferença em pontos percentuais
+                                        variacao = diff >= 0 ? `+${diff.toFixed(1)}pp` : `${diff.toFixed(1)}pp`;
+                                    } else if (prevNum !== 0) {
+                                        // Para valores absolutos, mostrar variação %
+                                        const diffPct = ((diff / Math.abs(prevNum)) * 100).toFixed(1);
+                                        variacao = diff >= 0 ? `+${diffPct}%` : `${diffPct}%`;
+                                    }
                                     varColor = diff >= 0 ? '#22c55e' : '#ef4444';
                                 }
                                 
