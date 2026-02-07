@@ -3633,25 +3633,25 @@
                         <!-- Moving Averages Panel -->
                         <div id="panel-ma" class="analysis-panel">
                             <div class="ma-grid">
-                                <div class="ma-item">
-                                    <div class="ma-label">MA 7</div>
-                                    <div class="ma-value" id="ma-7">--</div>
-                                    <div class="ma-signal" id="ma-7-signal"></div>
+                                <div class="ma-item" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, transparent 100%); border: 1px solid rgba(59, 130, 246, 0.3);">
+                                    <div class="ma-label" style="color: #3b82f6;">EMA 9</div>
+                                    <div class="ma-value" id="ema-9">--</div>
+                                    <div class="ma-signal" id="ema-9-signal"></div>
                                 </div>
                                 <div class="ma-item" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, transparent 100%); border: 1px solid rgba(34, 197, 94, 0.3);">
                                     <div class="ma-label" style="color: #22c55e;">EMA 20</div>
                                     <div class="ma-value" id="ema-20">--</div>
                                     <div class="ma-signal" id="ema-20-signal"></div>
                                 </div>
-                                <div class="ma-item">
-                                    <div class="ma-label">MA 25</div>
-                                    <div class="ma-value" id="ma-25">--</div>
-                                    <div class="ma-signal" id="ma-25-signal"></div>
-                                </div>
                                 <div class="ma-item" style="background: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, transparent 100%); border: 1px solid rgba(249, 115, 22, 0.3);">
                                     <div class="ma-label" style="color: #f97316;">EMA 50</div>
                                     <div class="ma-value" id="ema-50">--</div>
                                     <div class="ma-signal" id="ema-50-signal"></div>
+                                </div>
+                                <div class="ma-item">
+                                    <div class="ma-label">MA 50</div>
+                                    <div class="ma-value" id="ma-50">--</div>
+                                    <div class="ma-signal" id="ma-50-signal"></div>
                                 </div>
                                 <div class="ma-item">
                                     <div class="ma-label">MA 99</div>
@@ -3665,30 +3665,19 @@
                                 </div>
                             </div>
                             
-                            <!-- Support and Resistance Confluence -->
+                            <!-- Support and Resistance -->
                             <div style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; border: 1px solid var(--border-subtle);">
                                 <div style="font-size: 12px; font-weight: 700; color: var(--accent-purple); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-                                    <i class="fas fa-layer-group"></i> Suporte & Resistência (Confluência)
+                                    <i class="fas fa-layer-group"></i> Suporte & Resistência Inteligente
                                 </div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                                     <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #22c55e;">
                                         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">SUPORTE</div>
                                         <div style="font-size: 14px; font-weight: 700; color: #22c55e;" id="sr-support">--</div>
-                                        <div style="font-size: 10px; color: var(--text-muted);" id="sr-support-dist">-- abaixo</div>
                                     </div>
                                     <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #ef4444;">
                                         <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">RESISTÊNCIA</div>
                                         <div style="font-size: 14px; font-weight: 700; color: #ef4444;" id="sr-resistance">--</div>
-                                        <div style="font-size: 10px; color: var(--text-muted);" id="sr-resistance-dist">-- acima</div>
-                                    </div>
-                                </div>
-                                <div style="margin-top: 10px; padding: 8px; background: var(--bg-secondary); border-radius: 8px;">
-                                    <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">FORÇA DA CONFLUÊNCIA</div>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <div style="flex: 1; height: 6px; background: var(--bg-primary); border-radius: 3px; overflow: hidden;">
-                                            <div id="sr-confluence-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e, #f97316); border-radius: 3px; transition: width 0.5s ease;"></div>
-                                        </div>
-                                        <span id="sr-confluence-value" style="font-size: 12px; font-weight: 700; color: var(--text-primary);">--</span>
                                     </div>
                                 </div>
                             </div>
@@ -3754,6 +3743,24 @@
                         <div class="external-link-text">
                             <div class="external-link-title">U.S. Government</div>
                             <div class="external-link-desc">Arkham - Governo dos EUA</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/microstrategy', 'MicroStrategy')">
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #d4200c, #ff4433); display: flex; align-items: center; justify-content: center; font-weight: 800; color: white; font-size: 14px;">M</div>
+                        <div class="external-link-text">
+                            <div class="external-link-title">MicroStrategy</div>
+                            <div class="external-link-desc">Arkham - Maior holder corporativo de BTC</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/metamask', 'MetaMask')">
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #e27625, #f5841f); display: flex; align-items: center; justify-content: center;">
+                            <i class="fas fa-fox" style="color: white; font-size: 16px;">🦊</i>
+                        </div>
+                        <div class="external-link-text">
+                            <div class="external-link-title">MetaMask</div>
+                            <div class="external-link-desc">Arkham - Carteira Web3 popular</div>
                         </div>
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
@@ -6520,10 +6527,10 @@
                     return ema;
                 };
                 
-                const ma7 = calculateMA(closePrices, 7);
+                const ema9 = calculateEMAFromPrices(closePrices, 9);
                 const ema20 = calculateEMAFromPrices(closePrices, 20);
-                const ma25 = calculateMA(closePrices, 25);
                 const ema50 = calculateEMAFromPrices(closePrices, 50);
+                const ma50 = calculateMA(closePrices, 50);
                 const ma99 = calculateMA(closePrices, 99);
                 const ma200 = closePrices.length >= 200 ? calculateMA(closePrices, 200) : null;
                 
@@ -6537,16 +6544,7 @@
                 const support = Math.min(...recentLows);
                 
                 // Calcular confluência (quantas MAs estão próximas do suporte/resistência)
-                const allMAs = [ma7, ema20, ma25, ema50, ma99, ma200].filter(m => m !== null);
-                let confluenceScore = 0;
-                const confluenceThreshold = 0.02; // 2% de tolerância
-                
-                allMAs.forEach(ma => {
-                    const distToSupport = Math.abs(ma - support) / support;
-                    const distToResistance = Math.abs(ma - resistance) / resistance;
-                    if (distToSupport < confluenceThreshold) confluenceScore += 1;
-                    if (distToResistance < confluenceThreshold) confluenceScore += 1;
-                });
+                const allMAs = [ema9, ema20, ema50, ma50, ma99, ma200].filter(m => m !== null);
                 
                 // Formatar preço
                 const formatMAPrice = (price) => {
@@ -6566,28 +6564,28 @@
                 };
                 
                 // Atualizar UI - MAs
-                document.getElementById('ma-7').textContent = formatMAPrice(ma7);
+                document.getElementById('ema-9').textContent = formatMAPrice(ema9);
                 document.getElementById('ema-20').textContent = formatMAPrice(ema20);
-                document.getElementById('ma-25').textContent = formatMAPrice(ma25);
                 document.getElementById('ema-50').textContent = formatMAPrice(ema50);
+                document.getElementById('ma-50').textContent = formatMAPrice(ma50);
                 document.getElementById('ma-99').textContent = formatMAPrice(ma99);
                 document.getElementById('ma-200').textContent = formatMAPrice(ma200);
                 
-                const signal7 = getSignal(ma7);
+                const signalEma9 = getSignal(ema9);
                 const signalEma20 = getSignal(ema20);
-                const signal25 = getSignal(ma25);
                 const signalEma50 = getSignal(ema50);
+                const signal50 = getSignal(ma50);
                 const signal99 = getSignal(ma99);
                 const signal200 = getSignal(ma200);
                 
-                document.getElementById('ma-7-signal').className = `ma-signal ${signal7.class}`;
-                document.getElementById('ma-7-signal').textContent = signal7.text;
+                document.getElementById('ema-9-signal').className = `ma-signal ${signalEma9.class}`;
+                document.getElementById('ema-9-signal').textContent = signalEma9.text;
                 document.getElementById('ema-20-signal').className = `ma-signal ${signalEma20.class}`;
                 document.getElementById('ema-20-signal').textContent = signalEma20.text;
-                document.getElementById('ma-25-signal').className = `ma-signal ${signal25.class}`;
-                document.getElementById('ma-25-signal').textContent = signal25.text;
                 document.getElementById('ema-50-signal').className = `ma-signal ${signalEma50.class}`;
                 document.getElementById('ema-50-signal').textContent = signalEma50.text;
+                document.getElementById('ma-50-signal').className = `ma-signal ${signal50.class}`;
+                document.getElementById('ma-50-signal').textContent = signal50.text;
                 document.getElementById('ma-99-signal').className = `ma-signal ${signal99.class}`;
                 document.getElementById('ma-99-signal').textContent = signal99.text;
                 document.getElementById('ma-200-signal').className = `ma-signal ${signal200.class}`;
@@ -6597,19 +6595,8 @@
                 document.getElementById('sr-support').textContent = formatMAPrice(support);
                 document.getElementById('sr-resistance').textContent = formatMAPrice(resistance);
                 
-                const distToSupport = ((currentPrice - support) / currentPrice) * 100;
-                const distToResistance = ((resistance - currentPrice) / currentPrice) * 100;
-                document.getElementById('sr-support-dist').textContent = `${distToSupport.toFixed(1)}% abaixo`;
-                document.getElementById('sr-resistance-dist').textContent = `${distToResistance.toFixed(1)}% acima`;
-                
-                // Confluência (0-12 possível, normalizar para 0-100%)
-                const maxConfluence = allMAs.length * 2;
-                const confluencePercent = Math.min(100, Math.round((confluenceScore / maxConfluence) * 100));
-                document.getElementById('sr-confluence-bar').style.width = `${confluencePercent}%`;
-                document.getElementById('sr-confluence-value').textContent = `${confluencePercent}%`;
-                
                 // Resumo geral
-                const signals = [signal7, signalEma20, signal25, signalEma50, signal99, signal200].filter(s => s.text !== '--');
+                const signals = [signalEma9, signalEma20, signalEma50, signal50, signal99, signal200].filter(s => s.text !== '--');
                 const buyCount = signals.filter(s => s.class === 'buy').length;
                 const sellCount = signals.filter(s => s.class === 'sell').length;
                 
