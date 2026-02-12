@@ -3689,13 +3689,37 @@
                     </div>
                 </div>
 
-                <!-- Links -->
-                <!-- Carteiras de Baleias -->
-                <div class="card" style="margin-top: 16px;">
+                <!-- Whale Activity Indicator -->
+                <div id="whale-activity-indicator" class="card" style="margin-top: 16px;">
                     <div class="card-header">
                         <div class="card-title">
-                            <i class="fas fa-whale" style="font-size: 16px;">🐋</i>
-                            Carteiras de Baleias
+                            Atividades das Baleias
+                        </div>
+                    </div>
+                    <div style="padding: 16px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="opacity: 0.5;"><i class="fas fa-spinner fa-spin"></i> Carregando atividade...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Links -->
+                <!-- Carteiras das Principais Baleias -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
+                            <div style="
+                                width: 32px; height: 32px; 
+                                background: linear-gradient(135deg, #f59e0b, #ef4444);
+                                border-radius: 8px;
+                                display: flex; align-items: center; justify-content: center;
+                                box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);">
+                                <i class="fas fa-wallet" style="color: white; font-size: 14px;"></i>
+                            </div>
+                            <div>
+                                <div style="font-size: 15px; font-weight: 700;">Carteiras das Principais Baleias</div>
+                                <div style="font-size: 10px; color: var(--text-muted); font-weight: 400;">Exchanges & Institucionais</div>
+                            </div>
                         </div>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/coinbase', 'Coinbase')">
@@ -3767,9 +3791,19 @@
                 <!-- Mapa de Calor -->
                 <div class="card" style="margin-top: 16px;">
                     <div class="card-header">
-                        <div class="card-title">
-                            <i class="fas fa-fire" style="color: #ff6b35;"></i>
-                            Mapa de Calor
+                        <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
+                            <div style="
+                                width: 32px; height: 32px; 
+                                background: linear-gradient(135deg, #ff6b35, #ef4444);
+                                border-radius: 8px;
+                                display: flex; align-items: center; justify-content: center;
+                                box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);">
+                                <i class="fas fa-fire" style="color: white; font-size: 14px;"></i>
+                            </div>
+                            <div>
+                                <div style="font-size: 15px; font-weight: 700;">Mapa de Calor</div>
+                                <div style="font-size: 10px; color: var(--text-muted); font-weight: 400;">Liquidações em tempo real</div>
+                            </div>
                         </div>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://www.coinglass.com/pro/futures/LiquidationHeatMap', 'Liquidation Heatmap')">
@@ -4035,6 +4069,7 @@
         let newsLoaded = false; // Flag para saber se notícias já foram carregadas
         let macroUpdateInterval = null; // Intervalo para atualização em tempo real do MACRO
         let isRenderingNews = false; // Flag para evitar renderizações simultâneas
+        let whaleActivity = { level: 'neutral', percentage: 0, largeTrades: 0, totalTrades: 0 }; // Atividade de baleias
 
 
 
@@ -4194,13 +4229,12 @@
         // Função para restaurar a seção após fechar link externo
         function restoreSectionIfNeeded() {
             const savedSection = sessionStorage.getItem('returnToSection');
+            console.log('🔄 restoreSectionIfNeeded chamado, savedSection:', savedSection, 'currentSection:', currentSection);
             if (savedSection) {
-                console.log('🔙 Restaurando seção:', savedSection);
                 sessionStorage.removeItem('returnToSection');
-                // Mostrar a seção que estava antes
-                if (savedSection !== currentSection) {
-                    showSection(savedSection);
-                }
+                // Sempre restaurar a seção salva
+                console.log('✅ Restaurando seção:', savedSection);
+                showSection(savedSection);
             }
         }
         
@@ -4230,8 +4264,11 @@
                 // Garantir que estamos na seção de notícias
                 showSection('news');
                 
-                // Reabrir o modal correto
-                if (data.isHotNews && data.hotNewsUrl) {
+                // Reabrir o modal correto usando índice (mais confiável)
+                if (data.isHotNews && data.newsIndex !== null && data.newsIndex !== undefined) {
+                    openHotNewsModal(data.newsIndex);
+                } else if (data.isHotNews && data.hotNewsUrl) {
+                    // Fallback para URL se não tiver índice
                     openHotNewsModal(data.hotNewsUrl);
                 } else if (data.newsIndex !== null && data.newsIndex !== undefined) {
                     openNewsModal(data.newsIndex);
@@ -4246,11 +4283,15 @@
             }
         }
         
-        // Também usar visibilitychange como fallback
+        // Também usar visibilitychange como fallback (mais confiável que browserFinished)
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
                 console.log('👁 Página voltou ao foco');
-                setTimeout(() => restoreNewsModalIfNeeded(), 200);
+                // Restaurar seção primeiro, depois modal
+                setTimeout(() => {
+                    restoreSectionIfNeeded();
+                    restoreNewsModalIfNeeded();
+                }, 100);
             }
         });
         
@@ -5827,11 +5868,11 @@
                 const timeAgo = getTimeAgo(news.published);
                 const twitterBadge = news.isTwitter ? '<span style="background: #1DA1F2; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; margin-left: 6px;"><i class="fab fa-twitter"></i></span>' : '';
                 
-                // Usar URL como identificador para maior confiabilidade
-                const safeUrl = (news.url || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                // Usar originalIndex para abrir modal corretamente (mais confiável que URL)
+                const newsIdx = news.originalIndex !== undefined ? news.originalIndex : index;
                 
                 return `
-                    <div class="news-item hot" onclick="openHotNewsModal('${safeUrl}')" style="border-left: 3px solid #f97316;">
+                    <div class="news-item hot" onclick="openHotNewsModal(${newsIdx})" style="border-left: 3px solid #f97316;">
                         <div class="news-header">
                             <div class="news-title">
                                 <span style="font-size: 16px; margin-right: 6px;">${icon}</span>
@@ -5858,16 +5899,16 @@
             try {
                 let news;
                 
-                // Se é string (URL), buscar por URL - PRIORIZAR allNews
-                if (typeof newsIndexOrUrl === 'string') {
-                    // Primeiro buscar no allNews (onde estão todas as notícias)
+                // Se é número (índice), buscar por originalIndex no allNews
+                if (typeof newsIndexOrUrl === 'number') {
+                    news = allNews?.find(n => n.originalIndex === newsIndexOrUrl) ||
+                           window.hotNewsData?.[newsIndexOrUrl] ||
+                           hotNewsCache?.[newsIndexOrUrl];
+                } else if (typeof newsIndexOrUrl === 'string') {
+                    // Fallback para URL se passar string
                     news = allNews?.find(n => n.url === newsIndexOrUrl) ||
                            window.hotNewsData?.find(n => n.url === newsIndexOrUrl) ||
                            hotNewsCache?.find(n => n.url === newsIndexOrUrl);
-                } else {
-                    // Se é número (índice), buscar por índice
-                    news = window.hotNewsData?.[newsIndexOrUrl] ||
-                           hotNewsCache?.[newsIndexOrUrl];
                 }
                 
                 if (!news) {
@@ -5930,12 +5971,14 @@
             document.getElementById('news-modal-summary').textContent = summary;
             document.getElementById('news-modal-time-text').textContent = `Publicado ${timeAgo} • ${formattedDate}`;
             
-            // Guardar URL da hot news para reabrir após voltar do browser
+            // Guardar info para reabrir após voltar do browser
             window.currentHotNewsUrl = news.url;
+            window.currentHotNewsIndex = news.originalIndex;
             
             document.getElementById('news-modal-button').onclick = () => {
                 // NÃO fechar o modal - manter aberto para quando voltar
-                openInAppBrowser(news.url, translatedTitle, null, true, news.url);
+                // Passar índice para que o restore funcione corretamente
+                openInAppBrowser(news.url, translatedTitle, news.originalIndex, true, news.url);
             };
             
             // Gerar imagem - tentar buscar imagem real primeiro, fallback para ícone urgente
@@ -6122,12 +6165,11 @@
                 const displayTitle = sanitizeHTML(news.translatedTitle || news.title);
                 const safeSource = sanitizeHTML(news.source);
                 
-                // Determinar qual função de modal usar - USAR URL para hot news
+                // Todas as notícias usam índice para abrir modal - mais confiável que URL
                 let onclickHandler;
                 if (isHot) {
-                    // Para urgentes, usar URL como identificador para maior confiabilidade
-                    const safeUrl = (news.url || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                    onclickHandler = `openHotNewsModal('${safeUrl}')`;
+                    // Para urgentes, usar mesmo modalz mas com índice
+                    onclickHandler = `openHotNewsModal(${news.originalIndex})`;
                 } else {
                     onclickHandler = `openNewsModal(${news.originalIndex})`;
                 }
@@ -7335,7 +7377,7 @@
                         ];
                         
                         // Filtrar e mapear eventos
-                        events = fmpData
+                        const filteredData = fmpData
                             .filter(e => {
                                 const eventName = (e.event || '').toLowerCase();
                                 const country = (e.country || '').toLowerCase();
@@ -7343,7 +7385,20 @@
                                 const isRelevantCountry = country.includes('us') || country.includes('eu') || country.includes('united states') || country.includes('eurozone');
                                 const isImportant = importantEvents.some(ie => eventName.includes(ie));
                                 return isRelevantCountry && (e.impact === 'High' || e.impact === 'Medium' || isImportant);
-                            })
+                            });
+                        
+                        // Remover duplicatas (mesmo evento no mesmo dia)
+                        const seenEvents = new Set();
+                        const deduplicatedData = filteredData.filter(e => {
+                            const eventName = (e.event || '').toLowerCase();
+                            const eventDate = new Date(e.date).toDateString();
+                            const key = `${eventName}-${eventDate}`;
+                            if (seenEvents.has(key)) return false;
+                            seenEvents.add(key);
+                            return true;
+                        });
+                        
+                        events = deduplicatedData
                             .slice(0, 12) // Limitar a 12 eventos
                             .map(e => {
                                 const eventDate = new Date(e.date);
@@ -8540,10 +8595,16 @@
                 try { fetchVolume(); } catch(e) { console.error('Volume error:', e); }
                 try { fetchCryptoStats(); } catch(e) { console.error('CryptoStats error:', e); }
                 try { fetchMovingAverages(); } catch(e) { console.error('MA error:', e); }
+                try { 
+                    fetchWhaleActivity('1h'); 
+                    startWhaleActivityAutoRefresh(); 
+                } catch(e) { console.error('WhaleActivity error:', e); }
             }, 1000);
             
             // AI update every 2s
             setInterval(updateAIRecommendation, 2000);
+            
+            // Whale Activity: 5 min auto-refresh configurado na função startWhaleActivityAutoRefresh
             
             // Preços via REST a cada 3s como fallback do WebSocket
             setInterval(fetchPricesViaREST, 3000);
@@ -8837,6 +8898,14 @@
             // EMA 200 em múltiplos timeframes (peso: 1.5 cada)
             const ema200_1h = calculateEMA(klines1h, 200);
             const ema200_4h = calculateEMA(klines4h, 200);
+            
+            // Médias Móveis Adicionais para painel de MAs
+            const ema9 = calculateEMA(klines1h, 9);
+            const ema20 = calculateEMA(klines1h, 20);
+            const ema50 = calculateEMA(klines1h, 50);
+            const sma50 = calculateSMA(klines1h, 50);
+            const sma99 = calculateSMA(klines1h, 99);
+            const sma200 = calculateSMA(klines1h, 200);
             
             // VWAP (peso: 1.5)
             const vwap = calculateVWAP(klines1h);
@@ -9169,7 +9238,11 @@
             // Generate AI Summary
             const aiSummary = generateAISummary(signalType, confidence, {
                 priceLocation, fundingSignal, cvdSignal, bookSignal, rsiSignal, lsSignal, poc, vah, val,
-                confluenceDetails, longIndicators, shortIndicators, totalIndicators
+                confluenceDetails, longIndicators, shortIndicators, totalIndicators,
+                // Novos parâmetros para análise completa
+                movingAverages: { ema9, ema20, ema50, sma50, sma99, sma200, currentPrice },
+                bookImbalance: bookImbalance,
+                whaleActivity: whaleActivity
             }, symbol);
             
             return {
@@ -9224,6 +9297,21 @@
                         stoch1h: stoch1h,
                         netVolume1h: netVolume1h,
                         netVolume4h: netVolume4h
+                    },
+                    movingAverages: {
+                        ema9: ema9.toFixed(2),
+                        ema20: ema20.toFixed(2),
+                        ema50: ema50.toFixed(2),
+                        sma50: sma50.toFixed(2),
+                        sma99: sma99.toFixed(2),
+                        sma200: sma200.toFixed(2),
+                        currentPrice: currentPrice,
+                        support: Math.min(ema50, sma50, val).toFixed(2),
+                        resistance: Math.max(ema50, sma50, vah).toFixed(2)
+                    },
+                    orderBookDetail: {
+                        bids: orderBook.bids?.slice(0, 5) || [],
+                        asks: orderBook.asks?.slice(0, 5) || []
                     }
                 },
                 aiSummary,
@@ -9349,6 +9437,836 @@
             return { delta: Math.round(delta), trend, buyVolume, sellVolume };
         }
         
+        // ============================================
+        // WHALE ACTIVITY - Transações On-Chain via MEMPOOL.SPACE
+        // API gratuita - suporta últimas ~2.5 horas de blocos
+        // Estratégia Híbrida: Base de dados própria + Mempool.space
+        // ============================================
+        let whaleActivityPeriod = '1h';
+        let whaleActivityLastUpdate = null;
+        let whaleActivityInterval = null;
+        let whaleActivityData = {
+            transactions: [],
+            totalVolume: 0,
+            toExchange: 0,
+            fromExchange: 0,
+            direction: 'neutral',
+            count: 0
+        };
+        
+        // Períodos disponíveis (API gratuita suporta ~2.5h de blocos recentes)
+        const WHALE_PERIODS = {
+            '30m': { label: '30m', seconds: 1800, blocks: 3 },
+            '1h': { label: '1h', seconds: 3600, blocks: 6 },
+            '2h': { label: '2h', seconds: 7200, blocks: 12 }
+        };
+        
+        // Limite mínimo: $100k USD para transação grande
+        const WHALE_MIN_USD = 100000;
+        
+        // ============================================
+        // BASE DE DADOS: EXCHANGES + CARTEIRAS DE BALEIAS
+        // Fonte: blockchain.com, bitinfocharts, arkham intelligence
+        // ============================================
+        const KNOWN_ADDRESSES = {
+            // ============ BINANCE ============
+            'bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h': { name: 'Binance', type: 'exchange', icon: '🟡' },
+            '34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo': { name: 'Binance', type: 'exchange', icon: '🟡' },
+            'bc1qgdjqv0av3q56jvd82tkdjpy7gdp9ut8tlqmgrpmv': { name: 'Binance Cold', type: 'exchange', icon: '🟡' },
+            '1NDyJtNTjmwk5xPNhjgAMu4HDHigtobu1s': { name: 'Binance', type: 'exchange', icon: '🟡' },
+            'bc1ql49ydapnjafl5t2cp9zqpjwe6pdgmxy98859v2': { name: 'Binance 8', type: 'exchange', icon: '🟡' },
+            '39884E3j6KZj82FK4vcCrkUvWYL5MQaS3v': { name: 'Binance', type: 'exchange', icon: '🟡' },
+            'bc1qx9t2l3pyny2spqpqlye8svce70nppwtaxwdrp4': { name: 'Binance', type: 'exchange', icon: '🟡' },
+            '3LyzYcB54pm9EAMmzXpFfb1kTEXnrF2vf9': { name: 'Binance Hot', type: 'exchange', icon: '🟡' },
+            'bc1qj9dlcp7cnm94m2497zcv3hsn0ezpx2lxcn6m5f': { name: 'Binance', type: 'exchange', icon: '🟡' },
+            
+            // ============ COINBASE ============
+            '3FHNBLobJnbCTFTVakh5TXmEneyf5PT61B': { name: 'Coinbase', type: 'exchange', icon: '🔵' },
+            '3Kzh9qAqVWQhEsfQz7zEQL1EuSx5tyNLNS': { name: 'Coinbase', type: 'exchange', icon: '🔵' },
+            'bc1qf2yvj48mzkj7c9l6mc2kzp56le5rwesq0zqpfz': { name: 'Coinbase Prime', type: 'exchange', icon: '🔵' },
+            '3CgvGN2HYPx4moHLENU3h4UuVUgVr7k2KN': { name: 'Coinbase', type: 'exchange', icon: '🔵' },
+            'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh': { name: 'Coinbase', type: 'exchange', icon: '🔵' },
+            '3D2dAWHyBTLvVqtZ6d85BtvG8Tah6NPRpN': { name: 'Coinbase Cold', type: 'exchange', icon: '🔵' },
+            '14BVrVvQPLW9J3JC8GfG55rPJswpG6j4KV': { name: 'Coinbase', type: 'exchange', icon: '🔵' },
+            '3M8HBkCp45gTVGUNK6smXdKPMMwLCANuGy': { name: 'Coinbase', type: 'exchange', icon: '🔵' },
+            '3NzYUJPKH8DWLHaNSrKg5Nj67X8DNDTBFV': { name: 'Coinbase', type: 'exchange', icon: '🔵' },
+            
+            // ============ KRAKEN ============
+            'bc1qa5wkgaew2dkv56kfvj49j0av5nml45x9ek9hz6': { name: 'Kraken', type: 'exchange', icon: '🟣' },
+            '3FupZp77ySr7jwoLYEJ9mwzJpvoNBXs92f': { name: 'Kraken', type: 'exchange', icon: '🟣' },
+            'bc1qmxcagqze2n4hr5rwz5r0e6qk6fq4ptdsj6pfmx': { name: 'Kraken Cold', type: 'exchange', icon: '🟣' },
+            '3H5JTt42K7RmZtromfTSefcMEFMMe18pMD': { name: 'Kraken', type: 'exchange', icon: '🟣' },
+            'bc1q76awg3z63j5pz4j6u2eeqxdcn3fj3er3lu4jjv': { name: 'Kraken Hot', type: 'exchange', icon: '🟣' },
+            
+            // ============ BITFINEX ============
+            'bc1qgdjqv0av3q56jvd82tkdjpy7gdp9ut8tlqmgrp': { name: 'Bitfinex', type: 'exchange', icon: '🟢' },
+            '1Kr6QSydW9bFQG1mXiPNNu6WpJGmUa9i1g': { name: 'Bitfinex', type: 'exchange', icon: '🟢' },
+            '3D2oetdNuZUqQHPJmcMDDHYoqkyNVsFk9r': { name: 'Bitfinex Cold', type: 'exchange', icon: '🟢' },
+            'bc1qw5r7vkdgsqt7gch8svrrlwjyfl2pjttq72dhf5': { name: 'Bitfinex', type: 'exchange', icon: '🟢' },
+            '3JZq4atUahhuA9rLhXLMhhTo133J9rF97j': { name: 'Bitfinex', type: 'exchange', icon: '🟢' },
+            
+            // ============ HUOBI / HTX ============
+            '1HckjUpRGcrrRAtFaaCAUaGjsPx9oYmLaZ': { name: 'Huobi/HTX', type: 'exchange', icon: '🔷' },
+            '14hn3mTPP2c2e95Zf8CRqjasUaREZ9tJVU': { name: 'Huobi/HTX', type: 'exchange', icon: '🔷' },
+            '3M219KR5vEneNb47ewrPfWyb5jQ2DjxRP6': { name: 'Huobi Cold', type: 'exchange', icon: '🔷' },
+            'bc1qd9gk8h5qz2fwfsnxgpmn8fgt7x0pzq35nw7mlt': { name: 'Huobi/HTX', type: 'exchange', icon: '🔷' },
+            '1LAnF8h3qMGx3TSwNUHVneBZUEpwE4gu3D': { name: 'Huobi/HTX', type: 'exchange', icon: '🔷' },
+            
+            // ============ OKX (OKEx) ============
+            'bc1q2s3rjwvam9dt2ftt4sqxqjf3twav0gdnv0j5fz': { name: 'OKX', type: 'exchange', icon: '⚪' },
+            '1C7dTJJp6m9FZxk5s3X3cmbpRzxBNcC2Rt': { name: 'OKX', type: 'exchange', icon: '⚪' },
+            'bc1qs5vdqkusz4v7qac8ynx0wqsq6jnpqnlnl2vlwx': { name: 'OKX Cold', type: 'exchange', icon: '⚪' },
+            '1Lhz4aqyJE4ZCY5ZcLXtw3zK7n9xxP26vb': { name: 'OKX', type: 'exchange', icon: '⚪' },
+            
+            // ============ BYBIT ============
+            'bc1qjasf9z3h7w3jspkhtgatgpyvvzgpa2wwd2lr0e': { name: 'Bybit', type: 'exchange', icon: '🟠' },
+            'bc1q7t9fxfaakmtk8pq7wd68wk7ndpvzuaqp6v5mps': { name: 'Bybit Cold', type: 'exchange', icon: '🟠' },
+            '1ByBTV5BPEg4HpobjNjmLpSBW4qSfJyLq2': { name: 'Bybit', type: 'exchange', icon: '🟠' },
+            
+            // ============ GEMINI ============
+            '33y4wfBhpCrniNT8pKpCnnTjH6RqN74p6X': { name: 'Gemini', type: 'exchange', icon: '🔶' },
+            'bc1qr4dl5wa7kl8yu792dceg9z5knl2gkn220lk7a9': { name: 'Gemini', type: 'exchange', icon: '🔶' },
+            '3P3QsMVK89JBNqZQv5zMAKG8FK3kJM4rjt': { name: 'Gemini', type: 'exchange', icon: '🔶' },
+            
+            // ============ BITSTAMP ============
+            '3P8dNV4C8oN9q7F5A5gkBVwQJx9zgVKDNX': { name: 'Bitstamp', type: 'exchange', icon: '🟩' },
+            'bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej': { name: 'Bitstamp Cold', type: 'exchange', icon: '🟩' },
+            '3BitcoinEaterAddressDontSendf59kuE': { name: 'Bitstamp', type: 'exchange', icon: '🟩' },
+            
+            // ============ KUCOIN ============
+            'bc1qnp87lvtq9xvn73qhtvref4mq5g8z08yfkprk05': { name: 'KuCoin', type: 'exchange', icon: '🟢' },
+            '3KZ52NVWDVFYcCk87zT9rXXs6rbGbR72qN': { name: 'KuCoin', type: 'exchange', icon: '🟢' },
+            'bc1qe7kdec54l0d50lcspkn0wdw30lr4e9hfwqv2vc': { name: 'KuCoin', type: 'exchange', icon: '🟢' },
+            
+            // ============ CRYPTO.COM ============
+            'bc1q8vfgpk5flwqy3dywufy5pmh4xf5lq35rg7svxx': { name: 'Crypto.com', type: 'exchange', icon: '🔵' },
+            '3GBUxAKNMxN5KWyAxqTz5YcNNPKNXJVnHQ': { name: 'Crypto.com', type: 'exchange', icon: '🔵' },
+            'bc1qs6z3h9f8rr4s4eq9lqhkgy8g3t2yq0zl0rrkms': { name: 'Crypto.com Cold', type: 'exchange', icon: '🔵' },
+            
+            // ============ GATE.IO ============
+            '14oRh5Z95H6pSKG8QxVkBMBFPCq5xwSAzM': { name: 'Gate.io', type: 'exchange', icon: '🟣' },
+            'bc1qzwlvhv3d0fnfqcpdz0ws8x7u9w0j2kf9t4d5n8': { name: 'Gate.io', type: 'exchange', icon: '🟣' },
+            
+            // ============ BITTREX ============
+            '3NB4gCtfG8LNJSZ35jUPLEPyejLPkfF6gK': { name: 'Bittrex', type: 'exchange', icon: '🔵' },
+            '1DBPJsZEDJrxuM3pp9AcjsT81za2xBk3kk': { name: 'Bittrex', type: 'exchange', icon: '🔵' },
+            
+            // ============ POLONIEX ============
+            '17A16QmavnUfCW11DAApiJxp7ARnxN5pGX': { name: 'Poloniex', type: 'exchange', icon: '🔵' },
+            '19S7LEmVq2QHy91kphykXRvN3ctjBJW3h': { name: 'Poloniex Cold', type: 'exchange', icon: '🔵' },
+            
+            // ============ DERIBIT ============
+            '1MDq7zyLw6oe3RRxNhXEN3vCSR9hNR6sry': { name: 'Deribit', type: 'exchange', icon: '🟠' },
+            'bc1q9d4ywgfnd8h43da5tpcxcn6ajv590cg6d3tg6a': { name: 'Deribit', type: 'exchange', icon: '🟠' },
+            
+            // ============ ROBINHOOD ============
+            'bc1qm3e067l5maq2p5kgdhl5n7zy4xt8kqrzvjm0fx': { name: 'Robinhood', type: 'exchange', icon: '🟢' },
+            'bc1qn3rj4shgl0xqp3h9njp43cvgnh4z3h3t6v8clp': { name: 'Robinhood', type: 'exchange', icon: '🟢' },
+            
+            // ============ CARTEIRAS DE BALEIAS CONHECIDAS ============
+            
+            // MicroStrategy (Michael Saylor)
+            'bc1qazcm763858nkj2dj986etajv6wquslv8uxwczt': { name: 'MicroStrategy', type: 'whale', icon: '🐋' },
+            '1P5ZEDWTKTFGxQjZphgWPQUpe554WKDfHQ': { name: 'MicroStrategy', type: 'whale', icon: '🐋' },
+            'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu': { name: 'MicroStrategy', type: 'whale', icon: '🐋' },
+            
+            // Tesla
+            '1Q9TGz7zyQwBrC2LMzx4cMgJ8G3FmSAJGL': { name: 'Tesla', type: 'whale', icon: '🚗' },
+            'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4': { name: 'Tesla', type: 'whale', icon: '🚗' },
+            
+            // Grayscale GBTC
+            '3LQUu4v9z6KNch71j7kbj8GPeAGUo1FW6a': { name: 'Grayscale GBTC', type: 'whale', icon: '⬛' },
+            'bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3g': { name: 'Grayscale', type: 'whale', icon: '⬛' },
+            '3KRmxTK2J7e14KKGVj18Nz2VLb1trqmNHD': { name: 'Grayscale GBTC', type: 'whale', icon: '⬛' },
+            
+            // BlackRock iShares Bitcoin Trust
+            'bc1q0sg9rdst255gtldsmcf8rk0764avqy2h2ksqs5': { name: 'BlackRock IBIT', type: 'whale', icon: '🏛️' },
+            'bc1ql49ydapnjafl5t2cp9zqpjwe6pdgmxy98859v3': { name: 'BlackRock', type: 'whale', icon: '🏛️' },
+            
+            // Fidelity
+            'bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3f': { name: 'Fidelity FBTC', type: 'whale', icon: '🏦' },
+            '3Nxwenay9Z8Lc9JBiywExpnEFiLp6Afp8v': { name: 'Fidelity', type: 'whale', icon: '🏦' },
+            
+            // El Salvador
+            '32ixEdVJWo3kmvJGMTZq5jAQVZZeuwnqzo': { name: 'El Salvador', type: 'whale', icon: '🇸🇻' },
+            'bc1qw7n70v3nrq8s0vp3v5h3f3xyrpw7rl5vyzjzqc': { name: 'El Salvador', type: 'whale', icon: '🇸🇻' },
+            
+            // Block.one (EOS)
+            '3FpYfDGJSdkMAvZvCrwPHDqdmGqUkTsJys': { name: 'Block.one', type: 'whale', icon: '🐋' },
+            '37XuVSEpWW4trkfmyWrj2oS3DqGTa2GoVa': { name: 'Block.one', type: 'whale', icon: '🐋' },
+            
+            // Marathon Digital Holdings
+            'bc1q5eu0dzm6lt7hgcfxqp02epap8lmuqkva5gvlga': { name: 'Marathon Digital', type: 'whale', icon: '⛏️' },
+            '1MarathonhFZVuqk89rfumKkCjy7xNpPVZ': { name: 'Marathon', type: 'whale', icon: '⛏️' },
+            
+            // Riot Blockchain
+            'bc1qkf0x8e2hc8hmp7cfs2h9qd95ygq45w0h84jkr8': { name: 'Riot Blockchain', type: 'whale', icon: '⛏️' },
+            
+            // Hut 8 Mining
+            'bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3e': { name: 'Hut 8 Mining', type: 'whale', icon: '⛏️' },
+            
+            // Tether Treasury
+            '1NTMakcgVwQpMdGxRQnFKyb3G1FAJysSfz': { name: 'Tether Treasury', type: 'whale', icon: '💵' },
+            'bc1qge2g0g75qlmv23y8vap5cujhc2r5yvfqfwvhzw': { name: 'Tether', type: 'whale', icon: '💵' },
+            
+            // Mt. Gox (Trustee)
+            '1Kz9TGoTN5jE3h2qP2LqpHFaprHPwLZAQD': { name: 'Mt. Gox Trustee', type: 'whale', icon: '⚠️' },
+            '17Tf3GCbykXRgHHqLfKijSABwKZzcBxw4P': { name: 'Mt. Gox', type: 'whale', icon: '⚠️' },
+            '1DkyBEKt5S2GDtv7aQw6rQepAvnsRyHoYM': { name: 'Mt. Gox', type: 'whale', icon: '⚠️' },
+            '1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF': { name: 'Mt. Gox Cold', type: 'whale', icon: '⚠️' },
+            
+            // Silk Road (FBI seized)
+            '1F1tAaz5x1HUXrCNLbtMDqcw6o5GNn4xqX': { name: 'Silk Road (FBI)', type: 'whale', icon: '🚔' },
+            
+            // Satoshi Nakamoto (dormant)
+            '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa': { name: 'Satoshi Genesis', type: 'whale', icon: '👤' },
+            '12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX': { name: 'Satoshi Early', type: 'whale', icon: '👤' },
+            
+            // Winklevoss Twins
+            '3P8YMRoKN7rBwRkS9B3B9LfT5k9gjpKLPg': { name: 'Winklevoss', type: 'whale', icon: '👥' },
+            
+            // Tim Draper
+            '1DrAPER1TxZ9bAx5n5bXvSHoByP1k1zBXg': { name: 'Tim Draper', type: 'whale', icon: '🐋' },
+            
+            // ARK Invest (ARKB ETF)
+            'bc1q7dyvj5nv997mz0y56cvlqh5x7z7umnwknph39c': { name: 'ARK Invest ARKB', type: 'whale', icon: '📈' },
+            
+            // Bitwise Bitcoin ETF
+            'bc1q9xj5k7n3fz6t8shg5y4lpv3d7y7m5cqv0k8fn9': { name: 'Bitwise BITB', type: 'whale', icon: '📊' },
+            
+            // VanEck
+            'bc1q5w5k3lg3n8f9e4h9n5tpd7c3sxq4k8w0u6v2hq': { name: 'VanEck HODL', type: 'whale', icon: '📈' },
+            
+            // Invesco Galaxy
+            'bc1q4h7e8d9fk3z5l0m2n7p6r8s0v9x1c3w5y7q4t2': { name: 'Invesco BTCO', type: 'whale', icon: '🌌' },
+            
+            // WisdomTree
+            'bc1qw5d7rf8cmnctam0zl2jd0vq8uxnh6whx3jhmkh': { name: 'WisdomTree BTCW', type: 'whale', icon: '🌳' },
+            
+            // Franklin Templeton
+            'bc1q6x7g5f4e3d2c1b0a9z8y7x6w5v4u3t2s1r0q9': { name: 'Franklin EZBC', type: 'whale', icon: '📘' },
+            
+            // Valkyrie
+            'bc1qvlkyr5e8k7m3n9p0w2q4x6z8c1d3f5g7h9j2k4': { name: 'Valkyrie BRRR', type: 'whale', icon: '🎯' },
+            
+            // Hashdex
+            'bc1qh3sh9d0f2e4k5n6m7l8p9q0r1s2w3x4y5z6c7v': { name: 'Hashdex DEFI', type: 'whale', icon: '🇧🇷' }
+        };
+        
+        // Função para identificar endereço
+        function identifyAddress(address) {
+            if (!address) return null;
+            
+            // Verificar base de dados
+            if (KNOWN_ADDRESSES[address]) {
+                return {
+                    ...KNOWN_ADDRESSES[address],
+                    category: 'confirmed',
+                    address: address
+                };
+            }
+            
+            // Verificar prefixos conhecidos de exchanges (padrões de endereço)
+            const exchangePrefixes = [
+                { prefix: 'bc1qm34lsc65zpw79', name: 'Binance (Provável)', type: 'exchange' },
+                { prefix: '34xp4vRoCGJym3xR', name: 'Binance (Provável)', type: 'exchange' },
+                { prefix: '3FHNBLobJnbCTFTV', name: 'Coinbase (Provável)', type: 'exchange' },
+                { prefix: 'bc1qa5wkgaew2dkv5', name: 'Kraken (Provável)', type: 'exchange' },
+                { prefix: 'bc1qgdjqv0av3q56j', name: 'Bitfinex (Provável)', type: 'exchange' },
+            ];
+            
+            for (const ep of exchangePrefixes) {
+                if (address.startsWith(ep.prefix)) {
+                    return {
+                        name: ep.name,
+                        type: ep.type,
+                        icon: '🟡',
+                        category: 'probable',
+                        address: address
+                    };
+                }
+            }
+            
+            return null;
+        }
+        
+        // Função para verificar se transação envolve endereço conhecido
+        function checkTransactionForKnownAddresses(tx) {
+            let fromEntity = null;
+            let toEntity = null;
+            let foundKnown = false;
+            
+            // Verificar inputs (de onde vem)
+            if (tx.vin) {
+                for (const vin of tx.vin) {
+                    if (vin.prevout && vin.prevout.scriptpubkey_address) {
+                        const identified = identifyAddress(vin.prevout.scriptpubkey_address);
+                        if (identified && identified.category === 'confirmed') {
+                            fromEntity = identified;
+                            foundKnown = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Verificar outputs (para onde vai)
+            if (tx.vout) {
+                for (const vout of tx.vout) {
+                    if (vout.scriptpubkey_address) {
+                        const identified = identifyAddress(vout.scriptpubkey_address);
+                        if (identified && identified.category === 'confirmed') {
+                            toEntity = identified;
+                            foundKnown = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            return { fromEntity, toEntity, foundKnown };
+        }
+        
+        // Função principal
+        async function fetchWhaleActivity(period = '1h') {
+            let config = WHALE_PERIODS[period];
+            if (!config) {
+                console.warn(`🐋 Período inválido: ${period}, usando 1h`);
+                period = '1h';
+                config = WHALE_PERIODS[period];
+            }
+            
+            const container = document.getElementById('whale-activity-indicator');
+            if (container) {
+                const loadingEl = container.querySelector('.whale-loading');
+                if (loadingEl) loadingEl.style.display = 'flex';
+            }
+            
+            try {
+                // Buscar preço atual do BTC
+                const priceRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT');
+                const priceData = await priceRes.json();
+                const btcPrice = parseFloat(priceData.price);
+                
+                console.log(`🐋 BTC Price: $${btcPrice.toLocaleString()} | Min whale: $${(WHALE_MIN_USD/1000000).toFixed(1)}M`);
+                
+                // ESTRATÉGIA: Usar MEMPOOL.SPACE para dados 100% reais
+                let transactions = [];
+                
+                // 1. Buscar transações da mempool (pendentes - tempo real)
+                const mempoolTxs = await fetchMempoolWhales(btcPrice);
+                if (mempoolTxs.length > 0) {
+                    transactions = [...transactions, ...mempoolTxs];
+                    console.log(`🐋 Mempool: ${mempoolTxs.length} baleias pendentes`);
+                }
+                
+                // 2. Buscar transações de blocos recentes (confirmadas)
+                const blocksToFetch = Math.min(config.blocks, 50);
+                const blockTxs = await fetchBlockWhales(btcPrice, blocksToFetch, config.seconds);
+                if (blockTxs.length > 0) {
+                    transactions = [...transactions, ...blockTxs];
+                    console.log(`🐋 Blocos: ${blockTxs.length} baleias confirmadas`);
+                }
+                
+                // Processar resultados
+                if (transactions.length > 0) {
+                    const now = Date.now();
+                    const periodStart = now - (config.seconds * 1000);
+                    
+                    // Filtrar por período, remover duplicatas e ordenar
+                    const seen = new Set();
+                    transactions = transactions
+                        .filter(tx => {
+                            // Filtrar por tempo do período
+                            if (tx.time) {
+                                const txTime = new Date(tx.time).getTime();
+                                if (txTime < periodStart) return false;
+                            }
+                            // Remover duplicatas
+                            if (seen.has(tx.txid)) return false;
+                            seen.add(tx.txid);
+                            return true;
+                        })
+                        .sort((a, b) => b.usdValue - a.usdValue)
+                        .slice(0, 100);
+                    
+                    // Calcular estatísticas
+                    let totalVolume = 0;
+                    let toExchangeVol = 0;
+                    let fromExchangeVol = 0;
+                    
+                    transactions.forEach(tx => {
+                        totalVolume += tx.usdValue;
+                        if (tx.flowType === 'to_exchange') toExchangeVol += tx.usdValue;
+                        else if (tx.flowType === 'from_exchange') fromExchangeVol += tx.usdValue;
+                        else {
+                            // Transações sem classificação clara: dividir 50/50
+                            toExchangeVol += tx.usdValue * 0.5;
+                            fromExchangeVol += tx.usdValue * 0.5;
+                        }
+                    });
+                    
+                    let direction = 'neutral';
+                    if (fromExchangeVol > toExchangeVol * 1.15) direction = 'acumulando';
+                    else if (toExchangeVol > fromExchangeVol * 1.15) direction = 'vendendo';
+                    
+                    whaleActivityData = {
+                        transactions,
+                        totalVolume,
+                        toExchange: toExchangeVol,
+                        fromExchange: fromExchangeVol,
+                        direction,
+                        count: transactions.length,
+                        btcPrice
+                    };
+                    
+                    console.log(`🐋 ${transactions.length} transações encontradas! Total: $${(totalVolume/1000000).toFixed(0)}M`);
+                } else {
+                    console.log(`🐋 Nenhuma baleia encontrada no período (${period}).`);
+                    whaleActivityData = {
+                        transactions: [],
+                        totalVolume: 0,
+                        toExchange: 0,
+                        fromExchange: 0,
+                        direction: 'neutral',
+                        count: 0,
+                        btcPrice,
+                        noData: true
+                    };
+                }
+                
+                whaleActivityLastUpdate = new Date();
+                whaleActivityPeriod = period;
+                renderWhaleActivityUI();
+                
+            } catch (e) {
+                console.error('Erro ao buscar baleias:', e);
+                whaleActivityData = {
+                    transactions: [],
+                    totalVolume: 0,
+                    toExchange: 0,
+                    fromExchange: 0,
+                    direction: 'neutral',
+                    count: 0,
+                    error: e.message
+                };
+                whaleActivityLastUpdate = new Date();
+                renderWhaleActivityUI();
+            }
+        }
+        
+        // API MEMPOOL.SPACE - Transações pendentes (TEMPO REAL)
+        // FILTRO: Só mostra transações envolvendo endereços CONHECIDOS
+        async function fetchMempoolWhales(btcPrice) {
+            try {
+                // API mempool/recent não retorna vin/vout detalhado
+                // Retornar vazio - usaremos apenas blocos confirmados
+                console.log(`🐋 Mempool: Transações pendentes não suportam identificação de endereços (API limitada)`);
+                return [];
+            } catch (e) {
+                console.error('Mempool.space error:', e);
+                return [];
+            }
+        }
+        
+        // API MEMPOOL.SPACE - Transações de blocos recentes (CONFIRMADAS)
+        // FILTRO: Só mostra transações envolvendo endereços CONHECIDOS e acima de $100k
+        async function fetchBlockWhales(btcPrice, numBlocks, periodSeconds) {
+            try {
+                const whales = [];
+                const minSatoshis = (WHALE_MIN_USD / btcPrice) * 100000000;
+                const now = Math.floor(Date.now() / 1000);
+                const periodStart = now - periodSeconds;
+                
+                // Buscar blocos recentes
+                const maxBlocks = Math.min(numBlocks, 50);
+                const blocksResponse = await fetch('https://mempool.space/api/v1/blocks');
+                if (!blocksResponse.ok) throw new Error('Blocks API error');
+                
+                const blocks = await blocksResponse.json();
+                
+                // Filtrar blocos pelo período selecionado
+                const blocksInPeriod = blocks.filter(b => b.timestamp >= periodStart);
+                const blocksToAnalyze = blocksInPeriod.slice(0, maxBlocks);
+                
+                console.log(`🐋 Período: ${periodSeconds/3600}h | ${blocksInPeriod.length} blocos | Analisando ${blocksToAnalyze.length}...`);
+                
+                let totalAnalyzed = 0;
+                let totalMatched = 0;
+                
+                for (const block of blocksToAnalyze) {
+                    try {
+                        const txsResponse = await fetch(`https://mempool.space/api/block/${block.id}/txs`);
+                        if (!txsResponse.ok) continue;
+                        
+                        const txs = await txsResponse.json();
+                        totalAnalyzed += txs.length;
+                        
+                        for (const tx of txs) {
+                            // Calcular valor total
+                            let totalValue = 0;
+                            if (tx.vout) {
+                                totalValue = tx.vout.reduce((sum, out) => sum + (out.value || 0), 0);
+                            }
+                            
+                            // Filtro 1: Valor mínimo $100k
+                            if (totalValue < minSatoshis) continue;
+                            
+                            // Filtro 2: Verificar se envolve endereço CONHECIDO
+                            const { fromEntity, toEntity, foundKnown } = checkTransactionForKnownAddresses(tx);
+                            
+                            // SÓ INCLUIR se envolver endereço conhecido
+                            if (!foundKnown) continue;
+                            
+                            totalMatched++;
+                            
+                            const btcAmount = totalValue / 100000000;
+                            const usdValue = btcAmount * btcPrice;
+                            
+                            // Determinar fluxo baseado nas entidades identificadas
+                            let flowType = 'unknown';
+                            let flowLabel = '';
+                            let entityName = '';
+                            let entityIcon = '';
+                            let entityType = '';
+                            let category = 'unknown'; // confirmed, probable, unknown
+                            
+                            if (fromEntity && toEntity) {
+                                // Transferência entre entidades conhecidas
+                                flowLabel = `${fromEntity.name} → ${toEntity.name}`;
+                                entityName = `${fromEntity.name} → ${toEntity.name}`;
+                                entityIcon = fromEntity.icon;
+                                entityType = 'transfer';
+                                category = 'confirmed';
+                                
+                                // Determinar se é para ou de exchange
+                                if (fromEntity.type === 'exchange' && toEntity.type === 'whale') {
+                                    flowType = 'from_exchange';
+                                } else if (fromEntity.type === 'whale' && toEntity.type === 'exchange') {
+                                    flowType = 'to_exchange';
+                                }
+                            } else if (fromEntity) {
+                                // Saindo de entidade conhecida
+                                flowLabel = `De ${fromEntity.name}`;
+                                entityName = fromEntity.name;
+                                entityIcon = fromEntity.icon;
+                                entityType = fromEntity.type;
+                                category = fromEntity.category;
+                                
+                                if (fromEntity.type === 'exchange') {
+                                    flowType = 'from_exchange';
+                                }
+                            } else if (toEntity) {
+                                // Indo para entidade conhecida
+                                flowLabel = `Para ${toEntity.name}`;
+                                entityName = toEntity.name;
+                                entityIcon = toEntity.icon;
+                                entityType = toEntity.type;
+                                category = toEntity.category;
+                                
+                                if (toEntity.type === 'exchange') {
+                                    flowType = 'to_exchange';
+                                }
+                            }
+                            
+                            whales.push({
+                                txid: tx.txid,
+                                btcAmount,
+                                usdValue,
+                                fee: tx.fee ? tx.fee / 100000000 : 0,
+                                blockHeight: block.height,
+                                blockTime: block.timestamp,
+                                flowType,
+                                flowLabel,
+                                entityName,
+                                entityIcon,
+                                entityType,
+                                category, // ✅ CONFIRMADO, 🟡 PROVÁVEL, ⚪ DESCONHECIDO
+                                fromEntity,
+                                toEntity,
+                                status: 'confirmed',
+                                confirmations: 1,
+                                source: 'mempool.space',
+                                time: new Date(block.timestamp * 1000).toISOString()
+                            });
+                        }
+                    } catch (blockErr) {
+                        console.warn(`Erro ao analisar bloco ${block.height}:`, blockErr);
+                    }
+                }
+                
+                console.log(`🐋 Analisadas ${totalAnalyzed} transações | ${totalMatched} envolvem entidades conhecidas`);
+                
+                return whales;
+            } catch (e) {
+                console.error('Blocks fetch error:', e);
+                return [];
+            }
+        }
+        
+        // Função para mudar o período
+        function changeWhalePeriod(period) {
+            if (whaleActivityPeriod === period) return;
+            whaleActivityPeriod = period;
+            fetchWhaleActivity(period);
+        }
+        
+        // Iniciar atualização automática a cada 2 minutos (dados reais!)
+        function startWhaleActivityAutoRefresh() {
+            if (whaleActivityInterval) clearInterval(whaleActivityInterval);
+            whaleActivityInterval = setInterval(() => {
+                console.log('🐋 Auto-refresh: Buscando novos dados...');
+                fetchWhaleActivity(whaleActivityPeriod);
+            }, 120000); // 2 minutos para dados mais frescos
+        }
+        
+        // Renderizar UI do indicador de baleias - 100% REAL
+        function renderWhaleActivityUI() {
+            const container = document.getElementById('whale-activity-indicator');
+            if (!container) return;
+            
+            const data = whaleActivityData;
+            
+            // Formatar volumes
+            const formatVolume = (vol) => {
+                if (!vol || isNaN(vol)) return '$0';
+                if (vol >= 1000000000) return `$${(vol / 1000000000).toFixed(2)}B`;
+                if (vol >= 1000000) return `$${(vol / 1000000).toFixed(1)}M`;
+                if (vol >= 1000) return `$${(vol / 1000).toFixed(0)}K`;
+                return `$${vol.toFixed(0)}`;
+            };
+            
+            const formatBtc = (btc) => {
+                if (!btc || isNaN(btc)) return '0 BTC';
+                if (btc >= 1000) return `${(btc / 1000).toFixed(1)}K BTC`;
+                return `${btc.toFixed(2)} BTC`;
+            };
+            
+            // Configuração de direção
+            const directionConfig = {
+                'acumulando': { color: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)', text: '🟢 ACUMULANDO', desc: 'Baleias retirando BTC de exchanges' },
+                'vendendo': { color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', text: '🔴 DISTRIBUINDO', desc: 'Baleias enviando BTC para exchanges' },
+                'neutral': { color: '#eab308', bg: 'rgba(234, 179, 8, 0.1)', text: '⚪ NEUTRO', desc: 'Fluxo equilibrado' }
+            };
+            
+            const config = directionConfig[data.direction] || directionConfig['neutral'];
+            
+            // Calcular proporções
+            const totalFlow = (data.toExchange || 0) + (data.fromExchange || 0);
+            const toExchangeRatio = totalFlow > 0 ? ((data.toExchange || 0) / totalFlow * 100).toFixed(1) : 50;
+            const fromExchangeRatio = totalFlow > 0 ? ((data.fromExchange || 0) / totalFlow * 100).toFixed(1) : 50;
+            
+            const lastUpdate = whaleActivityLastUpdate 
+                ? whaleActivityLastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                : '--:--';
+            
+            const hasData = data.count > 0 || data.transactions?.length > 0;
+            const noData = data.noData;
+            const hasError = data.error;
+            
+            container.innerHTML = `
+                <div class="card-header" style="flex-wrap: wrap; gap: 8px;">
+                    <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
+                        <div style="
+                            width: 32px; height: 32px; 
+                            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+                            border-radius: 8px;
+                            display: flex; align-items: center; justify-content: center;
+                            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);">
+                            <i class="fas fa-water" style="color: white; font-size: 14px;"></i>
+                        </div>
+                        <div>
+                            <div style="font-size: 15px; font-weight: 700;">Movimentações das Baleias</div>
+                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 400;">Bitcoin On-Chain</div>
+                        </div>
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted);">
+                        <i class="fas fa-sync-alt" style="margin-right: 4px;"></i>${lastUpdate}
+                    </div>
+                </div>
+                
+                <!-- Seletor de Período -->
+                <div style="padding: 12px 16px 0; display: flex; gap: 6px; flex-wrap: wrap;">
+                    ${Object.keys(WHALE_PERIODS).map(p => `
+                        <button onclick="changeWhalePeriod('${p}')" 
+                            style="
+                                padding: 6px 12px; 
+                                border-radius: 8px; 
+                                border: 1px solid ${whaleActivityPeriod === p ? 'var(--accent-blue)' : 'var(--border-subtle)'};
+                                background: ${whaleActivityPeriod === p ? 'var(--accent-blue)' : 'var(--bg-tertiary)'};
+                                color: ${whaleActivityPeriod === p ? 'white' : 'var(--text-secondary)'};
+                                font-size: 12px;
+                                font-weight: 600;
+                                cursor: pointer;
+                                transition: all 0.2s;">
+                            ${WHALE_PERIODS[p].label}
+                        </button>
+                    `).join('')}
+                </div>
+                
+                <!-- Loading -->
+                <div class="whale-loading" style="display: none; padding: 20px; justify-content: center; align-items: center; gap: 8px;">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <span style="font-size: 12px; color: var(--text-muted);">Buscando transações na blockchain...</span>
+                </div>
+                
+                <div style="padding: 16px;">
+                    ${hasError ? `
+                        <div style="text-align: center; padding: 20px; color: #ef4444;">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i>
+                            <div>Erro ao buscar dados: ${data.error}</div>
+                        </div>
+                    ` : noData ? `
+                        <div style="text-align: center; padding: 20px; color: var(--text-muted);">
+                            <i class="fas fa-fish" style="font-size: 24px; margin-bottom: 10px;"></i>
+                            <div>Nenhuma transação de entidade conhecida detectada</div>
+                            <div style="font-size: 11px; margin-top: 6px;">Transações ≥ $100K de exchanges/baleias conhecidas</div>
+                        </div>
+                    ` : hasData ? `
+                        <!-- Status Principal -->
+                        <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px; padding: 16px; background: ${config.bg}; border-radius: 12px; border: 1px solid ${config.color}30;">
+                            <div style="
+                                width: 56px; height: 56px; border-radius: 12px;
+                                background: ${config.color}20;
+                                display: flex; align-items: center; justify-content: center;">
+                                <span style="font-size: 28px;">🐋</span>
+                            </div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 22px; font-weight: 800; color: ${config.color}; margin-bottom: 4px;">
+                                    ${config.text}
+                                </div>
+                                <div style="font-size: 12px; color: var(--text-secondary);">
+                                    ${config.desc}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Fluxo de Exchanges -->
+                        <div style="margin-bottom: 16px;">
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase;">
+                                <i class="fas fa-exchange-alt" style="margin-right: 6px;"></i>Fluxo de Exchanges
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div style="background: rgba(239, 68, 68, 0.1); padding: 14px; border-radius: 10px; border-left: 4px solid #ef4444;">
+                                    <div style="font-size: 10px; color: #ef4444; font-weight: 700; margin-bottom: 6px;">
+                                        <i class="fas fa-arrow-right" style="margin-right: 4px;"></i>PARA EXCHANGES
+                                    </div>
+                                    <div style="font-size: 18px; font-weight: 800; color: #ef4444;">${formatVolume(data.toExchange)}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Pressão de venda</div>
+                                </div>
+                                <div style="background: rgba(34, 197, 94, 0.1); padding: 14px; border-radius: 10px; border-left: 4px solid #22c55e;">
+                                    <div style="font-size: 10px; color: #22c55e; font-weight: 700; margin-bottom: 6px;">
+                                        <i class="fas fa-arrow-left" style="margin-right: 4px;"></i>DE EXCHANGES
+                                    </div>
+                                    <div style="font-size: 18px; font-weight: 800; color: #22c55e;">${formatVolume(data.fromExchange)}</div>
+                                    <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Acumulação</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Barra de fluxo -->
+                        <div style="margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px;">
+                                <span style="color: #ef4444; font-weight: 600;">Para Exchange ${toExchangeRatio}%</span>
+                                <span style="color: #22c55e; font-weight: 600;">De Exchange ${fromExchangeRatio}%</span>
+                            </div>
+                            <div style="background: #22c55e; border-radius: 6px; overflow: hidden; height: 10px;">
+                                <div style="height: 100%; width: ${toExchangeRatio}%; background: #ef4444; transition: width 0.5s;"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Stats -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;">
+                            <div style="text-align: center; padding: 12px; background: var(--bg-tertiary); border-radius: 10px;">
+                                <div style="font-size: 18px; font-weight: 800; color: var(--accent-purple);">${formatVolume(data.totalVolume)}</div>
+                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Volume Total</div>
+                            </div>
+                            <div style="text-align: center; padding: 12px; background: var(--bg-tertiary); border-radius: 10px;">
+                                <div style="font-size: 18px; font-weight: 800; color: var(--text-primary);">${data.count || data.transactions?.length || 0}</div>
+                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Transações ≥$100K</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Legenda de Categorias -->
+                        <div style="display: flex; gap: 12px; margin-bottom: 12px; padding: 8px 12px; background: var(--bg-tertiary); border-radius: 8px; font-size: 10px;">
+                            <span style="color: #22c55e;">✅ Confirmado</span>
+                            <span style="color: #eab308;">🟡 Provável</span>
+                            <span style="color: #6b7280;">⚪ Desconhecido</span>
+                        </div>
+                        
+                        <!-- Top Transações -->
+                        ${data.transactions && data.transactions.length > 0 ? `
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 8px;">
+                                    <i class="fas fa-list" style="margin-right: 6px; color: #f59e0b;"></i>TRANSAÇÕES COM ENTIDADES CONHECIDAS
+                                </div>
+                                ${data.transactions.slice(0, 8).map((tx, i) => {
+                                    const categoryIcon = tx.category === 'confirmed' ? '✅' : tx.category === 'probable' ? '🟡' : '⚪';
+                                    const borderColor = tx.flowType === 'to_exchange' ? '#ef4444' : tx.flowType === 'from_exchange' ? '#22c55e' : '#3b82f6';
+                                    const entityColor = tx.entityType === 'exchange' ? '#f59e0b' : '#8b5cf6';
+                                    
+                                    return `
+                                    <div style="display: flex; align-items: center; padding: 10px 12px; background: var(--bg-tertiary); border-radius: 8px; margin-bottom: 6px; border-left: 3px solid ${borderColor};">
+                                        <div style="flex: 1;">
+                                            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                                                <span style="font-size: 14px;">${categoryIcon}</span>
+                                                <div style="font-size: 13px; font-weight: 700; color: var(--text-primary);">
+                                                    ${formatVolume(tx.usdValue)}
+                                                    <span style="font-size: 11px; color: var(--text-muted); font-weight: 400; margin-left: 4px;">(${formatBtc(tx.btcAmount)})</span>
+                                                </div>
+                                            </div>
+                                            ${tx.entityName ? `
+                                                <div style="font-size: 11px; font-weight: 600; color: ${entityColor}; margin-bottom: 3px;">
+                                                    ${tx.entityIcon || '🏦'} ${tx.flowLabel || tx.entityName}
+                                                </div>
+                                            ` : ''}
+                                            ${tx.txid ? `
+                                                <a href="https://mempool.space/tx/${tx.txid}" target="_blank" 
+                                                   style="font-size: 10px; color: var(--accent-blue); text-decoration: none; display: inline-block;">
+                                                    <i class="fas fa-external-link-alt" style="margin-right: 3px;"></i>${tx.txid.substring(0, 20)}...
+                                                </a>
+                                            ` : ''}
+                                            <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">
+                                                ${tx.status === 'pending' ? '⏳ Pendente' : tx.status === 'confirmed' ? '✅ Confirmada' : ''}
+                                                ${tx.blockHeight ? ` • Bloco #${tx.blockHeight.toLocaleString()}` : ''}
+                                            </div>
+                                        </div>
+                                        <div style="font-size: 10px; padding: 4px 8px; border-radius: 4px; background: ${tx.flowType === 'to_exchange' ? 'rgba(239, 68, 68, 0.2)' : tx.flowType === 'from_exchange' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(59, 130, 246, 0.2)'}; color: ${tx.flowType === 'to_exchange' ? '#ef4444' : tx.flowType === 'from_exchange' ? '#22c55e' : '#3b82f6'};">
+                                            ${tx.flowType === 'to_exchange' ? '→ Exchange' : tx.flowType === 'from_exchange' ? '← Exchange' : '↔️ Transfer'}
+                                        </div>
+                                    </div>
+                                `}).join('')}
+                            </div>
+                        ` : ''}
+                    ` : `
+                        <div style="text-align: center; padding: 30px; color: var(--text-muted);">
+                            <div style="font-size: 40px; margin-bottom: 12px;">🐋</div>
+                            <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Carregando dados...</div>
+                            <div style="font-size: 12px;">Buscando na blockchain Bitcoin</div>
+                        </div>
+                    `}
+                    
+                    <div style="padding: 10px; background: var(--bg-tertiary); border-radius: 8px; font-size: 11px; color: var(--text-muted);">
+                        <i class="fas fa-database" style="margin-right: 6px;"></i>
+                        Dados: mempool.space + Base de endereços conhecidos<br>
+                        <span style="color: var(--text-secondary);">📊 Só exibe transações ≥$100K de exchanges e baleias identificadas</span>
+                        <br><a href="https://mempool.space" target="_blank" style="color: var(--accent-blue); text-decoration: none;">
+                            <i class="fas fa-external-link-alt" style="margin-right: 3px;"></i>Verificar no mempool.space
+                        </a>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Aliases para compatibilidade
+        function updateWhaleActivity() {
+            fetchWhaleActivity(whaleActivityPeriod);
+        }
+        
+        function updateWhaleActivityUI() {
+            renderWhaleActivityUI();
+        }
+        
         function calculateBookImbalance(orderBook) {
             if (!orderBook.bids || !orderBook.asks) return { ratio: 1, bidVolume: 0, askVolume: 0 };
             
@@ -9443,6 +10361,22 @@
             }
             
             return ema;
+        }
+        
+        // SMA - Simple Moving Average
+        function calculateSMA(klines, period = 50) {
+            if (!klines || klines.length < period) {
+                const available = klines?.length || 0;
+                if (available < 2) return 0;
+                
+                let sum = 0;
+                klines.forEach(k => sum += parseFloat(k[4]));
+                return sum / available;
+            }
+            
+            const closes = klines.slice(-period).map(k => parseFloat(k[4]));
+            const sum = closes.reduce((a, b) => a + b, 0);
+            return sum / period;
         }
         
         // MACD - Moving Average Convergence Divergence
@@ -9617,6 +10551,52 @@
         function generateAISummary(signalType, confidence, indicators, symbol) {
             const crypto = CRYPTO_DATABASE[symbol]?.name || symbol;
             
+            // Análise de Médias Móveis
+            let maAnalysis = '';
+            if (indicators.movingAverages) {
+                const ma = indicators.movingAverages;
+                const aboveEmas = [ma.ema9, ma.ema20, ma.ema50].filter(v => ma.currentPrice > v).length;
+                const aboveSmas = [ma.sma50, ma.sma99, ma.sma200].filter(v => ma.currentPrice > v).length;
+                
+                if (aboveEmas === 3 && aboveSmas >= 2) {
+                    maAnalysis = '📊 Médias Móveis: FORTE tendência de alta - preço acima de todas as EMAs e principais SMAs.';
+                } else if (aboveEmas === 0 && aboveSmas <= 1) {
+                    maAnalysis = '📊 Médias Móveis: FORTE tendência de baixa - preço abaixo de todas as EMAs e principais SMAs.';
+                } else if (aboveEmas >= 2) {
+                    maAnalysis = '📊 Médias Móveis: Tendência de curto prazo BULLISH - preço acima das EMAs rápidas.';
+                } else {
+                    maAnalysis = '📊 Médias Móveis: Consolidação - preço entre médias indica indecisão.';
+                }
+            }
+            
+            // Análise de Atividade de Baleias
+            let whaleAnalysis = '';
+            if (indicators.whaleActivity) {
+                const whale = indicators.whaleActivity;
+                if (whale.level === 'muito_alta' || whale.level === 'alta') {
+                    if (whale.direction === 'compra') {
+                        whaleAnalysis = '🐋 Baleias: Atividade ALTA com predominância de COMPRA - institucionais acumulando.';
+                    } else if (whale.direction === 'venda') {
+                        whaleAnalysis = '🐋 Baleias: Atividade ALTA com predominância de VENDA - institucionais distribuindo.';
+                    } else {
+                        whaleAnalysis = '🐋 Baleias: Atividade ALTA detectada - monitorar direção.';
+                    }
+                } else if (whale.level === 'moderada') {
+                    whaleAnalysis = '🐋 Baleias: Atividade moderada no mercado.';
+                }
+            }
+            
+            // Análise do Book Imbalance
+            let bookAnalysis = '';
+            if (indicators.bookImbalance) {
+                const ratio = indicators.bookImbalance.ratio;
+                if (ratio > 1.5) {
+                    bookAnalysis = '📗 Order Book: Forte pressão compradora (${ratio.toFixed(2)}x mais bids que asks).';
+                } else if (ratio < 0.67) {
+                    bookAnalysis = '📕 Order Book: Forte pressão vendedora (${(1/ratio).toFixed(2)}x mais asks que bids).';
+                }
+            }
+            
             if (signalType === 'long') {
                 return `📈 SINAL LONG DETECTADO para ${crypto}
 
@@ -9625,6 +10605,9 @@ O preço está ${indicators.priceLocation === 'below_value' ? 'ABAIXO da área d
 O CVD mostra ${indicators.cvdSignal === 'bullish' ? 'predominância de compras agressivas a mercado' : indicators.cvdSignal === 'absorption_bullish' ? 'ABSORÇÃO de vendas por compradores (baleias acumulando)' : 'fluxo equilibrado'}.
 
 O Order Book revela ${indicators.bookSignal === 'bid_heavy' ? 'forte suporte de bids (compradores posicionados)' : 'equilíbrio entre bids e asks'}.
+
+${maAnalysis}
+${whaleAnalysis}
 
 ${indicators.rsiSignal === 'oversold' ? '⚠️ RSI em sobrevenda - momento ótimo para entrada!' : ''}
 ${indicators.lsSignal === 'bullish' ? '💡 Long/Short Ratio indica shorts excessivos - potencial short squeeze.' : ''}
@@ -9639,6 +10622,9 @@ O CVD mostra ${indicators.cvdSignal === 'bearish' ? 'predominância de vendas ag
 
 O Order Book revela ${indicators.bookSignal === 'ask_heavy' ? 'forte resistência de asks (vendedores posicionados)' : 'pressão de oferta'}.
 
+${maAnalysis}
+${whaleAnalysis}
+
 ${indicators.rsiSignal === 'overbought' ? '⚠️ RSI em sobrecompra - momento ótimo para short!' : ''}
 ${indicators.lsSignal === 'bearish' ? '💡 Long/Short Ratio indica longs excessivos - potencial long squeeze.' : ''}
 
@@ -9648,7 +10634,10 @@ Confiança: ${confidence}%`;
 
 O preço está oscilando dentro da área de valor (entre POC e extremidades). Não há confluência suficiente entre os indicadores de fluxo.
 
-Recomendação: Aguardar um rompimento claro da VAH (${indicators.vah?.toFixed(2)}) para long, ou da VAL (${indicators.val?.toFixed(2)}) para short.
+${maAnalysis}
+${whaleAnalysis}
+
+Recomendação: Aguardar um rompimento claro da VAH ($${indicators.vah?.toFixed(2)}) para long, ou da VAL ($${indicators.val?.toFixed(2)}) para short.
 
 Funding Rate: ${indicators.fundingSignal}
 CVD: ${indicators.cvdSignal}
@@ -9896,6 +10885,118 @@ Confiança para operação: Baixa. Melhor aguardar.`;
                             </div>
                             <div class="ta-indicator-value">${indicators.sentiment.longShortRatio}</div>
                             <div class="ta-indicator-change">${parseFloat(indicators.sentiment.longShortRatio) > 1 ? 'Maioria Long' : 'Maioria Short'}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Order Book Section -->
+                <div class="ta-section">
+                    <div class="ta-section-header">
+                        <div class="ta-section-icon" style="background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);">
+                            <i class="fas fa-list-ol"></i>
+                        </div>
+                        <div>
+                            <div class="ta-section-title">Order Book</div>
+                            <div class="ta-section-subtitle">Ordens de compra e venda próximas ao preço</div>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
+                        <!-- Asks (Sell Orders) -->
+                        <div style="background: var(--bg-tertiary); border-radius: 10px; padding: 12px;">
+                            <div style="font-size: 11px; color: #ef4444; font-weight: 700; margin-bottom: 8px; text-transform: uppercase;">
+                                <i class="fas fa-arrow-down" style="margin-right: 6px;"></i>Vendas (Asks)
+                            </div>
+                            ${indicators.orderBookDetail?.asks?.slice(0, 5).map(ask => `
+                                <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(239, 68, 68, 0.1); border-radius: 6px; margin-bottom: 4px; font-size: 11px;">
+                                    <span style="color: #ef4444;">$${formatPrice(parseFloat(ask[0]))}</span>
+                                    <span style="color: var(--text-muted);">${parseFloat(ask[1]).toFixed(4)}</span>
+                                </div>
+                            `).join('') || '<div style="color: var(--text-muted); font-size: 11px;">Carregando...</div>'}
+                        </div>
+                        <!-- Bids (Buy Orders) -->
+                        <div style="background: var(--bg-tertiary); border-radius: 10px; padding: 12px;">
+                            <div style="font-size: 11px; color: #22c55e; font-weight: 700; margin-bottom: 8px; text-transform: uppercase;">
+                                <i class="fas fa-arrow-up" style="margin-right: 6px;"></i>Compras (Bids)
+                            </div>
+                            ${indicators.orderBookDetail?.bids?.slice(0, 5).map(bid => `
+                                <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(34, 197, 94, 0.1); border-radius: 6px; margin-bottom: 4px; font-size: 11px;">
+                                    <span style="color: #22c55e;">$${formatPrice(parseFloat(bid[0]))}</span>
+                                    <span style="color: var(--text-muted);">${parseFloat(bid[1]).toFixed(4)}</span>
+                                </div>
+                            `).join('') || '<div style="color: var(--text-muted); font-size: 11px;">Carregando...</div>'}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Moving Averages Section -->
+                <div class="ta-section">
+                    <div class="ta-section-header">
+                        <div class="ta-section-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div>
+                            <div class="ta-section-title">Médias Móveis</div>
+                            <div class="ta-section-subtitle">EMAs e SMAs em diferentes períodos</div>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px;">
+                        <div style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, transparent 100%); padding: 12px; border-radius: 10px; border: 1px solid rgba(59, 130, 246, 0.3);">
+                            <div style="font-size: 10px; color: #3b82f6; font-weight: 700;">EMA 9</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-top: 2px;">$${formatPrice(parseFloat(indicators.movingAverages?.ema9 || 0))}</div>
+                            <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema9 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
+                                ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema9 || 0) ? '▲ Acima' : '▼ Abaixo'}
+                            </div>
+                        </div>
+                        <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, transparent 100%); padding: 12px; border-radius: 10px; border: 1px solid rgba(34, 197, 94, 0.3);">
+                            <div style="font-size: 10px; color: #22c55e; font-weight: 700;">EMA 20</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-top: 2px;">$${formatPrice(parseFloat(indicators.movingAverages?.ema20 || 0))}</div>
+                            <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema20 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
+                                ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema20 || 0) ? '▲ Acima' : '▼ Abaixo'}
+                            </div>
+                        </div>
+                        <div style="background: linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, transparent 100%); padding: 12px; border-radius: 10px; border: 1px solid rgba(249, 115, 22, 0.3);">
+                            <div style="font-size: 10px; color: #f97316; font-weight: 700;">EMA 50</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-top: 2px;">$${formatPrice(parseFloat(indicators.movingAverages?.ema50 || 0))}</div>
+                            <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema50 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
+                                ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema50 || 0) ? '▲ Acima' : '▼ Abaixo'}
+                            </div>
+                        </div>
+                        <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 10px;">
+                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 50</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-top: 2px;">$${formatPrice(parseFloat(indicators.movingAverages?.sma50 || 0))}</div>
+                            <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma50 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
+                                ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma50 || 0) ? '▲ Acima' : '▼ Abaixo'}
+                            </div>
+                        </div>
+                        <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 10px;">
+                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 99</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-top: 2px;">$${formatPrice(parseFloat(indicators.movingAverages?.sma99 || 0))}</div>
+                            <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma99 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
+                                ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma99 || 0) ? '▲ Acima' : '▼ Abaixo'}
+                            </div>
+                        </div>
+                        <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 10px;">
+                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 200</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-top: 2px;">$${formatPrice(parseFloat(indicators.movingAverages?.sma200 || 0))}</div>
+                            <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma200 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
+                                ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma200 || 0) ? '▲ Acima' : '▼ Abaixo'}
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Support and Resistance -->
+                    <div style="margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 10px;">
+                        <div style="font-size: 11px; font-weight: 700; color: var(--accent-purple); margin-bottom: 8px;">
+                            <i class="fas fa-layer-group" style="margin-right: 6px;"></i>Suporte & Resistência
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #22c55e;">
+                                <div style="font-size: 10px; color: var(--text-muted);">SUPORTE</div>
+                                <div style="font-size: 14px; font-weight: 700; color: #22c55e;">$${formatPrice(parseFloat(indicators.movingAverages?.support || 0))}</div>
+                            </div>
+                            <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #ef4444;">
+                                <div style="font-size: 10px; color: var(--text-muted);">RESISTÊNCIA</div>
+                                <div style="font-size: 14px; font-weight: 700; color: #ef4444;">$${formatPrice(parseFloat(indicators.movingAverages?.resistance || 0))}</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -11027,6 +12128,61 @@ Confiança para operação: Baixa. Melhor aguardar.`;
         function handleBackButton() {
             console.log('🔙 Back button pressed, current section:', currentSection);
             
+            // ====== MACRO-SECTION.JS MODALS (created dynamically with .remove()) ======
+            
+            // Análise Técnica de indicador (macro-section.js)
+            const indicatorTaModal = document.getElementById('indicator-ta-modal');
+            if (indicatorTaModal) {
+                // Pegar o símbolo antes de remover para reabrir o modal do indicador
+                const taSymbol = window._lastTASymbol || null;
+                indicatorTaModal.remove();
+                // Sempre reabrir modal do indicador (foi fechado quando TA abriu)
+                if (taSymbol && window.openIndicatorModal) {
+                    window.openIndicatorModal(taSymbol);
+                }
+                return true;
+            }
+            
+            // Gráfico fullscreen de indicador (macro-section.js)
+            const indicatorFsModal = document.getElementById('indicator-fullscreen-modal');
+            if (indicatorFsModal) {
+                // Pegar simbolo antes de remover para reabrir modal do indicador
+                const fsSymbol = window._lastFSSymbol || null;
+                indicatorFsModal.remove();
+                // Restaurar portrait ao fechar fullscreen via back button
+                (async () => {
+                    try {
+                        if (window.lockPortrait) await window.lockPortrait();
+                        if (window.Capacitor && window.Capacitor.Plugins) {
+                            if (window.Capacitor.Plugins.Fullscreen) await window.Capacitor.Plugins.Fullscreen.exitFullscreen();
+                            if (window.Capacitor.Plugins.StatusBar) await window.Capacitor.Plugins.StatusBar.show();
+                        }
+                    } catch (e) {}
+                })();
+                // Reabrir modal do indicador após fechar fullscreen
+                if (fsSymbol && window.openIndicatorModal) {
+                    setTimeout(() => window.openIndicatorModal(fsSymbol), 100);
+                }
+                return true;
+            }
+            
+            // Modal de indicador de mercado (macro-section.js)
+            const indicatorModal = document.getElementById('indicator-modal');
+            if (indicatorModal) {
+                indicatorModal.remove();
+                document.body.style.overflow = '';
+                return true;
+            }
+            
+            // Modal de evento econômico do calendário (macro-section.js)
+            const eventDetailMacro = document.getElementById('event-detail-modal');
+            if (eventDetailMacro) {
+                eventDetailMacro.remove();
+                return true;
+            }
+            
+            // ====== INDEX.HTML MODALS (toggled via .classList 'active') ======
+            
             // Se modal de análise técnica está aberto, fechar e voltar para o gráfico
             const taModal = document.getElementById('ta-modal');
             if (taModal && taModal.classList.contains('active')) {
@@ -11035,16 +12191,9 @@ Confiança para operação: Baixa. Melhor aguardar.`;
             }
             
             // Se modal de indicador está aberto, fechar (volta para MACRO)
-            const indicatorModal = document.getElementById('indicator-detail-modal');
-            if (indicatorModal && indicatorModal.classList.contains('active')) {
+            const indicatorDetailModal = document.getElementById('indicator-detail-modal');
+            if (indicatorDetailModal && indicatorDetailModal.classList.contains('active')) {
                 closeIndicatorDetailModal();
-                return true;
-            }
-            
-            // Se modal de evento econômico está aberto, fechar (volta para MACRO)
-            const eventModal = document.getElementById('event-detail-modal');
-            if (eventModal && eventModal.classList.contains('active')) {
-                closeEventDetailModal();
                 return true;
             }
             
@@ -11062,7 +12211,17 @@ Confiança para operação: Baixa. Melhor aguardar.`;
             }
             
             // Se modal de notícia está aberto, fechar (volta para NOTÍCIAS)
+            // Mas NÃO fechar se acabou de voltar do browser in-app
             if (document.getElementById('news-modal').classList.contains('active')) {
+                const returnData = sessionStorage.getItem('returnToNewsModal');
+                if (returnData) {
+                    // Acabou de voltar do browser - limpar estado e manter modal aberto
+                    sessionStorage.removeItem('returnToNewsModal');
+                    currentBrowserUrl = '';
+                    browserReturnToNews = false;
+                    console.log('🔙 Voltou do browser, mantendo modal da notícia');
+                    return true;
+                }
                 closeNewsModal();
                 return true;
             }

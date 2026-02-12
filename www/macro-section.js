@@ -536,23 +536,35 @@
         // Maximize button
         document.getElementById('indicator-maximize-btn').addEventListener('click', () => openFullscreenChart(symbol));
         
-        // Carregar dados imediatamente
+        // Carregar dados imediatamente (aguardar animação slideUp 300ms)
         setTimeout(() => {
             loadIndicatorChartData(symbol);
             loadIndicatorStats(symbol);
-        }, 50);
+        }, 350);
     }
 
     // ============================================
     // GRÁFICO FULLSCREEN
     // ============================================
-    function openFullscreenChart(symbol) {
+    async function openFullscreenChart(symbol) {
         const config = MARKET_INDICATORS[symbol];
         const price = indicatorPrices[symbol] || 0;
         const change = indicatorChanges[symbol] || 0;
         
+        // Salvar símbolo para back button poder reabrir o modal do indicador
+        window._lastFSSymbol = symbol;
+        
         const oldFs = document.getElementById('indicator-fullscreen-modal');
         if (oldFs) oldFs.remove();
+        
+        // Rotacionar para landscape (igual ao HOME)
+        try {
+            if (window.lockLandscape) await window.lockLandscape();
+            if (window.Capacitor && window.Capacitor.Plugins) {
+                if (window.Capacitor.Plugins.StatusBar) await window.Capacitor.Plugins.StatusBar.hide();
+                if (window.Capacitor.Plugins.Fullscreen) await window.Capacitor.Plugins.Fullscreen.enterFullscreen();
+            }
+        } catch (e) { console.log('Fullscreen API error:', e); }
         
         const fsModal = document.createElement('div');
         fsModal.id = 'indicator-fullscreen-modal';
@@ -605,19 +617,38 @@
         
         document.body.appendChild(fsModal);
         
-        // Draw chart immediately if data available
-        if (indicatorCandleData) {
-            setTimeout(() => {
+        // Aguardar a rotação landscape completar + modal renderizar (300ms)
+        // Se não tem dados, carregar novamente
+        setTimeout(async () => {
+            if (indicatorCandleData && indicatorCandleData.length > 0) {
                 if (indicatorChartType === 'candle') {
                     drawFullscreenCandleChart(indicatorCandleData, symbol);
                 } else {
                     drawFullscreenLineChart(indicatorCandleData, symbol);
                 }
-            }, 50);
-        }
+            } else {
+                // Carregar dados se não existem
+                await loadFullscreenChartData(symbol);
+            }
+        }, 300);
         
         // Event listeners
-        document.getElementById('close-fs-btn').addEventListener('click', () => fsModal.remove());
+        document.getElementById('close-fs-btn').addEventListener('click', async () => {
+            const fsSymbol = window._lastFSSymbol || null;
+            fsModal.remove();
+            // Restaurar portrait (igual ao HOME)
+            try {
+                if (window.lockPortrait) await window.lockPortrait();
+                if (window.Capacitor && window.Capacitor.Plugins) {
+                    if (window.Capacitor.Plugins.Fullscreen) await window.Capacitor.Plugins.Fullscreen.exitFullscreen();
+                    if (window.Capacitor.Plugins.StatusBar) await window.Capacitor.Plugins.StatusBar.show();
+                }
+            } catch (e) { console.log('Restore portrait error:', e); }
+            // Reabrir modal do indicador após fechar fullscreen
+            if (fsSymbol) {
+                setTimeout(() => openIndicatorModal(fsSymbol), 100);
+            }
+        });
         
         document.querySelectorAll('.fs-tf-btn').forEach(btn => {
             btn.addEventListener('click', async function() {
@@ -674,25 +705,42 @@
         }
         
         const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedSymbol}?interval=${config.interval}&range=${config.range}`;
-        const proxyUrls = [
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
-        ];
         
         try {
             let data = null;
-            for (const url of proxyUrls) {
-                try {
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 6000);
-                    const response = await fetch(url, { signal: controller.signal });
-                    clearTimeout(timeout);
-                    if (response.ok) {
-                        data = await response.json();
-                        if (data?.chart?.result?.[0]) break;
+            
+            // Tentativa 1: Fetch direto (Android WebView não tem restrição CORS)
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 5000);
+                const directResponse = await fetch(yahooUrl, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (directResponse.ok) {
+                    data = await directResponse.json();
+                    if (!data?.chart?.result?.[0]) data = null;
+                }
+            } catch (e) { /* proxy fallback abaixo */ }
+            
+            // Tentativa 2: Proxies CORS
+            if (!data || !data?.chart?.result?.[0]) {
+                const proxyUrls = [
+                    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+                    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+                    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
+                ];
+                for (const url of proxyUrls) {
+                    try {
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 6000);
+                        const response = await fetch(url, { signal: controller.signal });
+                        clearTimeout(timeout);
+                        if (response.ok) {
+                            data = await response.json();
+                            if (data?.chart?.result?.[0]) break;
+                        }
+                    } catch (e) {
+                        continue;
                     }
-                } catch (e) {
-                    continue;
                 }
             }
             
@@ -726,13 +774,28 @@
 
     function drawFullscreenLineChart(candleData, symbol) {
         const canvas = document.getElementById('fs-chart-canvas');
-        if (!canvas) return;
+        if (!canvas) {
+            macroLog('❌ Canvas fullscreen não encontrado', 'error');
+            return;
+        }
         
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
+        const rect = canvas.parentElement.getBoundingClientRect();
+        
+        // Se canvas ainda não tem dimensões, agendar redraw
+        if (rect.width < 100 || rect.height < 50) {
+            macroLog(`⏳ Fullscreen aguardando dimensões: ${rect.width}x${rect.height}`, 'warn');
+            setTimeout(() => drawFullscreenLineChart(candleData, symbol), 100);
+            return;
+        }
+        
+        macroLog(`📐 Desenhando fullscreen: ${rect.width}x${rect.height}`, 'info');
+        
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
+        canvas.style.width = rect.width + 'px';
+        canvas.style.height = rect.height + 'px';
         ctx.scale(dpr, dpr);
         
         const width = rect.width;
@@ -818,13 +881,28 @@
 
     function drawFullscreenCandleChart(candleData, symbol) {
         const canvas = document.getElementById('fs-chart-canvas');
-        if (!canvas) return;
+        if (!canvas) {
+            macroLog('❌ Canvas fullscreen candle não encontrado', 'error');
+            return;
+        }
         
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
+        const rect = canvas.parentElement.getBoundingClientRect();
+        
+        // Se canvas ainda não tem dimensões, agendar redraw
+        if (rect.width < 100 || rect.height < 50) {
+            macroLog(`⏳ Fullscreen candle aguardando dimensões: ${rect.width}x${rect.height}`, 'warn');
+            setTimeout(() => drawFullscreenCandleChart(candleData, symbol), 100);
+            return;
+        }
+        
+        macroLog(`📐 Desenhando fullscreen candles: ${rect.width}x${rect.height}`, 'info');
+        
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
+        canvas.style.width = rect.width + 'px';
+        canvas.style.height = rect.height + 'px';
         ctx.scale(dpr, dpr);
         
         const width = rect.width;
@@ -966,26 +1044,47 @@
             const config = periodMap[indicatorChartPeriod] || periodMap['1d'];
             
             const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${config.interval}&range=${config.range}`;
-            const proxyUrls = [
-                `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
-                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
-            ];
             
             macroLog(`📊 Carregando gráfico: ${symbol} (${config.interval}/${config.range})`, 'info');
             
             let data = null;
-            for (const url of proxyUrls) {
-                try {
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 6000);
-                    const response = await fetch(url, { signal: controller.signal });
-                    clearTimeout(timeout);
-                    if (response.ok) {
-                        data = await response.json();
-                        if (data?.chart?.result?.[0]) break;
+            
+            // Tentativa 1: Fetch direto (funciona em Android WebView sem restrição de CORS)
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 5000);
+                const directResponse = await fetch(yahooUrl, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (directResponse.ok) {
+                    data = await directResponse.json();
+                    if (data?.chart?.result?.[0]) {
+                        macroLog('✅ Gráfico via fetch direto', 'success');
+                    } else { data = null; }
+                }
+            } catch (e) {
+                macroLog('⚠️ Fetch direto falhou, tentando proxies...', 'warn');
+            }
+            
+            // Tentativa 2: Proxies CORS (para web/debug)
+            if (!data || !data?.chart?.result?.[0]) {
+                const proxyUrls = [
+                    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+                    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+                    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
+                ];
+                for (const url of proxyUrls) {
+                    try {
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 6000);
+                        const response = await fetch(url, { signal: controller.signal });
+                        clearTimeout(timeout);
+                        if (response.ok) {
+                            data = await response.json();
+                            if (data?.chart?.result?.[0]) break;
+                        }
+                    } catch (e) {
+                        continue;
                     }
-                } catch (e) {
-                    continue;
                 }
             }
             
@@ -1040,20 +1139,35 @@
     // ============================================
     function drawIndicatorLineChart(candleData) {
         const canvas = document.getElementById('indicator-chart-canvas');
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        
-        // Se canvas ainda não tem dimensões, agendar redraw
-        if (rect.width < 50 || rect.height < 50) {
-            requestAnimationFrame(() => drawIndicatorLineChart(candleData));
+        if (!canvas) {
+            macroLog('❌ Canvas não encontrado', 'error');
             return;
         }
         
+        // Esconder loading spinner
+        const loadingEl = document.getElementById('indicator-chart-loading');
+        if (loadingEl) loadingEl.style.display = 'none';
+        
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const container = document.getElementById('indicator-chart-container');
+        
+        // Usar container como referência de dimensões
+        const rect = container ? container.getBoundingClientRect() : canvas.getBoundingClientRect();
+        
+        // Se canvas ainda não tem dimensões, agendar redraw
+        if (rect.width < 50 || rect.height < 50) {
+            macroLog(`⏳ Canvas aguardando dimensões: ${rect.width}x${rect.height}`, 'warn');
+            setTimeout(() => drawIndicatorLineChart(candleData), 100);
+            return;
+        }
+        
+        macroLog(`📐 Desenhando gráfico: ${rect.width}x${rect.height}`, 'info');
+        
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
+        canvas.style.width = rect.width + 'px';
+        canvas.style.height = rect.height + 'px';
         ctx.scale(dpr, dpr);
         
         const width = rect.width;
@@ -1147,20 +1261,35 @@
     // ============================================
     function drawIndicatorCandleChart(candleData) {
         const canvas = document.getElementById('indicator-chart-canvas');
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        
-        // Se canvas ainda não tem dimensões, agendar redraw
-        if (rect.width < 50 || rect.height < 50) {
-            requestAnimationFrame(() => drawIndicatorCandleChart(candleData));
+        if (!canvas) {
+            macroLog('❌ Canvas não encontrado', 'error');
             return;
         }
         
+        // Esconder loading spinner
+        const loadingEl = document.getElementById('indicator-chart-loading');
+        if (loadingEl) loadingEl.style.display = 'none';
+        
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const container = document.getElementById('indicator-chart-container');
+        
+        // Usar container como referência de dimensões
+        const rect = container ? container.getBoundingClientRect() : canvas.getBoundingClientRect();
+        
+        // Se canvas ainda não tem dimensões, agendar redraw
+        if (rect.width < 50 || rect.height < 50) {
+            macroLog(`⏳ Canvas candle aguardando dimensões: ${rect.width}x${rect.height}`, 'warn');
+            setTimeout(() => drawIndicatorCandleChart(candleData), 100);
+            return;
+        }
+        
+        macroLog(`📐 Desenhando candles: ${rect.width}x${rect.height}`, 'info');
+        
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
+        canvas.style.width = rect.width + 'px';
+        canvas.style.height = rect.height + 'px';
         ctx.scale(dpr, dpr);
         
         const width = rect.width;
@@ -1302,24 +1431,34 @@
         const change = indicatorChanges[symbol] || 0;
         const imgSize = config.imgSize || 56;
         
+        // Salvar símbolo para back button poder reabrir o modal do indicador
+        window._lastTASymbol = symbol;
+        
+        // IMPORTANTE: Fechar o indicator-modal ao abrir TA para que o botão voltar funcione corretamente
+        const indicatorModal = document.getElementById('indicator-modal');
+        if (indicatorModal) {
+            indicatorModal.remove();
+            document.body.style.overflow = '';
+        }
+        
         const oldModal = document.getElementById('indicator-ta-modal');
         if (oldModal) oldModal.remove();
         
         const taModal = document.createElement('div');
         taModal.id = 'indicator-ta-modal';
         taModal.className = 'modal active';
-        taModal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 10000; display: flex; align-items: flex-end; justify-content: center;';
+        taModal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-primary, #0d0d1a); z-index: 10000; display: flex; flex-direction: column;';
         
         // Show loading first
         taModal.innerHTML = `
-            <div style="background: var(--bg-secondary, #1a1a2e); width: 100%; max-width: 500px; max-height: 90vh; border-radius: 20px 20px 0 0; overflow-y: auto; animation: slideUp 0.3s ease;">
-                <div style="padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); position: sticky; top: 0; background: var(--bg-secondary, #1a1a2e); z-index: 10; display: flex; align-items: center; gap: 12px;">
-                    <button id="close-ta-btn" style="background: rgba(255,255,255,0.1); border: none; width: 36px; height: 36px; border-radius: 50%; color: white; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
-                        <i class="fas fa-arrow-left"></i>
-                    </button>
-                    <h3 style="margin: 0; font-size: 16px; color: white;">Análise Técnica - ${config.short}</h3>
-                </div>
-                <div style="padding: 40px 16px; text-align: center;">
+            <div style="background: var(--bg-secondary, #1a1a2e); padding: calc(env(safe-area-inset-top, 20px) + 16px) 16px 16px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
+                <button id="close-ta-btn" style="background: rgba(255,255,255,0.1); border: none; width: 40px; height: 40px; border-radius: 50%; color: white; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
+                <h3 style="margin: 0; font-size: 18px; color: white; flex: 1;">Análise Técnica - ${config.short}</h3>
+            </div>
+            <div id="ta-content" style="flex: 1; overflow-y: auto; padding: 16px;">
+                <div style="text-align: center; padding: 40px 0;">
                     <i class="fas fa-spinner fa-spin" style="font-size: 32px; color: ${config.color}; margin-bottom: 12px;"></i>
                     <p style="color: #888; margin: 0;">Buscando dados reais do mercado...</p>
                 </div>
@@ -1328,9 +1467,18 @@
         
         document.body.appendChild(taModal);
         
-        document.getElementById('close-ta-btn').addEventListener('click', () => taModal.remove());
+        document.getElementById('close-ta-btn').addEventListener('click', () => {
+            taModal.remove();
+            // Reabrir modal do indicador se existia
+            if (symbol && !document.getElementById('indicator-modal')) {
+                openIndicatorModal(symbol);
+            }
+        });
         taModal.addEventListener('click', function(e) {
-            if (e.target === taModal) taModal.remove();
+            if (e.target === taModal) {
+                taModal.remove();
+                if (symbol) openIndicatorModal(symbol);
+            }
         });
         
         try {
@@ -1340,9 +1488,8 @@
             const { rsi, macd, macdSignal, sma20, sma50, support, resistance, trend, trendColor, signal, signalColor, volatility } = taData;
             
             // Re-render with real data
-            const contentDiv = taModal.querySelector('div > div:last-child');
-            contentDiv.style.padding = '16px';
-            contentDiv.style.textAlign = '';
+            const contentDiv = document.getElementById('ta-content');
+            if (!contentDiv) return;
             contentDiv.innerHTML = `
                     <div style="background: linear-gradient(135deg, ${config.color}20, transparent); border-radius: 16px; padding: 20px; margin-bottom: 16px;">
                         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
@@ -2040,6 +2187,9 @@
         'Payroll': 'PAYEMS',
         'Unemployment': 'UNRATE',
         'Desemprego': 'UNRATE',
+        'Emprego': 'PAYEMS',
+        'Employment': 'PAYEMS',
+        'Jobs': 'PAYEMS',
         'GDP': 'GDP',
         'PIB': 'GDP',
         'Retail': 'RSXFS',
@@ -2349,7 +2499,7 @@
             if (usEvents.length === 0) return null;
             
             // Converter para nosso formato
-            const events = usEvents.slice(0, 15).map(e => {
+            const mappedEvents = usEvents.map(e => {
                 const eventDate = new Date(e.date);
                 return {
                     day: eventDate.getDate(),
@@ -2366,6 +2516,15 @@
                     source: 'Forex Factory'
                 };
             });
+            
+            // Remover duplicatas (mesmo título traduzido no mesmo dia)
+            const seenEvents = new Set();
+            const events = mappedEvents.filter(e => {
+                const key = `${e.title}-${e.fullDate}`;
+                if (seenEvents.has(key)) return false;
+                seenEvents.add(key);
+                return true;
+            }).slice(0, 15);
             
             events.sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate));
             macroLog(`✅ Calendário Forex Factory: ${events.length} eventos reais`, 'success');
@@ -2425,7 +2584,7 @@
                 );
             });
             
-            const events = usEvents.slice(0, 15).map(e => {
+            const mappedFMPEvents = usEvents.map(e => {
                 const eventDate = new Date(e.date);
                 return {
                     day: eventDate.getDate(),
@@ -2442,6 +2601,15 @@
                     source: 'FMP'
                 };
             });
+            
+            // Remover duplicatas (mesmo título traduzido no mesmo dia)
+            const seenFMPEvents = new Set();
+            const events = mappedFMPEvents.filter(e => {
+                const key = `${e.title}-${e.fullDate}`;
+                if (seenFMPEvents.has(key)) return false;
+                seenFMPEvents.add(key);
+                return true;
+            }).slice(0, 15);
             
             events.sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate));
             macroLog(`✅ Calendário FMP: ${events.length} eventos`, 'success');
@@ -2769,12 +2937,12 @@
         
         const modal = document.createElement('div');
         modal.id = 'event-detail-modal';
-        modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 9999; display: flex; align-items: flex-start; justify-content: center; padding: 20px; overflow-y: auto; -webkit-overflow-scrolling: touch;';
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 9999; display: flex; align-items: flex-end; justify-content: center;';
         
         const eventInfo = getEventInfo(eventTitle);
         
         modal.innerHTML = `
-            <div style="background: var(--bg-secondary, #1a1a2e); width: 100%; max-width: 420px; border-radius: 20px; overflow: hidden; animation: slideUp 0.3s ease; margin: auto 0; max-height: calc(100vh - 40px); display: flex; flex-direction: column;">
+            <div style="background: var(--bg-secondary, #1a1a2e); width: 100%; max-width: 420px; border-radius: 20px 20px 0 0; overflow: hidden; animation: slideUp 0.3s ease; max-height: 85vh; display: flex; flex-direction: column;">
                 <!-- Header -->
                 <div style="padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
                     <div>
@@ -2795,11 +2963,7 @@
                         ${eventInfo.description}
                     </p>
                     
-                    <!-- Fonte dos dados -->
-                    <div style="background: rgba(59, 130, 246, 0.1); border-radius: 8px; padding: 8px 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
-                        <i class="fas fa-database" style="color: #3b82f6; font-size: 12px;"></i>
-                        <span style="font-size: 11px; color: #888;">Dados via IA (Llama) • Cache: 1h</span>
-                    </div>
+
                     
                     <!-- Histórico -->
                     <h4 style="margin: 0 0 12px; color: white; font-size: 14px; display: flex; align-items: center; gap: 8px;">
@@ -2818,7 +2982,12 @@
                                 let variacao = '';
                                 let varColor = '#888';
                                 
-                                if (!isNaN(actualNum) && !isNaN(prevNum) && h.previous !== '-') {
+                                // Detectar se actual é um valor delta (ex: +143K do NFP) - nestes casos previous é total e comparação não faz sentido
+                                const isDeltaValue = (actualStr.startsWith('+') || actualStr.startsWith('-')) && (actualStr.includes('K') || actualStr.includes('M'));
+                                const isPreviousTotal = prevStr.includes('(total)');
+                                const skipVariation = isDeltaValue || isPreviousTotal;
+                                
+                                if (!skipVariation && !isNaN(actualNum) && !isNaN(prevNum) && h.previous !== '-') {
                                     const diff = actualNum - prevNum;
                                     // Se os valores são percentuais (contém % ou valor < 50), mostrar diferença em pp
                                     const isPercentageValue = actualStr.includes('%') || prevStr.includes('%') || 
@@ -2990,6 +3159,17 @@
         updateFedWatch,
         updateEconomicCalendar
     };
+
+    // Pre-fetch do calendário ao carregar script (antes do usuário abrir MACRO)
+    // Isso preenche o cache para que quando o usuário abrir MACRO, o calendário apareça instantaneamente
+    (function prefetchCalendar() {
+        macroLog('🚀 Pre-fetching calendário econômico...', 'info');
+        fetchEconomicCalendarFromAPI().then(events => {
+            if (events && events.length > 0) {
+                macroLog(`✅ Calendário pré-carregado: ${events.length} eventos`, 'success');
+            }
+        }).catch(() => {});
+    })();
 
     macroLog('✓ macro-section.js v14.0 carregado!', 'success');
 })();
