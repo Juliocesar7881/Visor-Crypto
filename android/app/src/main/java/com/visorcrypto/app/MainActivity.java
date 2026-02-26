@@ -9,6 +9,9 @@ public class MainActivity extends BridgeActivity {
     
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Register custom plugins
+        registerPlugin(BackgroundScanPlugin.class);
+        
         super.onCreate(savedInstanceState);
         
         // Habilitar WebView debugging para chrome://inspect

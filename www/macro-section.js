@@ -1,9 +1,7 @@
 /**
  * MACRO SECTION - Dados Macroeconômicos
- * Versão 18.1 - FedWatch FRED + Calendário FMP + Histórico FRED
- * - FedWatch: atualiza a cada 30 min (cache local)
- * - Calendário: atualiza a cada 1 hora (cache local)
- * - Escalável: cada usuário faz requests independentes com cache
+ * Versão 20.0 - DEBUG MÁXIMO
+ * Container VERMELHO, Canvas VERDE, Desenho AZUL
  */
 
 (function() {
@@ -401,7 +399,7 @@
         modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 9999; display: flex; align-items: flex-end; justify-content: center;';
         
         modal.innerHTML = `
-            <div style="background: var(--bg-secondary, #1a1a2e); width: 100%; max-width: 500px; max-height: 90vh; border-radius: 20px 20px 0 0; overflow-y: auto; animation: slideUp 0.3s ease;">
+            <div id="indicator-modal-content" style="background: var(--bg-secondary, #1a1a2e); width: 100%; max-width: 500px; max-height: 90vh; border-radius: 20px 20px 0 0; overflow-y: auto; animation: slideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards; will-change: transform; transform: translateZ(0);">
                 <!-- Header -->
                 <div style="padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); position: sticky; top: 0; background: var(--bg-secondary, #1a1a2e); z-index: 10; display: flex; justify-content: space-between; align-items: center;">
                     <div style="display: flex; align-items: center; gap: 12px;">
@@ -430,17 +428,26 @@
                         </button>
                     </div>
                     
-                    <!-- Timeframe Buttons -->
-                    <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <div style="display: flex; gap: 4px; flex-wrap: wrap; flex: 1;">
-                            <button class="ind-tf-btn" data-period="15m">15m</button>
-                            <button class="ind-tf-btn" data-period="30m">30m</button>
-                            <button class="ind-tf-btn" data-period="4h">4H</button>
-                            <button class="ind-tf-btn active" data-period="1d">1D</button>
-                            <button class="ind-tf-btn" data-period="1w">1S</button>
-                            <button class="ind-tf-btn" data-period="1M">1M</button>
-                            <button class="ind-tf-btn" data-period="6M">6M</button>
-                            <button class="ind-tf-btn" data-period="1Y">1A</button>
+                    <!-- Timeframe Dropdown + Chart Type -->
+                    <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
+                        <div class="macro-tf-dropdown" id="macro-tf-dropdown" style="flex: 1;">
+                            <div class="macro-tf-selector" id="macro-tf-selector">
+                                <span style="display: flex; align-items: center; gap: 6px;">
+                                    <i class="fas fa-clock" style="color: #3b82f6; font-size: 12px;"></i>
+                                    <span id="macro-tf-label">1 dia</span>
+                                </span>
+                                <i class="fas fa-chevron-down macro-tf-arrow"></i>
+                            </div>
+                            <div class="macro-tf-options" id="macro-tf-options">
+                                <div class="macro-tf-option" data-period="15m"><span>15 minutos</span><i class="fas fa-check macro-tf-check"></i></div>
+                                <div class="macro-tf-option" data-period="30m"><span>30 minutos</span><i class="fas fa-check macro-tf-check"></i></div>
+                                <div class="macro-tf-option" data-period="4h"><span>4 horas</span><i class="fas fa-check macro-tf-check"></i></div>
+                                <div class="macro-tf-option active" data-period="1d"><span>1 dia</span><i class="fas fa-check macro-tf-check"></i></div>
+                                <div class="macro-tf-option" data-period="1w"><span>1 semana</span><i class="fas fa-check macro-tf-check"></i></div>
+                                <div class="macro-tf-option" data-period="1M"><span>1 m\xEAs</span><i class="fas fa-check macro-tf-check"></i></div>
+                                <div class="macro-tf-option" data-period="6M"><span>6 meses</span><i class="fas fa-check macro-tf-check"></i></div>
+                                <div class="macro-tf-option" data-period="1Y"><span>1 ano</span><i class="fas fa-check macro-tf-check"></i></div>
+                            </div>
                         </div>
                         <div style="display: flex; gap: 6px;">
                             <button class="ind-type-btn active" data-type="line" title="Linha"><i class="fas fa-chart-line"></i></button>
@@ -448,18 +455,15 @@
                         </div>
                     </div>
                     
-                    <!-- Chart Container -->
-                    <div id="indicator-chart-container" style="height: 280px; background: rgba(255,255,255,0.03); border-radius: 12px; margin-bottom: 16px; position: relative; overflow: hidden;">
-                        <canvas id="indicator-chart-canvas" style="width: 100%; height: 100%;"></canvas>
-                        <button id="indicator-maximize-btn" style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); border: none; width: 32px; height: 32px; border-radius: 8px; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0.7; transition: opacity 0.2s; z-index: 5;" title="Maximizar">
+                    <!-- Chart Container v22 - IDs ÚNICOS -->
+                    <div id="macro-chart-container" style="background: #0d0d1a; border-radius: 12px; margin-bottom: 16px; width: 100%; height: 280px; position: relative; overflow: hidden;">
+                        <canvas id="macro-chart-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></canvas>
+                        <div id="macro-chart-loading" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(13,13,26,0.95); z-index: 5;">
+                            <i class="fas fa-spinner fa-spin" style="color: #3b82f6; font-size: 24px;"></i>
+                        </div>
+                        <button id="macro-maximize-btn" style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); border: none; width: 32px; height: 32px; border-radius: 8px; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 15;" title="Maximizar">
                             <i class="fas fa-expand"></i>
                         </button>
-                        <div id="indicator-chart-loading" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5);">
-                            <div style="text-align: center; color: #888;">
-                                <div style="width: 30px; height: 30px; border: 3px solid rgba(255,255,255,0.1); border-top-color: ${config.color}; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px;"></div>
-                                Carregando...
-                            </div>
-                        </div>
                     </div>
                     
                     <!-- Stats -->
@@ -467,21 +471,36 @@
                 </div>
             </div>
             <style>
-                @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+                @keyframes slideUp { from { transform: translate3d(0, 100%, 0); } to { transform: translate3d(0, 0, 0); } }
                 @keyframes spin { to { transform: rotate(360deg); } }
-                .ind-tf-btn {
-                    padding: 6px 10px;
-                    background: rgba(255,255,255,0.05);
-                    border: 1px solid rgba(255,255,255,0.1);
-                    border-radius: 8px;
-                    color: #888;
-                    font-size: 12px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: all 0.2s;
+                .macro-tf-dropdown { position: relative; }
+                .macro-tf-selector {
+                    display: flex; align-items: center; justify-content: space-between;
+                    padding: 10px 14px; background: rgba(255,255,255,0.06);
+                    border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
+                    cursor: pointer; transition: all 0.3s; color: white; font-size: 13px; font-weight: 600;
                 }
-                .ind-tf-btn:hover { background: rgba(255,255,255,0.1); color: white; }
-                .ind-tf-btn.active { background: var(--accent-blue, #3b82f6); border-color: var(--accent-blue, #3b82f6); color: white; }
+                .macro-tf-selector:hover { border-color: #3b82f6; }
+                .macro-tf-arrow { color: #888; font-size: 10px; transition: transform 0.3s; }
+                .macro-tf-dropdown.open .macro-tf-arrow { transform: rotate(180deg); }
+                .macro-tf-options {
+                    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+                    background: #1a1a2e; border: 1px solid rgba(255,255,255,0.15);
+                    border-radius: 10px; overflow: hidden; opacity: 0; visibility: hidden;
+                    transform: translateY(-8px); transition: all 0.25s ease;
+                    z-index: 9999; max-height: 300px; overflow-y: auto;
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+                }
+                .macro-tf-dropdown.open .macro-tf-options { opacity: 1; visibility: visible; transform: translateY(0); }
+                .macro-tf-option {
+                    padding: 10px 14px; font-size: 13px; font-weight: 500; color: #a1a1aa;
+                    cursor: pointer; transition: all 0.2s; display: flex;
+                    align-items: center; justify-content: space-between;
+                }
+                .macro-tf-option:hover { background: rgba(99,102,241,0.15); color: white; }
+                .macro-tf-option.active { background: #3b82f6; color: white; }
+                .macro-tf-check { opacity: 0; font-size: 11px; }
+                .macro-tf-option.active .macro-tf-check { opacity: 1; }
                 .ind-type-btn {
                     padding: 8px 10px;
                     background: rgba(255,255,255,0.05);
@@ -507,14 +526,32 @@
             if (e.target === modal) closeIndicatorModal();
         });
         
-        // Timeframe buttons
-        document.querySelectorAll('.ind-tf-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.ind-tf-btn').forEach(b => b.classList.remove('active'));
+        // Timeframe dropdown
+        const macroTfSelector = document.getElementById('macro-tf-selector');
+        const macroTfDropdown = document.getElementById('macro-tf-dropdown');
+        if (macroTfSelector) {
+            macroTfSelector.addEventListener('click', () => macroTfDropdown.classList.toggle('open'));
+        }
+        document.querySelectorAll('.macro-tf-option').forEach(opt => {
+            opt.addEventListener('click', function() {
+                document.querySelectorAll('.macro-tf-option').forEach(o => o.classList.remove('active'));
                 this.classList.add('active');
-                indicatorChartPeriod = this.dataset.period;
+                const period = this.dataset.period;
+                const label = this.querySelector('span').textContent;
+                document.getElementById('macro-tf-label').textContent = label;
+                macroTfDropdown.classList.remove('open');
+                indicatorChartPeriod = period;
+                const canvas = document.getElementById('macro-chart-canvas');
+                const loadingEl = document.getElementById('macro-chart-loading');
+                if (canvas) { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); }
+                if (loadingEl) loadingEl.style.display = 'flex';
+                indicatorCandleData = null;
                 loadIndicatorChartData(symbol);
             });
+        });
+        // Close dropdown on outside click
+        modal.addEventListener('click', function(e) {
+            if (macroTfDropdown && !macroTfDropdown.contains(e.target)) macroTfDropdown.classList.remove('open');
         });
         
         // Chart type buttons
@@ -534,13 +571,92 @@
         });
         
         // Maximize button
-        document.getElementById('indicator-maximize-btn').addEventListener('click', () => openFullscreenChart(symbol));
+        document.getElementById('macro-maximize-btn').addEventListener('click', () => openFullscreenChart(symbol));
         
-        // Carregar dados imediatamente (aguardar animação slideUp 300ms)
-        setTimeout(() => {
-            loadIndicatorChartData(symbol);
+        // Pre-fetch data durante animação, mas desenhar só depois
+        let prefetchedData = null;
+        const prefetchPromise = (async () => {
+            try {
+                const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
+                const cached = chartDataCache[cacheKey];
+                if (cached && (Date.now() - cached.timestamp) < CHART_CACHE_TTL) {
+                    prefetchedData = cached.data;
+                    return;
+                }
+                const periodMap = {
+                    '15m': { interval: '1m', range: '1d' },
+                    '30m': { interval: '5m', range: '1d' },
+                    '4h': { interval: '5m', range: '1d' },
+                    '1d': { interval: '15m', range: '1d' },
+                    '1w': { interval: '1h', range: '5d' },
+                    '1M': { interval: '1d', range: '1mo' },
+                    '6M': { interval: '1d', range: '6mo' },
+                    '1Y': { interval: '1wk', range: '1y' },
+                };
+                const cfg = periodMap[indicatorChartPeriod] || periodMap['1d'];
+                const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${cfg.interval}&range=${cfg.range}`;
+                let data = null;
+                try {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 5000);
+                    const resp = await fetch(yahooUrl, { signal: controller.signal });
+                    clearTimeout(timeout);
+                    if (resp.ok) { data = await resp.json(); if (!data?.chart?.result?.[0]) data = null; }
+                } catch(e) {}
+                if (!data) {
+                    const proxies = [
+                        `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+                        `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+                    ];
+                    for (const url of proxies) {
+                        try {
+                            const controller = new AbortController();
+                            const timeout = setTimeout(() => controller.abort(), 6000);
+                            const resp = await fetch(url, { signal: controller.signal });
+                            clearTimeout(timeout);
+                            if (resp.ok) { data = await resp.json(); if (data?.chart?.result?.[0]) break; }
+                        } catch(e) { continue; }
+                    }
+                }
+                if (data?.chart?.result?.[0]) {
+                    const result = data.chart.result[0];
+                    const ts = result.timestamp || [];
+                    const q = result.indicators.quote[0];
+                    prefetchedData = ts.map((t, i) => [
+                        t * 1000, q.open?.[i]||0, q.high?.[i]||0, q.low?.[i]||0, q.close?.[i]||0, q.volume?.[i]||0
+                    ]).filter(d => d[4] != null && !isNaN(d[4]) && d[4] > 0);
+                    chartDataCache[getChartCacheKey(symbol, indicatorChartPeriod)] = { data: prefetchedData, timestamp: Date.now() };
+                }
+            } catch(e) { macroLog('Prefetch error: ' + e.message, 'warn'); }
+        })();
+
+        // Desenhar gráfico só quando animação terminar + dados prontos
+        const modalContent = document.getElementById('indicator-modal-content');
+        const onReady = async () => {
+            await prefetchPromise;
+            if (prefetchedData) {
+                indicatorCandleData = prefetchedData;
+                const loadingEl = document.getElementById('macro-chart-loading');
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (indicatorChartType === 'candle') {
+                    drawIndicatorCandleChart(indicatorCandleData);
+                } else {
+                    drawIndicatorLineChart(indicatorCandleData);
+                }
+            } else {
+                loadIndicatorChartData(symbol);
+            }
             loadIndicatorStats(symbol);
-        }, 350);
+        };
+        if (modalContent) {
+            modalContent.addEventListener('animationend', onReady, { once: true });
+            // Fallback se animationend não disparar (ex: browser quirk)
+            setTimeout(() => {
+                if (!indicatorCandleData && !prefetchedData) onReady();
+            }, 500);
+        } else {
+            setTimeout(onReady, 350);
+        }
     }
 
     // ============================================
@@ -571,55 +687,105 @@
         fsModal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0d0d1a; z-index: 10001; display: flex; flex-direction: column;';
         
         fsModal.innerHTML = `
-            <div style="padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.5);">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    <img src="${config.img}" alt="${config.name}" style="width: 36px; height: 36px; border-radius: 50%; object-fit: cover;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; padding-top: max(6px, env(safe-area-inset-top, 6px)); padding-left: max(12px, env(safe-area-inset-left, 12px)); padding-right: max(12px, env(safe-area-inset-right, 12px)); background: rgba(20,20,30,0.95); border-bottom: 1px solid rgba(255,255,255,0.1); min-height: 50px; gap: 10px; overflow: visible;">
+                <!-- Left: Back button -->
+                <button id="close-fs-btn" style="width: 36px; height: 36px; border: none; background: rgba(255,255,255,0.1); border-radius: 10px; color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
+                <!-- Center: Info -->
+                <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                    <img src="${config.img}" alt="${config.name}" style="width: 28px; height: 28px; border-radius: 8px; object-fit: cover;">
                     <div>
-                        <div style="font-weight: 600; color: white;">${config.name} <span style="color: #888;">${config.short}</span></div>
-                        <div style="font-size: 18px; font-weight: bold; color: white;">${formatIndicatorPrice(symbol)} <span style="font-size: 12px; color: ${change >= 0 ? '#00ff88' : '#ff4444'};">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span></div>
+                        <div style="font-size: 14px; font-weight: 700; color: #fff;">${config.name}</div>
+                        <div style="font-size: 13px; font-weight: 600; color: ${change >= 0 ? '#22c55e' : '#ef4444'};">${formatIndicatorPrice(symbol)} <span style="font-size: 11px;">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span></div>
                     </div>
                 </div>
-                <button id="close-fs-btn" style="background: rgba(255,255,255,0.1); border: none; width: 40px; height: 40px; border-radius: 50%; color: white; font-size: 18px; cursor: pointer;">
-                    <i class="fas fa-times"></i>
-                </button>
+                <!-- Center-right: Timeframe dropdown -->
+                    <div class="fs-macro-tf-dropdown" id="fs-macro-tf-dropdown" style="flex: 0 0 auto;">
+                        <div class="fs-macro-tf-selector" id="fs-macro-tf-selector">
+                            <span style="display: flex; align-items: center; gap: 5px;">
+                                <i class="fas fa-clock" style="color: #3b82f6; font-size: 11px;"></i>
+                                <span id="fs-macro-tf-label">${{'15m':'15m','30m':'30m','4h':'4H','1d':'1D','1w':'1S','1M':'1M','6M':'6M','1Y':'1A'}[indicatorChartPeriod] || '1D'}</span>
+                            </span>
+                            <i class="fas fa-chevron-down fs-macro-tf-arrow"></i>
+                        </div>
+                        <div class="fs-macro-tf-options" id="fs-macro-tf-options">
+                            <div class="fs-macro-tf-option ${indicatorChartPeriod === '15m' ? 'active' : ''}" data-period="15m"><span>15 minutos</span><i class="fas fa-check fs-macro-tf-check"></i></div>
+                            <div class="fs-macro-tf-option ${indicatorChartPeriod === '30m' ? 'active' : ''}" data-period="30m"><span>30 minutos</span><i class="fas fa-check fs-macro-tf-check"></i></div>
+                            <div class="fs-macro-tf-option ${indicatorChartPeriod === '4h' ? 'active' : ''}" data-period="4h"><span>4 horas</span><i class="fas fa-check fs-macro-tf-check"></i></div>
+                            <div class="fs-macro-tf-option ${indicatorChartPeriod === '1d' ? 'active' : ''}" data-period="1d"><span>1 dia</span><i class="fas fa-check fs-macro-tf-check"></i></div>
+                            <div class="fs-macro-tf-option ${indicatorChartPeriod === '1w' ? 'active' : ''}" data-period="1w"><span>1 semana</span><i class="fas fa-check fs-macro-tf-check"></i></div>
+                            <div class="fs-macro-tf-option ${indicatorChartPeriod === '1M' ? 'active' : ''}" data-period="1M"><span>1 m\xEAs</span><i class="fas fa-check fs-macro-tf-check"></i></div>
+                            <div class="fs-macro-tf-option ${indicatorChartPeriod === '6M' ? 'active' : ''}" data-period="6M"><span>6 meses</span><i class="fas fa-check fs-macro-tf-check"></i></div>
+                            <div class="fs-macro-tf-option ${indicatorChartPeriod === '1Y' ? 'active' : ''}" data-period="1Y"><span>1 ano</span><i class="fas fa-check fs-macro-tf-check"></i></div>
+                        </div>
+                    </div>
+                <!-- Right: Controls -->
+                <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                    <button class="fs-type-btn ${indicatorChartType === 'line' ? 'active' : ''}" data-type="line"><i class="fas fa-chart-line"></i></button>
+                    <button class="fs-type-btn ${indicatorChartType === 'candle' ? 'active' : ''}" data-type="candle"><i class="fas fa-chart-bar"></i></button>
+                </div>
             </div>
-            <div style="flex: 1; padding: 8px; position: relative;">
-                <canvas id="fs-chart-canvas" style="width: 100%; height: 100%;"></canvas>
-            </div>
-            <div style="padding: 12px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; background: rgba(0,0,0,0.5);">
-                <button class="fs-tf-btn ${indicatorChartPeriod === '15m' ? 'active' : ''}" data-period="15m">15m</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '30m' ? 'active' : ''}" data-period="30m">30m</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '4h' ? 'active' : ''}" data-period="4h">4H</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '1d' ? 'active' : ''}" data-period="1d">1D</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '1w' ? 'active' : ''}" data-period="1w">1S</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '1M' ? 'active' : ''}" data-period="1M">1M</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '6M' ? 'active' : ''}" data-period="6M">6M</button>
-                <button class="fs-tf-btn ${indicatorChartPeriod === '1Y' ? 'active' : ''}" data-period="1Y">1A</button>
-                <div style="width: 1px; background: rgba(255,255,255,0.2); margin: 0 4px;"></div>
-                <button class="fs-type-btn ${indicatorChartType === 'line' ? 'active' : ''}" data-type="line"><i class="fas fa-chart-line"></i></button>
-                <button class="fs-type-btn ${indicatorChartType === 'candle' ? 'active' : ''}" data-type="candle"><i class="fas fa-chart-bar"></i></button>
+            <div style="flex: 1; padding: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)); padding-left: max(8px, env(safe-area-inset-left, 8px)); padding-right: max(8px, env(safe-area-inset-right, 8px)); display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
+                <div id="fs-chart-container" style="flex: 1; background: rgba(20,20,30,0.6); border-radius: 8px; padding: 8px; border: 1px solid rgba(255,255,255,0.08); position: relative; overflow: hidden; min-height: 0; touch-action: none; width: 100%;">
+                    <canvas id="fs-chart-canvas" style="width: 100%; height: 100%; display: block; touch-action: none;"></canvas>
+                </div>
             </div>
             <style>
-                .fs-tf-btn, .fs-type-btn {
-                    padding: 8px 12px;
+                .fs-macro-tf-dropdown { position: relative; }
+                .fs-macro-tf-selector {
+                    display: flex; align-items: center; gap: 6px;
+                    padding: 6px 12px; background: rgba(255,255,255,0.1);
+                    border: 1px solid rgba(255,255,255,0.15); border-radius: 8px;
+                    cursor: pointer; transition: all 0.3s; color: white;
+                    font-size: 12px; font-weight: 600; white-space: nowrap;
+                }
+                .fs-macro-tf-selector:hover { border-color: #3b82f6; background: rgba(99,102,241,0.15); }
+                .fs-macro-tf-arrow { color: #a1a1aa; font-size: 10px; transition: transform 0.3s; }
+                .fs-macro-tf-dropdown.open .fs-macro-tf-arrow { transform: rotate(180deg); }
+                .fs-macro-tf-options {
+                    position: absolute; top: calc(100% + 4px); left: 50%;
+                    transform: translateX(-50%) translateY(-8px); min-width: 160px;
+                    background: #1a1a2e; border: 1px solid rgba(255,255,255,0.15);
+                    border-radius: 10px; overflow: hidden; opacity: 0; visibility: hidden;
+                    transition: all 0.25s ease; z-index: 9999;
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+                }
+                .fs-macro-tf-dropdown.open .fs-macro-tf-options { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+                .fs-macro-tf-option {
+                    padding: 10px 14px; font-size: 13px; font-weight: 500; color: #a1a1aa;
+                    cursor: pointer; transition: all 0.2s; display: flex;
+                    align-items: center; justify-content: space-between;
+                }
+                .fs-macro-tf-option:hover { background: rgba(99,102,241,0.15); color: white; }
+                .fs-macro-tf-option.active { background: #3b82f6; color: white; }
+                .fs-macro-tf-check { opacity: 0; font-size: 11px; }
+                .fs-macro-tf-option.active .fs-macro-tf-check { opacity: 1; }
+                .fs-type-btn {
+                    padding: 6px 10px;
                     background: rgba(255,255,255,0.05);
                     border: 1px solid rgba(255,255,255,0.1);
-                    border-radius: 10px;
+                    border-radius: 8px;
                     color: #888;
-                    font-size: 12px;
+                    font-size: 11px;
                     font-weight: 600;
                     cursor: pointer;
                 }
-                .fs-tf-btn:hover, .fs-type-btn:hover { background: rgba(255,255,255,0.1); color: white; }
-                .fs-tf-btn.active, .fs-type-btn.active { background: #3b82f6; border-color: #3b82f6; color: white; }
+                .fs-type-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+                .fs-type-btn.active { background: #3b82f6; border-color: #3b82f6; color: white; }
             </style>
         `;
         
         document.body.appendChild(fsModal);
         
+        // Setup touch zoom/pan on fullscreen canvas
+        const fsCanvas = document.getElementById('fs-chart-canvas');
+        if (fsCanvas) setupFullscreenTouchHandlers(fsCanvas, symbol);
+        
         // Aguardar a rotação landscape completar + modal renderizar (300ms)
         // Se não tem dados, carregar novamente
         setTimeout(async () => {
+            resetFsZoom();
             if (indicatorCandleData && indicatorCandleData.length > 0) {
                 if (indicatorChartType === 'candle') {
                     drawFullscreenCandleChart(indicatorCandleData, symbol);
@@ -650,13 +816,42 @@
             }
         });
         
-        document.querySelectorAll('.fs-tf-btn').forEach(btn => {
-            btn.addEventListener('click', async function() {
-                document.querySelectorAll('.fs-tf-btn').forEach(b => b.classList.remove('active'));
+        // Fullscreen timeframe dropdown
+        const fsMacroTfSelector = document.getElementById('fs-macro-tf-selector');
+        const fsMacroTfDropdown = document.getElementById('fs-macro-tf-dropdown');
+        if (fsMacroTfSelector) {
+            fsMacroTfSelector.addEventListener('click', () => fsMacroTfDropdown.classList.toggle('open'));
+        }
+        document.querySelectorAll('.fs-macro-tf-option').forEach(opt => {
+            opt.addEventListener('click', async function() {
+                document.querySelectorAll('.fs-macro-tf-option').forEach(o => o.classList.remove('active'));
                 this.classList.add('active');
-                indicatorChartPeriod = this.dataset.period;
+                const period = this.dataset.period;
+                const shortLabel = {'15m':'15m','30m':'30m','4h':'4H','1d':'1D','1w':'1S','1M':'1M','6M':'6M','1Y':'1A'}[period] || period;
+                document.getElementById('fs-macro-tf-label').textContent = shortLabel;
+                fsMacroTfDropdown.classList.remove('open');
+                indicatorChartPeriod = period;
+                // Force loading state
+                const canvas = document.getElementById('fs-chart-canvas');
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = '#0d0d1a';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    const rect = canvas.parentElement.getBoundingClientRect();
+                    ctx.fillStyle = '#3b82f6';
+                    ctx.font = '14px Inter, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Carregando...', rect.width / 2, rect.height / 2);
+                }
+                indicatorCandleData = null;
                 await loadFullscreenChartData(symbol);
             });
+        });
+        // Close dropdown on outside click
+        fsModal.addEventListener('click', function(e) {
+            if (fsMacroTfDropdown && !fsMacroTfDropdown.contains(e.target)) fsMacroTfDropdown.classList.remove('open');
         });
         
         document.querySelectorAll('.fs-type-btn').forEach(btn => {
@@ -673,6 +868,98 @@
                 }
             });
         });
+    }
+
+    // ============================================
+    // FULLSCREEN CHART ZOOM/PAN (Data-level, igual HOME)
+    // ============================================
+    let macroFsZoom = 1;
+    let macroFsPanX = 0;
+    let macroFsIsDragging = false;
+    let macroFsLastX = 0;
+    let macroFsPinchStartDist = 0;
+    let macroFsPinchStartZoom = 1;
+    let macroFsIsPinching = false;
+
+    function resetFsZoom() {
+        macroFsZoom = 1;
+        macroFsPanX = 0;
+        macroFsIsDragging = false;
+        macroFsLastX = 0;
+        macroFsPinchStartDist = 0;
+        macroFsPinchStartZoom = 1;
+        macroFsIsPinching = false;
+    }
+
+    function setupFullscreenTouchHandlers(canvas, symbol) {
+        resetFsZoom();
+
+        canvas.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 1) {
+                macroFsIsDragging = true;
+                macroFsLastX = e.touches[0].clientX;
+            } else if (e.touches.length === 2) {
+                macroFsIsPinching = true;
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                macroFsPinchStartDist = Math.sqrt(dx * dx + dy * dy);
+                macroFsPinchStartZoom = macroFsZoom;
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', function(e) {
+            if (e.touches.length === 1 && macroFsIsDragging) {
+                const deltaX = e.touches[0].clientX - macroFsLastX;
+                macroFsPanX = Math.max(0, macroFsPanX - deltaX * macroFsZoom);
+                macroFsLastX = e.touches[0].clientX;
+                redrawFullscreenChart(symbol);
+            } else if (e.touches.length === 2) {
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const scale = dist / macroFsPinchStartDist;
+                macroFsZoom = Math.max(1, Math.min(10, macroFsPinchStartZoom * scale));
+                redrawFullscreenChart(symbol);
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', function(e) {
+            if (e.touches.length === 0) {
+                setTimeout(() => { macroFsIsDragging = false; macroFsIsPinching = false; }, 50);
+            } else if (e.touches.length === 1) {
+                macroFsIsPinching = false;
+            }
+        });
+
+        // Double tap to reset zoom
+        let lastTap = 0, tapCount = 0;
+        canvas.addEventListener('touchend', function(e) {
+            if (macroFsIsPinching || e.touches.length > 0) return;
+            const now = Date.now();
+            if (now - lastTap < 300) {
+                tapCount++;
+                if (tapCount === 2) {
+                    macroFsZoom = 1;
+                    macroFsPanX = 0;
+                    redrawFullscreenChart(symbol);
+                    tapCount = 0;
+                }
+            } else {
+                tapCount = 1;
+            }
+            lastTap = now;
+        });
+    }
+
+    function redrawFullscreenChart(symbol) {
+        if (!indicatorCandleData || indicatorCandleData.length === 0) return;
+        if (indicatorChartType === 'candle') {
+            drawFullscreenCandleChart(indicatorCandleData, symbol);
+        } else {
+            drawFullscreenLineChart(indicatorCandleData, symbol);
+        }
     }
 
     async function loadFullscreenChartData(symbol) {
@@ -779,103 +1066,178 @@
             return;
         }
         
+        const container = document.getElementById('fs-chart-container');
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.parentElement.getBoundingClientRect();
+        const containerRect = (container || canvas.parentElement).getBoundingClientRect();
+        const width = containerRect.width || window.innerWidth;
+        const height = containerRect.height || (window.innerHeight - 100);
         
-        // Se canvas ainda não tem dimensões, agendar redraw
-        if (rect.width < 100 || rect.height < 50) {
-            macroLog(`⏳ Fullscreen aguardando dimensões: ${rect.width}x${rect.height}`, 'warn');
+        if (width < 100 || height < 50) {
+            macroLog(`⏳ Fullscreen aguardando dimensões: ${width}x${height}`, 'warn');
             setTimeout(() => drawFullscreenLineChart(candleData, symbol), 100);
             return;
         }
         
-        macroLog(`📐 Desenhando fullscreen: ${rect.width}x${rect.height}`, 'info');
-        
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        canvas.style.width = rect.width + 'px';
-        canvas.style.height = rect.height + 'px';
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.scale(dpr, dpr);
         
-        const width = rect.width;
-        const height = rect.height;
-        const padding = { top: 20, right: 60, bottom: 40, left: 10 };
-        
-        ctx.fillStyle = '#0d0d1a';
+        ctx.fillStyle = '#0a0a0f';
         ctx.fillRect(0, 0, width, height);
         
-        const closes = candleData.map(c => c[4]);
-        const timestamps = candleData.map(c => c[0]);
+        // Data-level zoom: show fewer data points when zoomed in
+        const visibleCount = Math.floor(candleData.length / macroFsZoom);
+        const startIdx = Math.max(0, Math.min(
+            candleData.length - visibleCount,
+            Math.floor(macroFsPanX / (width / candleData.length))
+        ));
+        const endIdx = Math.min(candleData.length, startIdx + visibleCount);
+        const visibleData = candleData.slice(startIdx, endIdx);
         
-        const minPrice = Math.min(...closes) * 0.999;
-        const maxPrice = Math.max(...closes) * 1.001;
-        const priceRange = maxPrice - minPrice || 1;
+        if (visibleData.length === 0) {
+            ctx.fillStyle = '#888';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Sem dados disponíveis', width / 2, height / 2);
+            return;
+        }
         
+        const padding = { top: 15, right: 65, bottom: 35, left: 10 };
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
         
-        // Grid
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        const closes = visibleData.map(c => c[4]);
+        const minPrice = Math.min(...closes);
+        const maxPrice = Math.max(...closes);
+        const priceRange = (maxPrice - minPrice) || maxPrice * 0.01;
+        const paddedMin = minPrice - priceRange * 0.05;
+        const paddedMax = maxPrice + priceRange * 0.05;
+        const paddedRange = paddedMax - paddedMin;
+        
+        const config = MARKET_INDICATORS[symbol];
+        const color = config?.color || '#3b82f6';
+        const isPositive = closes[closes.length - 1] >= closes[0];
+        
+        // Grid horizontal
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
         ctx.lineWidth = 1;
         for (let i = 0; i <= 5; i++) {
-            const y = padding.top + (chartHeight / 5) * i;
+            const y = padding.top + (chartHeight * i / 5);
             ctx.beginPath();
             ctx.moveTo(padding.left, y);
             ctx.lineTo(width - padding.right, y);
             ctx.stroke();
-            
-            const price = maxPrice - (priceRange / 5) * i;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.font = '11px Inter, sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillText('$' + price.toFixed(2), width - padding.right + 5, y + 4);
         }
         
-        const config = MARKET_INDICATORS[symbol];
-        const color = config?.color || '#3b82f6';
+        // Grid vertical
+        const timeGridCount = Math.min(8, visibleData.length);
+        const timeGridSpacing = Math.floor(visibleData.length / timeGridCount);
+        for (let i = 0; i < visibleData.length; i += Math.max(1, timeGridSpacing)) {
+            const x = padding.left + (i / Math.max(1, visibleData.length - 1)) * chartWidth;
+            ctx.beginPath();
+            ctx.moveTo(x, padding.top);
+            ctx.lineTo(x, padding.top + chartHeight);
+            ctx.stroke();
+        }
         
+        // Line chart
         ctx.beginPath();
         ctx.strokeStyle = color;
         ctx.lineWidth = 2.5;
         
         closes.forEach((close, i) => {
-            const x = padding.left + (i / (closes.length - 1)) * chartWidth;
-            const y = padding.top + (1 - (close - minPrice) / priceRange) * chartHeight;
+            const x = padding.left + (i / Math.max(1, closes.length - 1)) * chartWidth;
+            const y = padding.top + ((paddedMax - close) / paddedRange) * chartHeight;
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         });
         ctx.stroke();
         
         // Gradient fill
+        const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartHeight);
+        gradient.addColorStop(0, color + '4D');
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
         ctx.lineTo(padding.left, padding.top + chartHeight);
         ctx.closePath();
-        
-        const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartHeight);
-        gradient.addColorStop(0, color + '30');
-        gradient.addColorStop(1, color + '00');
         ctx.fillStyle = gradient;
         ctx.fill();
         
-        // Time labels (formatado corretamente)
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.font = '11px Inter, sans-serif';
-        ctx.textAlign = 'center';
+        // Determine if dollar indicator
+        const isDollarAsset = symbol.includes('=F') || symbol === '^GSPC' || symbol === '^DJI';
         
-        const numLabels = 6;
-        const step = Math.max(1, Math.floor((timestamps.length - 1) / (numLabels - 1)));
-        for (let i = 0; i < timestamps.length; i += step) {
-            if (i >= timestamps.length) break;
-            const x = padding.left + (i / (timestamps.length - 1)) * chartWidth;
-            const date = new Date(timestamps[i]);
-            let label;
-            if (indicatorChartPeriod === '1d') {
-                label = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        // Price labels (right side)
+        ctx.fillStyle = '#aaa';
+        ctx.font = '9px -apple-system, sans-serif';
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= 5; i++) {
+            const price = paddedMax - (paddedRange * i / 5);
+            const y = padding.top + (chartHeight * i / 5);
+            let formatted;
+            if (isDollarAsset) {
+                formatted = price >= 1000 ? `$${(price/1000).toFixed(1)}k` : `$${price.toFixed(price < 1 ? 4 : 2)}`;
             } else {
-                label = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+                formatted = price >= 10000 ? price.toFixed(0) : price >= 100 ? price.toFixed(1) : price.toFixed(2);
             }
-            ctx.fillText(label, x, height - 15);
+            ctx.fillText(formatted, width - 15, y + 3);
+        }
+        
+        // Time labels
+        ctx.fillStyle = '#666';
+        ctx.font = '8px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        for (let i = 0; i < visibleData.length; i += Math.max(1, timeGridSpacing)) {
+            const x = padding.left + (i / Math.max(1, visibleData.length - 1)) * chartWidth;
+            const date = new Date(visibleData[i][0]);
+            let label;
+            if (['15m', '30m', '4h', '1d'].includes(indicatorChartPeriod)) {
+                label = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            } else if (['1w', '1M'].includes(indicatorChartPeriod)) {
+                label = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            } else {
+                label = date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+            }
+            ctx.fillText(label, x, height - 20);
+        }
+        
+        // Current price line
+        const lastPrice = closes[closes.length - 1];
+        const lastY = padding.top + ((paddedMax - lastPrice) / paddedRange) * chartHeight;
+        ctx.strokeStyle = color;
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, lastY);
+        ctx.lineTo(width - padding.right, lastY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Current price badge
+        ctx.fillStyle = color;
+        ctx.fillRect(width - padding.right, lastY - 8, padding.right - 3, 16);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 8px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        let priceLabel;
+        if (isDollarAsset) {
+            priceLabel = lastPrice >= 1000 ? `$${(lastPrice/1000).toFixed(1)}k` : `$${lastPrice.toFixed(lastPrice < 1 ? 3 : 2)}`;
+        } else {
+            priceLabel = lastPrice >= 10000 ? lastPrice.toFixed(0) : lastPrice >= 100 ? lastPrice.toFixed(1) : lastPrice.toFixed(2);
+        }
+        ctx.fillText(priceLabel, width - padding.right/2 - 1, lastY + 3);
+        
+        // Zoom indicator
+        if (macroFsZoom > 1) {
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.8)';
+            ctx.fillRect(10, 10, 60, 24);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${macroFsZoom.toFixed(1)}x`, 40, 26);
         }
     }
 
@@ -886,103 +1248,184 @@
             return;
         }
         
+        const container = document.getElementById('fs-chart-container');
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.parentElement.getBoundingClientRect();
+        const containerRect = (container || canvas.parentElement).getBoundingClientRect();
+        const width = containerRect.width || window.innerWidth;
+        const height = containerRect.height || (window.innerHeight - 100);
         
-        // Se canvas ainda não tem dimensões, agendar redraw
-        if (rect.width < 100 || rect.height < 50) {
-            macroLog(`⏳ Fullscreen candle aguardando dimensões: ${rect.width}x${rect.height}`, 'warn');
+        if (width < 100 || height < 50) {
             setTimeout(() => drawFullscreenCandleChart(candleData, symbol), 100);
             return;
         }
         
-        macroLog(`📐 Desenhando fullscreen candles: ${rect.width}x${rect.height}`, 'info');
-        
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        canvas.style.width = rect.width + 'px';
-        canvas.style.height = rect.height + 'px';
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.scale(dpr, dpr);
         
-        const width = rect.width;
-        const height = rect.height;
-        const padding = { top: 20, right: 60, bottom: 40, left: 10 };
-        
-        ctx.fillStyle = '#0d0d1a';
+        ctx.fillStyle = '#0a0a0f';
         ctx.fillRect(0, 0, width, height);
         
-        let minPrice = Infinity, maxPrice = -Infinity;
-        candleData.forEach(c => {
-            minPrice = Math.min(minPrice, c[3]);
-            maxPrice = Math.max(maxPrice, c[2]);
-        });
-        const priceRange = maxPrice - minPrice || 1;
+        // Data-level zoom
+        const visibleCount = Math.floor(candleData.length / macroFsZoom);
+        const startIdx = Math.max(0, Math.min(
+            candleData.length - visibleCount,
+            Math.floor(macroFsPanX / (width / candleData.length))
+        ));
+        const endIdx = Math.min(candleData.length, startIdx + visibleCount);
+        const visibleData = candleData.slice(startIdx, endIdx);
         
+        if (visibleData.length === 0) {
+            ctx.fillStyle = '#888';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Sem dados disponíveis', width / 2, height / 2);
+            return;
+        }
+        
+        const padding = { top: 15, right: 65, bottom: 35, left: 10 };
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
         
-        // Grid
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        // Price range from visible data
+        let minPrice = Infinity, maxPrice = -Infinity;
+        visibleData.forEach(c => {
+            minPrice = Math.min(minPrice, c[3]);
+            maxPrice = Math.max(maxPrice, c[2]);
+        });
+        const priceRange = (maxPrice - minPrice) || maxPrice * 0.01;
+        const paddedMin = minPrice - priceRange * 0.05;
+        const paddedMax = maxPrice + priceRange * 0.05;
+        const paddedRange = paddedMax - paddedMin;
+        
+        // Grid horizontal
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
         ctx.lineWidth = 1;
         for (let i = 0; i <= 5; i++) {
-            const y = padding.top + (chartHeight / 5) * i;
+            const y = padding.top + (chartHeight * i / 5);
             ctx.beginPath();
             ctx.moveTo(padding.left, y);
             ctx.lineTo(width - padding.right, y);
             ctx.stroke();
-            
-            const price = maxPrice - (priceRange / 5) * i;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.font = '11px Inter, sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillText('$' + price.toFixed(2), width - padding.right + 5, y + 4);
         }
         
-        const candleWidth = Math.max(4, (chartWidth / candleData.length) * 0.7);
-        const candleSpacing = chartWidth / candleData.length;
+        // Grid vertical
+        const timeGridCount = Math.min(8, visibleData.length);
+        const timeGridSpacing = Math.floor(visibleData.length / timeGridCount);
+        for (let i = 0; i < visibleData.length; i += Math.max(1, timeGridSpacing)) {
+            const x = padding.left + (i / Math.max(1, visibleData.length - 1)) * chartWidth;
+            ctx.beginPath();
+            ctx.moveTo(x, padding.top);
+            ctx.lineTo(x, padding.top + chartHeight);
+            ctx.stroke();
+        }
         
-        candleData.forEach((candle, i) => {
+        // Draw candles
+        const spacing = chartWidth / visibleData.length;
+        const candleW = Math.max(2, Math.min(12, spacing * 0.7));
+        
+        visibleData.forEach((candle, i) => {
             const [timestamp, open, high, low, close] = candle;
+            if (isNaN(open) || isNaN(close)) return;
             const isGreen = close >= open;
             const color = isGreen ? '#22c55e' : '#ef4444';
             
-            const x = padding.left + i * candleSpacing + candleSpacing / 2;
-            const openY = padding.top + (1 - (open - minPrice) / priceRange) * chartHeight;
-            const closeY = padding.top + (1 - (close - minPrice) / priceRange) * chartHeight;
-            const highY = padding.top + (1 - (high - minPrice) / priceRange) * chartHeight;
-            const lowY = padding.top + (1 - (low - minPrice) / priceRange) * chartHeight;
+            const x = padding.left + (i * spacing) + spacing / 2;
+            const highY = padding.top + ((paddedMax - high) / paddedRange) * chartHeight;
+            const lowY = padding.top + ((paddedMax - low) / paddedRange) * chartHeight;
+            const openY = padding.top + ((paddedMax - open) / paddedRange) * chartHeight;
+            const closeY = padding.top + ((paddedMax - close) / paddedRange) * chartHeight;
             
+            // Wick
             ctx.strokeStyle = color;
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(x, highY);
             ctx.lineTo(x, lowY);
             ctx.stroke();
             
+            // Body
             ctx.fillStyle = color;
-            const bodyHeight = Math.max(2, Math.abs(closeY - openY));
-            ctx.fillRect(x - candleWidth / 2, Math.min(openY, closeY), candleWidth, bodyHeight);
+            ctx.fillRect(x - candleW / 2, Math.min(openY, closeY), candleW, Math.max(Math.abs(closeY - openY), 1));
         });
         
-        // Time labels (formatado corretamente)
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.font = '11px Inter, sans-serif';
-        ctx.textAlign = 'center';
+        // Determine if dollar indicator
+        const isDollarAsset = symbol.includes('=F') || symbol === '^GSPC' || symbol === '^DJI';
         
-        const numLabels = 6;
-        const step = Math.max(1, Math.floor((candleData.length - 1) / (numLabels - 1)));
-        for (let i = 0; i < candleData.length; i += step) {
-            if (i >= candleData.length) break;
-            const x = padding.left + i * candleSpacing + candleSpacing / 2;
-            const date = new Date(candleData[i][0]);
-            let label;
-            if (indicatorChartPeriod === '1d') {
-                label = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        // Price labels (right side)
+        ctx.fillStyle = '#aaa';
+        ctx.font = '9px -apple-system, sans-serif';
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= 5; i++) {
+            const price = paddedMax - (paddedRange * i / 5);
+            const y = padding.top + (chartHeight * i / 5);
+            let formatted;
+            if (isDollarAsset) {
+                formatted = price >= 1000 ? `$${(price/1000).toFixed(1)}k` : `$${price.toFixed(price < 1 ? 4 : 2)}`;
             } else {
-                label = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+                formatted = price >= 10000 ? price.toFixed(0) : price >= 100 ? price.toFixed(1) : price.toFixed(2);
             }
-            ctx.fillText(label, x, height - 15);
+            ctx.fillText(formatted, width - 15, y + 3);
+        }
+        
+        // Time labels
+        ctx.fillStyle = '#666';
+        ctx.font = '8px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        for (let i = 0; i < visibleData.length; i += Math.max(1, timeGridSpacing)) {
+            const x = padding.left + (i * spacing) + spacing / 2;
+            const date = new Date(visibleData[i][0]);
+            let label;
+            if (['15m', '30m', '4h', '1d'].includes(indicatorChartPeriod)) {
+                label = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            } else if (['1w', '1M'].includes(indicatorChartPeriod)) {
+                label = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            } else {
+                label = date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+            }
+            ctx.fillText(label, x, height - 20);
+        }
+        
+        // Current price line
+        const lastClose = visibleData[visibleData.length - 1][4];
+        const lastY = padding.top + ((paddedMax - lastClose) / paddedRange) * chartHeight;
+        const config = MARKET_INDICATORS[symbol];
+        const lineColor = config?.color || '#3b82f6';
+        ctx.strokeStyle = lineColor;
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, lastY);
+        ctx.lineTo(width - padding.right, lastY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // Current price badge
+        ctx.fillStyle = lineColor;
+        ctx.fillRect(width - padding.right, lastY - 8, padding.right - 3, 16);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 8px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        let priceLabel;
+        if (isDollarAsset) {
+            priceLabel = lastClose >= 1000 ? `$${(lastClose/1000).toFixed(1)}k` : `$${lastClose.toFixed(lastClose < 1 ? 3 : 2)}`;
+        } else {
+            priceLabel = lastClose >= 10000 ? lastClose.toFixed(0) : lastClose >= 100 ? lastClose.toFixed(1) : lastClose.toFixed(2);
+        }
+        ctx.fillText(priceLabel, width - padding.right/2 - 1, lastY + 3);
+        
+        // Zoom indicator
+        if (macroFsZoom > 1) {
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.8)';
+            ctx.fillRect(10, 10, 60, 24);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${macroFsZoom.toFixed(1)}x`, 40, 26);
         }
     }
 
@@ -1007,9 +1450,17 @@
     }
     
     async function loadIndicatorChartData(symbol) {
-        const loadingEl = document.getElementById('indicator-chart-loading');
-        const canvas = document.getElementById('indicator-chart-canvas');
-        if (!loadingEl || !canvas) return;
+        macroLog('🚀 loadIndicatorChartData para: ' + symbol, 'info');
+        
+        const loadingEl = document.getElementById('macro-chart-loading');
+        const canvas = document.getElementById('macro-chart-canvas');
+        
+        if (!canvas) {
+            macroLog('❌ Canvas não encontrado', 'error');
+            return;
+        }
+        
+        if (loadingEl) loadingEl.style.display = 'flex';
         
         // Verificar cache
         const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
@@ -1108,17 +1559,27 @@
                 // Salvar no cache
                 chartDataCache[cacheKey] = { data: indicatorCandleData, timestamp: Date.now() };
                 
+                macroLog('✅ Dados prontos! Candles: ' + indicatorCandleData.length, 'success');
+                
+                // Esconder loading ANTES de desenhar
+                loadingEl.style.display = 'none';
+                
                 if (indicatorChartType === 'candle') {
+                    macroLog('📊 Chamando drawIndicatorCandleChart...', 'info');
                     drawIndicatorCandleChart(indicatorCandleData);
                 } else {
+                    macroLog('📊 Chamando drawIndicatorLineChart...', 'info');
                     drawIndicatorLineChart(indicatorCandleData);
                 }
+                macroLog('✅ Desenho concluído!', 'success');
             } else {
                 throw new Error('Sem dados disponíveis');
             }
         } catch (e) {
             macroLog('❌ Erro gráfico: ' + e.message, 'error');
-            const container = document.getElementById('indicator-chart-container');
+            const container = document.getElementById('macro-chart-container');
+            const loadingEl = document.getElementById('macro-chart-loading');
+            if (loadingEl) loadingEl.style.display = 'none';
             if (container) {
                 container.innerHTML = `
                     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #666;">
@@ -1130,51 +1591,49 @@
             }
             return;
         }
-        
-        loadingEl.style.display = 'none';
     }
 
     // ============================================
-    // DESENHAR GRÁFICO DE LINHA
+    // DESENHAR GRÁFICO DE LINHA - v22.0 (igual HOME)
     // ============================================
     function drawIndicatorLineChart(candleData) {
-        const canvas = document.getElementById('indicator-chart-canvas');
-        if (!canvas) {
-            macroLog('❌ Canvas não encontrado', 'error');
+        const canvas = document.getElementById('macro-chart-canvas');
+        const container = document.getElementById('macro-chart-container');
+        const loadingEl = document.getElementById('macro-chart-loading');
+        
+        macroLog('🎨 Desenhando gráfico...', 'info');
+        
+        if (!canvas || !container) {
+            macroLog('❌ Canvas/Container não encontrado', 'error');
             return;
         }
         
-        // Esconder loading spinner
-        const loadingEl = document.getElementById('indicator-chart-loading');
+        // Esconder loading
         if (loadingEl) loadingEl.style.display = 'none';
         
-        const ctx = canvas.getContext('2d');
-        const dpr = window.devicePixelRatio || 1;
-        const container = document.getElementById('indicator-chart-container');
+        // Usar getBoundingClientRect como na HOME
+        const rect = container.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
         
-        // Usar container como referência de dimensões
-        const rect = container ? container.getBoundingClientRect() : canvas.getBoundingClientRect();
-        
-        // Se canvas ainda não tem dimensões, agendar redraw
-        if (rect.width < 50 || rect.height < 50) {
-            macroLog(`⏳ Canvas aguardando dimensões: ${rect.width}x${rect.height}`, 'warn');
-            setTimeout(() => drawIndicatorLineChart(candleData), 100);
+        if (width <= 0 || height <= 0) {
+            macroLog('❌ Container sem dimensões', 'error');
             return;
         }
         
-        macroLog(`📐 Desenhando gráfico: ${rect.width}x${rect.height}`, 'info');
+        // DPR para telas de alta resolução
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
         
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        canvas.style.width = rect.width + 'px';
-        canvas.style.height = rect.height + 'px';
+        const ctx = canvas.getContext('2d');
         ctx.scale(dpr, dpr);
         
-        const width = rect.width;
-        const height = rect.height;
-        const padding = { top: 20, right: 10, bottom: 30, left: 55 };
+        macroLog(`📐 Canvas: ${width}x${height} (DPR: ${dpr})`, 'info');
         
-        // Fundo escuro do gráfico
+        // Fundo
         ctx.fillStyle = '#0d0d1a';
         ctx.fillRect(0, 0, width, height);
         
@@ -1185,10 +1644,11 @@
         const maxPrice = Math.max(...closes) * 1.001;
         const priceRange = maxPrice - minPrice || 1;
         
+        const padding = { top: 15, right: 10, bottom: 25, left: 50 };
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
         
-        // Grid horizontal
+        // Grid
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
         ctx.lineWidth = 1;
         for (let i = 0; i <= 4; i++) {
@@ -1200,23 +1660,24 @@
             
             const price = maxPrice - (priceRange / 4) * i;
             ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.font = '10px Inter, sans-serif';
+            ctx.font = '9px Inter, sans-serif';
             ctx.textAlign = 'right';
-            ctx.fillText('$' + price.toFixed(2), padding.left - 8, y + 4);
+            ctx.fillText('$' + price.toFixed(2), padding.left - 5, y + 3);
         }
         
-        // Desenhar linha
+        // Linha do gráfico
         const config = MARKET_INDICATORS[currentIndicatorSymbol];
         const color = config?.color || '#3b82f6';
         
         ctx.beginPath();
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
         
         closes.forEach((close, i) => {
-            const x = padding.left + (i / (closes.length - 1)) * chartWidth;
+            const x = padding.left + (i / Math.max(1, closes.length - 1)) * chartWidth;
             const y = padding.top + (1 - (close - minPrice) / priceRange) * chartHeight;
-            
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         });
@@ -1233,68 +1694,70 @@
         ctx.fillStyle = gradient;
         ctx.fill();
         
-        // Labels de tempo (formatado corretamente)
+        // Labels de tempo
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.font = '10px Inter, sans-serif';
+        ctx.font = '9px Inter, sans-serif';
         ctx.textAlign = 'center';
         
         const numLabels = 5;
         const step = Math.max(1, Math.floor((timestamps.length - 1) / (numLabels - 1)));
         for (let i = 0; i < timestamps.length; i += step) {
-            if (i >= timestamps.length) break;
-            const x = padding.left + (i / (timestamps.length - 1)) * chartWidth;
+            const x = padding.left + (i / Math.max(1, timestamps.length - 1)) * chartWidth;
             const date = new Date(timestamps[i]);
             let label;
-            if (indicatorChartPeriod === '1d') {
+            if (indicatorChartPeriod === '1d' || indicatorChartPeriod === '15m' || indicatorChartPeriod === '30m' || indicatorChartPeriod === '4h') {
                 label = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             } else {
                 label = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
             }
-            ctx.fillText(label, x, height - 10);
+            ctx.fillText(label, x, height - 8);
         }
         
-        document.getElementById('indicator-chart-loading').style.display = 'none';
+        macroLog('✅ Gráfico desenhado!', 'success');
     }
 
     // ============================================
-    // DESENHAR GRÁFICO DE CANDLES
+    // DESENHAR GRÁFICO DE CANDLES - v22.0 (igual HOME)
     // ============================================
     function drawIndicatorCandleChart(candleData) {
-        const canvas = document.getElementById('indicator-chart-canvas');
-        if (!canvas) {
-            macroLog('❌ Canvas não encontrado', 'error');
+        const canvas = document.getElementById('macro-chart-canvas');
+        const container = document.getElementById('macro-chart-container');
+        const loadingEl = document.getElementById('macro-chart-loading');
+        
+        if (!canvas || !container) {
+            macroLog('❌ Canvas/Container não encontrado', 'error');
             return;
         }
         
-        // Esconder loading spinner
-        const loadingEl = document.getElementById('indicator-chart-loading');
+        // Esconder loading
         if (loadingEl) loadingEl.style.display = 'none';
         
-        const ctx = canvas.getContext('2d');
-        const dpr = window.devicePixelRatio || 1;
-        const container = document.getElementById('indicator-chart-container');
+        // Usar getBoundingClientRect como na HOME
+        const rect = container.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
         
-        // Usar container como referência de dimensões
-        const rect = container ? container.getBoundingClientRect() : canvas.getBoundingClientRect();
-        
-        // Se canvas ainda não tem dimensões, agendar redraw
-        if (rect.width < 50 || rect.height < 50) {
-            macroLog(`⏳ Canvas candle aguardando dimensões: ${rect.width}x${rect.height}`, 'warn');
-            setTimeout(() => drawIndicatorCandleChart(candleData), 100);
+        if (width <= 0 || height <= 0) {
+            macroLog('❌ Container sem dimensões', 'error');
             return;
         }
         
-        macroLog(`📐 Desenhando candles: ${rect.width}x${rect.height}`, 'info');
+        // DPR para telas de alta resolução
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
         
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        canvas.style.width = rect.width + 'px';
-        canvas.style.height = rect.height + 'px';
+        const ctx = canvas.getContext('2d');
         ctx.scale(dpr, dpr);
         
-        const width = rect.width;
-        const height = rect.height;
-        const padding = { top: 20, right: 10, bottom: 30, left: 55 };
+        macroLog(`📐 Candles: ${width}x${height} (DPR: ${dpr})`, 'info');
+        
+        const padding = { top: 15, right: 10, bottom: 25, left: 50 };
+        
+        // Limpar canvas
+        ctx.clearRect(0, 0, width, height);
         
         // Fundo escuro do gráfico
         ctx.fillStyle = '#0d0d1a';
@@ -1377,7 +1840,7 @@
             ctx.fillText(label, x, height - 10);
         }
         
-        document.getElementById('indicator-chart-loading').style.display = 'none';
+        macroLog('✅ Gráfico de candles desenhado!', 'success');
     }
 
     // ============================================
@@ -2194,12 +2657,18 @@
         'PIB': 'GDP',
         'Retail': 'RSXFS',
         'Varejo': 'RSXFS',
-        'ISM': 'MANEMP',
-        'PMI': 'MANEMP',
+        'ISM': 'NAPM',
+        'PMI': 'NAPM',
+        'Manufatura Filadélfia': 'GAFDISA066MSFRBPHI',
+        'Filadélfia': 'GAFDISA066MSFRBPHI',
+        'Philly': 'GAFDISA066MSFRBPHI',
+        'Empire State': 'GAFDISA066MSFRBNY',
         'Jobless': 'ICSA',
         'Seguro': 'ICSA',
         'Consumer': 'UMCSENT',
         'Confiança': 'UMCSENT',
+        'Sentimento': 'UMCSENT',
+        'Michigan': 'UMCSENT',
         'PPI': 'PPIACO',
         'Produtor': 'PPIACO',
         'PCE': 'PCEPI',
@@ -2207,7 +2676,11 @@
         'Habitação': 'HOUST',
         'Construção': 'HOUST',
         'Durable': 'DGORDER',
-        'Duráveis': 'DGORDER'
+        'Duráveis': 'DGORDER',
+        'Industrial': 'INDPRO',
+        'Produção Industrial': 'INDPRO',
+        'Balança': 'BOPGSTB',
+        'Trade': 'BOPGSTB'
     };
     
     // Histórico de decisões do FOMC - carregado dinamicamente via FRED API
@@ -2420,7 +2893,9 @@
         'Industrial Production', 'Capacity Utilization',
         'ADP Employment', 'JOLTS', 'Job Openings',
         'Core PCE', 'Treasury', 'Yield',
-        'Import Prices', 'Export Prices', 'Leading Indicators'
+        'Import Prices', 'Export Prices', 'Leading Indicators',
+        'Philly Fed', 'Philadelphia Fed', 'Empire State', 'Chicago PMI',
+        'Beige Book', 'Current Account'
     ];
     
     // Buscar calendário econômico - Fonte primária: Forex Factory (gratuito, dados reais)
@@ -2642,19 +3117,25 @@
             'Final GDP': 'PIB (Final)',
             'Prelim GDP': 'PIB (Revisão)',
             'Gross Domestic Product': 'PIB',
-            'FOMC': 'Decisão FOMC',
-            'Federal Funds Rate': 'Taxa de Juros Fed',
+            'FOMC': 'Taxa de Juros FED',
+            'Federal Funds Rate': 'Taxa de Juros FED',
             'FOMC Statement': 'Comunicado FOMC',
             'FOMC Press Conference': 'Coletiva FOMC',
             'FOMC Meeting Minutes': 'Ata do FOMC',
             'Federal Reserve': 'Fed',
-            'Interest Rate Decision': 'Decisão de Juros',
-            'Fed Interest Rate': 'Taxa de Juros Fed',
+            'Interest Rate Decision': 'Taxa de Juros FED',
+            'Fed Interest Rate': 'Taxa de Juros FED',
             'Retail Sales': 'Vendas no Varejo',
             'Core Retail Sales': 'Vendas no Varejo Core',
             'Consumer Confidence': 'Confiança do Consumidor',
             'UoM Consumer Sentiment': 'Sentimento Michigan',
             'CB Consumer Confidence': 'Confiança CB',
+            'Philly Fed Manufacturing Index': 'Índice de Manufatura Filadélfia',
+            'Philadelphia Fed Manufacturing Index': 'Índice de Manufatura Filadélfia',
+            'Philly Fed Manufacturing': 'Índice de Manufatura Filadélfia',
+            'Philly Fed': 'Índice de Manufatura Filadélfia',
+            'Empire State Manufacturing Index': 'Índice de Manufatura NY (Empire State)',
+            'Empire State Manufacturing': 'Índice de Manufatura NY (Empire State)',
             'ISM Manufacturing PMI': 'ISM Manufatura',
             'ISM Manufacturing': 'ISM Manufatura',
             'ISM Services PMI': 'ISM Serviços',
@@ -2680,7 +3161,19 @@
             'Industrial Production': 'Produção Industrial',
             'Capacity Utilization': 'Utilização da Capacidade',
             'Factory Orders': 'Encomendas à Indústria',
-            'UoM Inflation Expectations': 'Expectativas de Inflação Michigan'
+            'UoM Inflation Expectations': 'Expectativas de Inflação Michigan',
+            'Chicago PMI': 'PMI Chicago',
+            'S&P Global Manufacturing PMI': 'PMI S&P Global Manufatura',
+            'S&P Global Services PMI': 'PMI S&P Global Serviços',
+            'Michigan Consumer Sentiment': 'Sentimento Michigan',
+            'Continuing Jobless Claims': 'Continuidade Seguro-Desemprego',
+            'Import Prices': 'Preços de Importação',
+            'Export Prices': 'Preços de Exportação',
+            'Treasury Budget': 'Orçamento do Tesouro',
+            'Leading Indicators': 'Indicadores Antecedentes',
+            'Current Account': 'Conta Corrente',
+            'Beige Book': 'Livro Bege',
+            'Crude Oil Inventories': 'Estoques de Petróleo'
         };
         
         for (const [eng, pt] of Object.entries(translations)) {
@@ -2707,7 +3200,7 @@
                     day: d.getDate(),
                     month: d.toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase(),
                     time: '14:00',
-                    title: 'Decisão FOMC',
+                    title: 'Taxa de Juros FED',
                     fullDate: meeting.date,
                     country: 'EUA',
                     impact: 'high',
@@ -3032,10 +3525,10 @@
                             `}).join('')}
                         </div>
                     ` : `
-                        <div style="text-align: center; padding: 20px; color: #888;">
-                            <i class="fas fa-database" style="font-size: 24px; margin-bottom: 8px; opacity: 0.5;"></i>
-                            <p style="margin: 0;">Histórico não disponível via API</p>
-                            <p style="margin: 4px 0 0; font-size: 11px; color: #666;">Dados históricos serão exibidos quando disponíveis</p>
+                        <div style="text-align: center; padding: 24px; color: #888; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.1);">
+                            <i class="fas fa-exclamation-circle" style="font-size: 28px; margin-bottom: 10px; opacity: 0.5; color: #f59e0b;"></i>
+                            <p style="margin: 0; font-weight: 600; font-size: 14px; color: #ccc;">Histórico Indisponível</p>
+                            <p style="margin: 6px 0 0; font-size: 11px; color: #666; line-height: 1.5;">Não foi possível obter dados históricos para este indicador.<br>Isso pode ocorrer por limitação da API ou falta de mapeamento.</p>
                         </div>
                     `}
                     
@@ -3070,11 +3563,29 @@
                 description: 'Índice de Preços ao Consumidor (Consumer Price Index). Mede a inflação através da variação de preços de uma cesta de bens e serviços. É crucial para decisões de política monetária do Fed.',
                 expectation: 'Meta do Fed é 2%. Inflação acima de 3% pode reduzir expectativas de cortes de juros. Core CPI (excluindo alimentos e energia) é ainda mais observado.'
             },
+            'CPI (Inflação) m/m': {
+                icon: 'fa-percentage',
+                color: '#f59e0b',
+                description: 'Variação mensal do CPI. Mede a inflação mês a mês. Valores acima do esperado indicam pressão inflacionária.',
+                expectation: 'Variações mensais acima de 0.3% são preocupantes para o Fed.'
+            },
+            'CPI Core': {
+                icon: 'fa-percentage',
+                color: '#f59e0b',
+                description: 'CPI sem alimentos e energia (mais voláteis). É o indicador de inflação mais observado pelo Fed por ser menos sujeito a choques temporários.',
+                expectation: 'Core CPI persistentemente acima de 3% a/a pode adiar cortes de juros.'
+            },
+            'Taxa de Juros FED': {
+                icon: 'fa-landmark',
+                color: '#3b82f6',
+                description: 'Reunião do FOMC (Comitê Federal de Mercado Aberto). O Fed decide a taxa de juros básica dos EUA. Além da decisão, o comunicado e coletiva do presidente são muito importantes para entender a direção futura.',
+                expectation: 'Observe o "dot plot" (projeções dos membros) e qualquer mudança no tom do comunicado. Palavras como "paciente" ou "vigilante" impactam mercados.'
+            },
             'Decisão FOMC': {
                 icon: 'fa-landmark',
                 color: '#3b82f6',
-                description: 'Reunião do Comitê Federal de Mercado Aberto. O Fed decide a taxa de juros básica dos EUA. Além da decisão, o comunicado e coletiva do presidente são muito importantes para entender a direção futura.',
-                expectation: 'Observe o "dot plot" (projeções dos membros) e qualquer mudança no tom do comunicado. Palavras como "paciente" ou "vigilante" impactam mercados.'
+                description: 'Reunião do FOMC (Comitê Federal de Mercado Aberto). O Fed decide a taxa de juros básica dos EUA.',
+                expectation: 'Observe o "dot plot" (projeções dos membros) e qualquer mudança no tom do comunicado.'
             },
             'PCE (Inflação)': {
                 icon: 'fa-chart-pie',
@@ -3082,14 +3593,150 @@
                 description: 'Personal Consumption Expenditures - o indicador de inflação PREFERIDO do Federal Reserve. Mais amplo que o CPI e considerado mais preciso. Core PCE (excluindo alimentos e energia) é a métrica mais observada pelo Fed.',
                 expectation: 'Meta do Fed é 2%. Core PCE é o principal termômetro para decisões de política monetária. Valores persistentemente acima de 2.5% podem adiar cortes de juros.'
             },
-            'PIB (GDP)': {
+            'PCE Core': {
+                icon: 'fa-chart-pie',
+                color: '#a855f7',
+                description: 'Core PCE exclui alimentos e energia. É o indicador preferido do Fed para medir inflação subjacente.',
+                expectation: 'Meta do Fed é 2%. Valores acima indicam inflação persistente.'
+            },
+            'PIB': {
                 icon: 'fa-chart-line',
                 color: '#10b981',
                 description: 'Produto Interno Bruto - a medida mais ampla de atividade econômica. Publicado trimestralmente com revisões. Crescimento saudável é geralmente entre 2-3% ao ano.',
                 expectation: 'GDP forte demais pode pressionar inflação. GDP fraco pode aumentar expectativas de cortes de juros. Recessão técnica = 2 trimestres consecutivos de queda.'
+            },
+            'PIB (Preliminar)': {
+                icon: 'fa-chart-line',
+                color: '#10b981',
+                description: 'Primeira leitura do PIB trimestral. Geralmente a que mais movimenta o mercado por ser a primeira estimativa disponível.',
+                expectation: 'Crescimento abaixo de 1% pode indicar desaceleração. Acima de 3% pode pressionar inflação.'
+            },
+            'Índice de Manufatura Filadélfia': {
+                icon: 'fa-industry',
+                color: '#ef4444',
+                description: 'Pesquisa do Federal Reserve da Filadélfia sobre a atividade manufatureira na região. Leitura acima de zero indica expansão, abaixo indica contração. É um dos primeiros indicadores regionais divulgados todo mês.',
+                expectation: 'Valores acima de 0 indicam expansão. Correlação forte com ISM Manufatura nacional. Quedas acentuadas podem antecipar recessão.'
+            },
+            'Índice de Manufatura NY (Empire State)': {
+                icon: 'fa-industry',
+                color: '#06b6d4',
+                description: 'Pesquisa do Federal Reserve de Nova York sobre a atividade manufatureira no estado. Primeiro indicador regional divulgado todo mês, servindo como prévia dos dados nacionais.',
+                expectation: 'Valores acima de 0 indicam expansão. É o primeiro indicador regional do mês, antecipando tendências.'
+            },
+            'Taxa de Desemprego': {
+                icon: 'fa-user-slash',
+                color: '#ef4444',
+                description: 'Percentual da força de trabalho dos EUA que está desempregada. Componente-chave do mandato duplo do Fed (pleno emprego + estabilidade de preços).',
+                expectation: 'Desemprego abaixo de 4% é considerado pleno emprego. Alta rápida pode sinalizar recessão.'
+            },
+            'Pedidos Seguro-Desemprego': {
+                icon: 'fa-file-alt',
+                color: '#f97316',
+                description: 'Pedidos iniciais de seguro-desemprego da semana. Indicador semanal de alta frequência que mostra a saúde do mercado de trabalho em tempo quase real.',
+                expectation: 'Abaixo de 250K indica mercado de trabalho forte. Acima de 300K pode sinalizar fraqueza.'
+            },
+            'Vendas no Varejo': {
+                icon: 'fa-shopping-cart',
+                color: '#8b5cf6',
+                description: 'Mede o total de vendas no comércio varejista dos EUA. O consumo representa ~70% do PIB americano, tornando este dado crucial.',
+                expectation: 'Crescimento mensal acima de 0.5% é positivo. Queda pode indicar consumidor retraído.'
+            },
+            'ISM Manufatura': {
+                icon: 'fa-industry',
+                color: '#0ea5e9',
+                description: 'Índice de Gerentes de Compras do setor industrial. Acima de 50 indica expansão, abaixo indica contração. Um dos principais indicadores antecedentes da economia.',
+                expectation: 'Acima de 50 = expansão. Abaixo de 50 = contração. Abaixo de 45 historicamente associado a recessão.'
+            },
+            'ISM Serviços': {
+                icon: 'fa-concierge-bell',
+                color: '#0ea5e9',
+                description: 'Índice de Gerentes de Compras do setor de serviços. Como serviços são ~80% da economia americana, este é extremamente importante.',
+                expectation: 'Acima de 50 = expansão. Setor de serviços é o motor da economia americana.'
+            },
+            'PPI (Preços ao Produtor)': {
+                icon: 'fa-boxes',
+                color: '#eab308',
+                description: 'Índice de Preços ao Produtor. Mede a inflação na porta da fábrica. Pressões no PPI costumam refletir no CPI 1-2 meses depois.',
+                expectation: 'PPI é um indicador antecipado de inflação ao consumidor. Altas recorrentes pressionam margens.'
+            },
+            'ADP Empregos Privados': {
+                icon: 'fa-briefcase',
+                color: '#22c55e',
+                description: 'Relatório de empregos privados da ADP. Divulgado 2 dias antes do NFP oficial, serve como prévia do mercado de trabalho.',
+                expectation: 'Funciona como prévia do payroll oficial. Divergências grandes entre ADP e NFP geram volatilidade.'
+            },
+            'Confiança do Consumidor': {
+                icon: 'fa-smile',
+                color: '#14b8a6',
+                description: 'Pesquisa da Conference Board sobre a confiança dos consumidores. Consumidor confiante gasta mais, impulsionando o PIB.',
+                expectation: 'Acima de 100 é positivo. Quedas acentuadas podem antecipar desaceleração do consumo.'
+            },
+            'Sentimento Michigan': {
+                icon: 'fa-brain',
+                color: '#14b8a6',
+                description: 'Índice de Sentimento do Consumidor da Universidade de Michigan. Pesquisa de longa data que mede expectativas dos consumidores.',
+                expectation: 'Inclui expectativas de inflação muito observadas pelo Fed.'
+            },
+            'JOLTS Vagas de Emprego': {
+                icon: 'fa-door-open',
+                color: '#22c55e',
+                description: 'Job Openings and Labor Turnover Survey. Mostra a quantidade de vagas abertas nos EUA. O Fed monitora de perto a relação vagas/desempregados.',
+                expectation: 'Relação vagas/desempregados acima de 1.5 indica mercado apertado. Queda pode sinalizar desaceleração.'
+            },
+            'Bens Duráveis': {
+                icon: 'fa-truck',
+                color: '#78716c',
+                description: 'Encomendas de bens duráveis (vida útil > 3 anos). Indicador importante de investimento empresarial e atividade industrial.',
+                expectation: 'Core (excluindo transporte) é mais observado. Queda consecutiva pode indicar recessão industrial.'
+            },
+            'Início de Construções': {
+                icon: 'fa-hard-hat',
+                color: '#a16207',
+                description: 'Número de novas construções residenciais iniciadas. Reflete a saúde do setor imobiliário, importante para a economia.',
+                expectation: 'Sensível a taxas de juros. Queda indica impacto dos juros no setor habitacional.'
+            },
+            'Comunicado FOMC': {
+                icon: 'fa-landmark',
+                color: '#3b82f6',
+                description: 'Comunicado oficial do FOMC após a decisão de juros. O tom e as palavras usadas são analisados minuciosamente pelo mercado.',
+                expectation: 'Palavras-chave: "data-dependent", "restrictive", "accommodate". Mudanças no texto sinalizam tendências futuras.'
+            },
+            'Ata do FOMC': {
+                icon: 'fa-file-alt',
+                color: '#3b82f6',
+                description: 'Minuta detalhada da reunião do FOMC, divulgada 3 semanas depois. Revela debates internos e opiniões divergentes dos membros.',
+                expectation: 'Atenção ao número de membros a favor de corte vs manutenção e discussões sobre riscos.'
+            },
+            'Produção Industrial': {
+                icon: 'fa-industry',
+                color: '#64748b',
+                description: 'Mede a produção das fábricas, minas e utilidades dos EUA. Indicador importante da atividade econômica no setor produtivo.',
+                expectation: 'Queda consecutiva pode indicar contração industrial.'
+            },
+            'Balança Comercial': {
+                icon: 'fa-ship',
+                color: '#06b6d4',
+                description: 'Diferença entre exportações e importações dos EUA. Déficit grande indica que os EUA importam mais do que exportam.',
+                expectation: 'Déficits crescentes podem pressionar o dólar. Superávit é raro para os EUA.'
+            },
+            'Emprego': {
+                icon: 'fa-users',
+                color: '#22c55e',
+                description: 'Dados de emprego dos EUA. O mercado de trabalho é um dos indicadores mais importantes para o Fed.',
+                expectation: 'Mercado de trabalho forte pode manter juros altos por mais tempo.'
+            },
+            'Discurso Trump': {
+                icon: 'fa-microphone',
+                color: '#dc2626',
+                description: 'Discurso ou declaração do Presidente. Pode impactar mercados dependendo de anúncios sobre tarifas, política fiscal ou regulação.',
+                expectation: 'Fique atento a menções sobre tarifas comerciais, impostos ou regulação do setor financeiro.'
             }
         };
-        return info[title] || { icon: 'fa-calendar', color: '#888', description: 'Evento econômico importante.', expectation: null };
+        // Busca por match parcial no título
+        for (const [key, val] of Object.entries(info)) {
+            if (title && title.toLowerCase().includes(key.toLowerCase())) return val;
+        }
+        return info[title] || { icon: 'fa-calendar', color: '#888', description: 'Evento econômico importante que pode impactar mercados financeiros e criptomoedas.', expectation: null };
     }
 
     // ============================================
@@ -3171,5 +3818,5 @@
         }).catch(() => {});
     })();
 
-    macroLog('✓ macro-section.js v14.0 carregado!', 'success');
+    macroLog('✓ macro-section.js v22.0 carregado! (IDs ÚNICOS)', 'success');
 })();

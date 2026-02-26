@@ -12,8 +12,10 @@
   "type": "commonjs",
   "dependencies": {
     "@boengli/capacitor-fullscreen": "^0.0.19",
+    "@capacitor-community/admob": "^8.0.0",
     "@capacitor/app": "^8.0.0",
     "@capacitor/browser": "^8.0.0",
+    "@capacitor/local-notifications": "^8.0.1",
     "@capacitor/screen-orientation": "^8.0.0",
     "@capacitor/status-bar": "^7.0.0",
     "@capgo/capacitor-screen-recorder": "^8.2.7",

@@ -4,4 +4,5 @@
     <string name="title_activity_main">Visor Crypto</string>
     <string name="package_name">com.visorcrypto.app</string>
     <string name="custom_url_scheme">com.visorcrypto.app</string>
+    <string name="admob_app_id">ca-app-pub-2121626726443679~6618029871</string>
 </resources>
