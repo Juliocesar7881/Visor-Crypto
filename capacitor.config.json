@@ -4,11 +4,24 @@
   "webDir": "www",
   "server": {
     "androidScheme": "https",
-    "allowNavigation": ["*"]
+    "allowNavigation": [
+      "https://api.binance.com",
+      "https://fapi.binance.com",
+      "https://api.coingecko.com",
+      "https://query2.finance.yahoo.com",
+      "https://query1.finance.yahoo.com",
+      "https://mempool.space",
+      "https://cryptopanic.com",
+      "https://visor-crypto-api.onrender.com",
+      "https://api.rss2json.com",
+      "https://translate.googleapis.com",
+      "https://api.mymemory.translated.net",
+      "wss://stream.binance.com"
+    ]
   },
   "android": {
-    "allowMixedContent": true,
+    "allowMixedContent": false,
     "captureInput": true,
-    "webContentsDebuggingEnabled": true
+    "webContentsDebuggingEnabled": false
   }
 }

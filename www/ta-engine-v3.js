@@ -1703,6 +1703,4 @@
         // Version
         VERSION: '3.0.0'
     };
-
-    console.log('[TA Engine V3] Loaded â€” Advanced Trading Intelligence Engine v3.0.0');
 })();

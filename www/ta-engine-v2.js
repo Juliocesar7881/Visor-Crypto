@@ -615,7 +615,7 @@
             const fromDate = today.toISOString().split('T')[0];
             const toDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             
-            const FMP_KEY = window._FMP_API_KEY || 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
+            const FMP_KEY = window._FMP_API_KEY || null /* FMP key moved to backend proxy */;
             
             const [calendarRes, newsRes] = await Promise.all([
                 fetch(`https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_KEY}`)
@@ -737,7 +737,6 @@
             }
             
         } catch (err) {
-            console.log('⚠️ Macro/News layer error:', err);
         }
         
         return results;
@@ -777,7 +776,7 @@
                         const json = await r1.json();
                         if (json?.quoteResponse?.result?.length > 0) return json;
                     }
-                } catch(e) { console.log('YF direct failed:', e.message); }
+                } catch(e) { /* console.log('YF direct failed:', e.message); */ }
                 
                 // Strategy 2: Use query2 endpoint
                 try {
@@ -789,7 +788,7 @@
                         const json = await r2.json();
                         if (json?.quoteResponse?.result?.length > 0) return json;
                     }
-                } catch(e) { console.log('YF query2 failed:', e.message); }
+                } catch(e) { /* console.log('YF query2 failed:', e.message); */ }
                 
                 // Strategy 3: CORS proxy (corsproxy.io)
                 try {
@@ -799,7 +798,7 @@
                         const json = await r3.json();
                         if (json?.quoteResponse?.result?.length > 0) return json;
                     }
-                } catch(e) { console.log('YF corsproxy failed:', e.message); }
+                } catch(e) { /* console.log('YF corsproxy failed:', e.message); */ }
                 
                 // Strategy 4: allorigins proxy
                 try {
@@ -809,7 +808,7 @@
                         const json = await r4.json();
                         if (json?.quoteResponse?.result?.length > 0) return json;
                     }
-                } catch(e) { console.log('YF allorigins failed:', e.message); }
+                } catch(e) { /* console.log('YF allorigins failed:', e.message); */ }
                 
                 return null;
             }
@@ -1022,7 +1021,6 @@
             else results.bigTechSentiment = 'NEUTRO';
             
         } catch (err) {
-            console.log('⚠️ Big Tech & Macro fetch error:', err);
         }
         
         return results;
@@ -1324,6 +1322,4 @@
         detectLiquiditySweeps,
         analyzeVolumeTrend
     };
-
-    console.log('✅ TA Engine v2.0 loaded — Market Regime, Structure, CVD Advanced, Macro/News, Big Tech & Macro, Volatility, Contextual Scoring');
 })();

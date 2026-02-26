@@ -5,7 +5,7 @@ from pathlib import Path
 import asyncio
 
 from app.core.config import get_settings
-from app.routes import devices, signals, bot, news, market, account, orderbook, technical_analysis, collective, analysis
+from app.routes import devices, signals, bot, news, market, account, orderbook, technical_analysis, collective, analysis, proxy
 from app.services.analysis_worker import start_worker
 from app.services.ws_antispoof import start_ws_spoof_detector, stop_ws_spoof_detector
 from app.services.auto_execution import restore_exchanges, start_reconciliation_loop, stop_reconciliation_loop
@@ -31,6 +31,7 @@ app.include_router(orderbook.router, prefix=settings.api_prefix)
 app.include_router(technical_analysis.router, prefix=settings.api_prefix)
 app.include_router(collective.router, prefix=settings.api_prefix)
 app.include_router(analysis.router, prefix=settings.api_prefix)
+app.include_router(proxy.router, prefix=settings.api_prefix)
 app.include_router(account.router)  # Account já tem prefix /api/account
 
 

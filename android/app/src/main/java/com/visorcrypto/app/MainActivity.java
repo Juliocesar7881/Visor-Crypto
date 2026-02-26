@@ -14,10 +14,9 @@ public class MainActivity extends BridgeActivity {
         
         super.onCreate(savedInstanceState);
         
-        // Habilitar WebView debugging para chrome://inspect
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            WebView.setWebContentsDebuggingEnabled(true);
-        }
+        // WebView debugging desabilitado para produção (Play Store)
+        // Descomente a linha abaixo apenas para desenvolvimento local:
+        // WebView.setWebContentsDebuggingEnabled(true);
     }
     
     @Override

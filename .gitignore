@@ -17,6 +17,7 @@ android/gradlew.bat
 # Keystore files
 *.keystore
 *.jks
+android/keystore.properties
 
 # Node
 node_modules/

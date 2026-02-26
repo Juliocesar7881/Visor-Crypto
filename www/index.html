@@ -4665,16 +4665,13 @@
         async function getScreenOrientationPlugin() {
             // Método 1: Via Capacitor.Plugins (Capacitor 3+)
             if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ScreenOrientation) {
-                console.log('📱 ScreenOrientation via Capacitor.Plugins');
                 return window.Capacitor.Plugins.ScreenOrientation;
             }
             // Método 2: Registrar o plugin manualmente
             if (window.Capacitor && window.Capacitor.registerPlugin) {
-                console.log('📱 Registrando ScreenOrientation manualmente');
                 const ScreenOrientation = window.Capacitor.registerPlugin('ScreenOrientation');
                 return ScreenOrientation;
             }
-            console.log('⚠️ ScreenOrientation plugin não disponível');
             return null;
         }
         
@@ -4684,11 +4681,9 @@
                 const plugin = await getScreenOrientationPlugin();
                 if (plugin) {
                     await plugin.lock({ orientation: 'landscape' });
-                    console.log('✅ Orientação TRAVADA em landscape');
                     return true;
                 }
             } catch (e) {
-                console.error('❌ Erro ao travar landscape:', e);
             }
             return false;
         }
@@ -4699,11 +4694,9 @@
                 const plugin = await getScreenOrientationPlugin();
                 if (plugin) {
                     await plugin.lock({ orientation: 'portrait' });
-                    console.log('✅ Orientação TRAVADA em portrait');
                     return true;
                 }
             } catch (e) {
-                console.error('❌ Erro ao travar portrait:', e);
             }
             return false;
         }
@@ -4904,7 +4897,6 @@
         // Abrir link externo de forma segura
         function openExternalLink(url) {
             if (!isValidURL(url)) {
-                console.warn('URL inválida bloqueada:', url);
                 return;
             }
             // Usar noopener e noreferrer para segurança
@@ -4923,7 +4915,6 @@
         
         async function openInAppBrowser(url, title, newsIndex = null, isHotNews = false, hotNewsUrl = null) {
             if (!isValidURL(url)) {
-                console.warn('URL inválida bloqueada:', url);
                 return;
             }
             
@@ -4953,7 +4944,6 @@
                     window.open(url, '_blank', 'noopener,noreferrer');
                 }
             } catch (e) {
-                console.log('Browser plugin error, usando fallback:', e);
                 window.open(url, '_blank', 'noopener,noreferrer');
             }
         }
@@ -4965,8 +4955,6 @@
             // Guardar a seção atual para retornar depois
             previousSectionBeforeExternalLink = currentSection;
             sessionStorage.setItem('returnToSection', currentSection);
-            console.log('🔗 Abrindo link externo, seção atual:', currentSection);
-            
             // Usar o browser do Capacitor
             try {
                 if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.Browser) {
@@ -4979,7 +4967,6 @@
                     window.open(url, '_blank', 'noopener,noreferrer');
                 }
             } catch (e) {
-                console.log('Browser error:', e);
                 window.open(url, '_blank', 'noopener,noreferrer');
             }
         }
@@ -5002,20 +4989,17 @@
                     const { Browser } = Capacitor.Plugins;
                     // Quando o browser fecha, o app volta ao estado anterior
                     Browser.addListener('browserFinished', () => {
-                        console.log('🔙 Browser fechado, verificando estado...');
                         // Restaurar seção se veio de link externo
                         restoreSectionIfNeeded();
                         // Restaurar modal se necessário
                         restoreNewsModalIfNeeded();
                     });
-                    console.log('✅ Browser listener inicializado');
                 }
                 
                 // Listener para App do Capacitor (quando app volta ao foco)
                 if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.App) {
                     const { App } = Capacitor.Plugins;
                     App.addListener('appStateChange', ({ isActive }) => {
-                        console.log('📱 App state changed, isActive:', isActive);
                         if (isActive) {
                             // App voltou ao foco - verificar se deve restaurar seção ou modal
                             setTimeout(() => {
@@ -5024,21 +5008,17 @@
                             }, 100);
                         }
                     });
-                    console.log('✅ App state listener inicializado');
                 }
             } catch (e) {
-                console.log('Listeners não disponíveis:', e.message);
             }
         }
         
         // Função para restaurar a seção após fechar link externo
         function restoreSectionIfNeeded() {
             const savedSection = sessionStorage.getItem('returnToSection');
-            console.log('🔄 restoreSectionIfNeeded chamado, savedSection:', savedSection, 'currentSection:', currentSection);
             if (savedSection) {
                 sessionStorage.removeItem('returnToSection');
                 // Sempre restaurar a seção salva
-                console.log('✅ Restaurando seção:', savedSection);
                 showSection(savedSection);
             }
         }
@@ -5059,13 +5039,9 @@
                 // Verificar se modal já está aberto
                 const modal = document.getElementById('news-modal');
                 if (modal && modal.classList.contains('active')) {
-                    console.log('✅ Modal já está aberto, nada a fazer');
                     sessionStorage.removeItem('returnToNewsModal');
                     return;
                 }
-                
-                console.log('🔄 Restaurando modal da notícia...');
-                
                 // Garantir que estamos na seção de notícias
                 showSection('news');
                 
@@ -5084,14 +5060,12 @@
                 currentBrowserUrl = '';
                 browserReturnToNews = false;
             } catch (e) {
-                console.log('Erro ao restaurar modal:', e);
             }
         }
         
         // Também usar visibilitychange como fallback (mais confiável que browserFinished)
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
-                console.log('👁 Página voltou ao foco');
                 // Restaurar seção primeiro, depois modal
                 setTimeout(() => {
                     restoreSectionIfNeeded();
@@ -5154,7 +5128,6 @@
                     }
                 }
             } catch (e) {
-                console.log('Google Translate failed, trying MyMemory...');
             }
             
             // Fallback para MyMemory - Português Brasileiro
@@ -5170,7 +5143,6 @@
                     }
                 }
             } catch (e) {
-                console.log('MyMemory also failed');
             }
             
             return text; // Retorna original se tudo falhar
@@ -5179,13 +5151,10 @@
         // Traduzir notícias ANTES de renderizar (bloqueia até terminar)
         // Isso garante que as notícias apareçam já em português
         async function translateNewsBeforeRender(count = 30) {
-            console.log(`🌐 Traduzindo ${count} notícias antes de renderizar...`);
-            
             // Filtrar notícias que precisam ser traduzidas
             const toTranslate = allNews.filter(n => !n.translatedTitle).slice(0, count);
             
             if (toTranslate.length === 0) {
-                console.log('✅ Notícias já traduzidas');
                 return;
             }
             
@@ -5201,19 +5170,14 @@
                     }
                 }));
             }
-            
-            console.log(`✅ ${toTranslate.length} notícias traduzidas`);
         }
 
         // Pré-traduzir notícias restantes (roda em background após renderizar)
         async function preTranslateNews() {
-            console.log('🌐 Traduzindo notícias restantes em background...');
-            
             let translatedCount = 0;
             const totalToTranslate = allNews.filter(n => !n.translatedTitle).length;
             
             if (totalToTranslate === 0) {
-                console.log('✅ Todas as notícias já estão traduzidas');
                 return;
             }
             
@@ -5229,8 +5193,6 @@
                     await new Promise(r => setTimeout(r, 150));
                 }
             }
-            
-            console.log(`✅ ${translatedCount} notícias traduzidas em background`);
         }
         
         // ============================================
@@ -5561,7 +5523,6 @@
                 priceSocket = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
                 
                 priceSocket.onopen = () => {
-                    console.log('✅ Preços Binance conectados');
                     wsRetryCount = 0; // Reset retry count on successful connection
                 };
                 
@@ -5577,12 +5538,10 @@
                             updatePriceDisplay(symbol);
                         }
                     } catch (e) {
-                        console.error('Erro ao processar mensagem WS:', e);
                     }
                 };
                 
                 priceSocket.onerror = (error) => {
-                    console.error('❌ Erro WebSocket:', error);
                     // Usar fallback REST API
                     fetchPricesViaREST();
                 };
@@ -5590,17 +5549,14 @@
                 priceSocket.onclose = () => {
                     wsRetryCount++;
                     if (wsRetryCount <= MAX_WS_RETRIES) {
-                        console.log(`🔄 Reconectando WebSocket (tentativa ${wsRetryCount})...`);
                         setTimeout(connectPriceStream, 2000);
                     } else {
-                        console.log('⚠️ Usando fallback REST API para preços');
                         // Usar REST API como fallback
                         fetchPricesViaREST();
                         setInterval(fetchPricesViaREST, 5000);
                     }
                 };
             } catch (e) {
-                console.error('❌ Erro ao criar WebSocket:', e);
                 fetchPricesViaREST();
             }
         }
@@ -5641,11 +5597,9 @@
                         
                         renderAllPrices();
                         updateAIRecommendation();
-                        console.log(`✅ Preços via ${proxy || 'Binance direto'}`);
                         return; // Sucesso!
                     }
                 } catch (e) {
-                    console.log(`⚠️ Proxy ${proxy || 'direto'} falhou:`, e.message);
                 }
             }
             
@@ -5653,7 +5607,6 @@
             try {
                 await fetchPricesViaCoinGecko();
             } catch (e) {
-                console.error('❌ Todos os métodos de preço falharam');
             }
         }
         
@@ -5679,9 +5632,7 @@
                 
                 renderAllPrices();
                 updateAIRecommendation();
-                console.log('✅ Preços via CoinGecko');
             } catch (e) {
-                console.error('❌ CoinGecko também falhou:', e);
             }
         }
 
@@ -5700,7 +5651,6 @@
                 const data = await response.json();
                 updateOrderbookDisplay(data);
             } catch (e) {
-                console.error('Order book error:', e);
             }
         }
 
@@ -6012,7 +5962,7 @@
             // Adicionar novas notícias ao início
             if (uniqueNew.length > 0) {
                 allNews = [...uniqueNew, ...allNews];
-                console.log(`${uniqueNew.length} nova(s) notícia(s) adicionada(s)`);
+                /* console.log(`${uniqueNew.length} nova(s) notícia(s) adicionada(s)`); */
             }
             
             // Limpar notícias com mais de 15 dias
@@ -6071,11 +6021,9 @@
                         isHotNews: false
                     }));
                     mergeNews(mapped);
-                    console.log(`🤖 Backend AI news: ${data.articles.length} articles (${data.total || '?'} total)`);
                     return true;
                 }
             } catch (e) {
-                console.log('⚠️ Backend AI news unavailable:', e.message);
             }
             return false;
         }
@@ -6098,7 +6046,6 @@
                                 allNews = parsed.articles;
                                 newsLoaded = true;
                                 renderNews();
-                                console.log('📰 Usando cache local (timeout na API)');
                                 return;
                             }
                         }
@@ -6120,7 +6067,6 @@
             // Se já tem notícias carregadas, mostrar loading discreto
             if (newsLoaded && allNews.length > 0) {
                 // Não mostrar loading, manter conteúdo atual enquanto atualiza em background
-                console.log('📰 Atualizando notícias em background...');
             } else if (!isHotFilter) {
                 // Primeira vez e não está em hot - mostrar loading
                 container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
@@ -6136,7 +6082,6 @@
             if (backendOk) {
                 successfulSources++;
                 totalFetched += aiClassifiedNews.length;
-                console.log('🤖 Backend AI news loaded — skipping direct API fetch');
             }
 
             // ==========================================
@@ -6144,7 +6089,6 @@
             // ==========================================
             if (!backendOk) {
             try {
-                console.log('📰 Buscando notícias do CryptoCompare...');
                 const ccResponse = await fetchWithTimeout(
                     'https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=latest',
                     {},
@@ -6211,9 +6155,6 @@
                                 (bodyLower.substring(0, 150).includes(keyword.toLowerCase()))
                             );
                         });
-                        
-                        console.log(`📰 Filtradas ${ccData.Data.length - filteredData.length} notícias de baixa qualidade`);
-                        
                         const newItems = filteredData.slice(0, 100).map(item => {
                             // MARCAR HOT IMEDIATAMENTE ao criar a notícia
                             const hotCheck = isHotNews(item.title);
@@ -6236,11 +6177,9 @@
                         mergeNews(newItems);
                         totalFetched += newItems.length;
                         successfulSources++;
-                        console.log(`✓ CryptoCompare: ${newItems.length} notícias carregadas!`);
                     }
                 }
             } catch (e) {
-                console.log('✗ CryptoCompare falhou:', e.message);
             }
             
             // ==========================================
@@ -6281,7 +6220,6 @@
                                 mergeNews(newItems);
                                 totalFetched += newItems.length;
                                 successfulSources++;
-                                console.log(`✓ CryptoPanic: ${newItems.length} notícias`);
                                 break;
                             }
                         }
@@ -6291,9 +6229,6 @@
                 }
             }
             } // end if (!backendOk)
-            
-            console.log(`📰 Total de notícias: ${allNews.length} (de ${successfulSources} fontes)`);
-            
             if (allNews.length > 0) {
                 newsRetryCount = 0; // Reset contador de retentativas
                 newsLastFetch = Date.now(); // Marcar timestamp da última busca
@@ -6348,7 +6283,6 @@
             }
 
             } catch (fetchErr) {
-                console.error('❌ Erro global em fetchNews:', fetchErr);
                 // Try cache fallback
                 try {
                     const cached = localStorage.getItem('vc4_news_cache');
@@ -6358,7 +6292,6 @@
                             allNews = parsed.articles;
                             newsLoaded = true;
                             renderNews();
-                            console.log('📰 Usando cache local (erro na API)');
                         }
                     }
                 } catch(e) {}
@@ -6390,11 +6323,9 @@
                                 image: item.thumbnail || null
                             }));
                             mergeNews(newItems);
-                            console.log(`RSS ${data.feed?.title}: ${newItems.length} items`);
                         }
                     }
                 } catch (e) {
-                    console.log('RSS feed error:', e.message);
                 }
             }
         }
@@ -6621,7 +6552,6 @@
             
             // Criar promise para esta requisição
             hotNewsFetchInProgress = (async () => {
-                console.log('🔥 Buscando notícias quentes...');
                 const hotNews = [];
                 
                 // 1. RSS Feeds de notícias globais via proxy - PARALELO para velocidade
@@ -6662,7 +6592,6 @@
                         return hotItems;
                     }
                 } catch (e) {
-                    console.log(`RSS ${feed.source} failed:`, e.message);
                 }
                 return [];
             });
@@ -6763,8 +6692,6 @@
                 recentHotNews.sort((a, b) => new Date(b.published) - new Date(a.published));
                 hotNewsCache = recentHotNews.slice(0, 100);
                 hotNewsLastFetch = now;
-                
-                console.log(`🔥 ${hotNewsCache.length} notícias quentes encontradas`);
                 return hotNewsCache;
             })();
             
@@ -6806,7 +6733,6 @@
                     }
                 }
             } catch (e) {
-                console.log('RSS parse error:', e.message);
             }
             
             return items;
@@ -6923,7 +6849,6 @@
         // Função para abrir modal de notícia importante
         // Aceita índice numérico OU URL da notícia para maior confiabilidade
         async function openHotNewsModal(newsUrl) {
-            console.log('🔥 Abrindo modal para notícia:', newsUrl);
             try {
                 let news;
                 
@@ -6933,7 +6858,6 @@
                        hotNewsCache?.find(n => n.url === newsUrl);
                 
                 if (!news) {
-                    console.error('Notícia não encontrada:', newsUrl);
                     // Tentar abrir diretamente no browser se tiver URL
                     if (typeof newsUrl === 'string') {
                         openInAppBrowser(newsUrl, 'Notícia', null, true, newsUrl);
@@ -7042,14 +6966,12 @@
             // Fechar modal com ESC
             document.addEventListener('keydown', handleModalEsc);
             } catch (e) {
-                console.error('Erro ao abrir modal de notícia importante:', e);
             }
         }
 
         async function renderNews() {
             // Evitar renderizações simultâneas que causam "piscar"
             if (isRenderingNews) {
-                console.log('⏳ Renderização já em andamento, ignorando...');
                 return;
             }
             isRenderingNews = true;
@@ -7068,7 +6990,6 @@
                     // Se retornou vazio e o app acabou de abrir (menos de 5s), aguardar mais um pouco
                     // pois os feeds podem ainda estar carregando
                     if (hotNews.length === 0 && hotNewsLastFetch === 0) {
-                    console.log('🔥 Primeira tentativa vazia, aguardando feeds...');
                     // Aguardar até 2 segundos para os feeds responderem
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     // Forçar nova busca (reset do cache)
@@ -7222,7 +7143,7 @@
             
             // Traduzir restante em background APÓS renderizar (não bloqueia)
             setTimeout(() => {
-                preTranslateNews().catch(e => console.log('Tradução background falhou'));
+                preTranslateNews().catch(() => {});
             }, 2000);
             } finally {
                 isRenderingNews = false;
@@ -7260,7 +7181,6 @@
                         document.getElementById('fear-greed-value').textContent = value;
                         document.getElementById('fear-greed-value').className = `meter-value ${value > 50 ? 'pnl-positive' : 'pnl-negative'}`;
                         document.getElementById('fear-greed-indicator').style.left = `${value}%`;
-                        console.log('✅ Fear & Greed:', value);
                         return;
                     }
                 }
@@ -7270,7 +7190,6 @@
                 document.getElementById('fear-greed-indicator').style.left = '50%';
                 
             } catch (e) {
-                console.error('Fear & Greed error:', e);
                 document.getElementById('fear-greed-value').textContent = '--';
                 document.getElementById('fear-greed-indicator').style.left = '50%';
             }
@@ -7318,9 +7237,6 @@
                 if (valueEl) valueEl.textContent = '--';
                 if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Carregando...</span>';
             }
-            
-            console.log('🔄 Altseason: buscando dados do CoinGecko...');
-            
             try {
                 // Buscar dados do CoinGecko
                 let btcDom = 58;
@@ -7332,10 +7248,8 @@
                     if (globalRes.ok) {
                         const globalData = await globalRes.json();
                         btcDom = globalData.data?.market_cap_percentage?.btc || 58;
-                        console.log('✅ Global data OK, BTC Dom:', btcDom.toFixed(1) + '%');
                     }
                 } catch (e) {
-                    console.log('⚠️ Global data timeout/error');
                 }
                 
                 // Buscar top coins para calcular altseason
@@ -7347,10 +7261,8 @@
                     );
                     if (topCoinsRes.ok) {
                         topCoins = await topCoinsRes.json();
-                        console.log('✅ Top coins OK:', topCoins.length, 'moedas');
                     }
                 } catch (e) {
-                    console.log('⚠️ Top coins timeout/error:', e.message);
                 }
                 
                 let altValue = null;
@@ -7405,14 +7317,12 @@
                     
                     altValue = Math.max(1, Math.min(100, altValue));
                     
-                    console.log(`📊 Altseason v7.1.1: ${outperform30d}/${valid30d} alts outperform BTC (30d) = ${Math.round(pctOutperforming)}%, domScore=${domScore}, BTC Dom=${btcDom.toFixed(1)}%, Final: ${altValue}`);
+                    /* console.log(`📊 Altseason v7.1.1: ${outperform30d}/${valid30d} alts outperform BTC (30d) = ${Math.round(pctOutperforming)}%, domScore=${domScore}, BTC Dom=${btcDom.toFixed(1)}%, Final: ${altValue}`); */
                 }
                 
                 // Se não conseguiu calcular, usar último valor se existir
                 if (altValue === null) {
-                    console.log('⚠️ Altseason: não conseguiu calcular');
                     if (lastAltseasonValue) {
-                        console.log('📦 Usando último valor em memória:', lastAltseasonValue);
                         updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 58);
                     } else {
                         document.getElementById('altseason-value').textContent = '--';
@@ -7429,10 +7339,8 @@
                 updateAltseasonUI(altValue, btcDom);
                 
             } catch (e) {
-                console.error('Altseason calc error:', e);
                 // Usar último valor se existir
                 if (lastAltseasonValue) {
-                    console.log('📦 Erro, usando último valor:', lastAltseasonValue);
                     updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 58);
                 } else {
                     document.getElementById('altseason-value').textContent = '--';
@@ -7482,16 +7390,14 @@
                         // Ajuste +2.1 para alinhar com TradingView/CMC
                         btcDominance = btcDominance + 2.1;
                         document.getElementById('btc-dominance').textContent = `${btcDominance.toFixed(2)}%`;
-                        console.log('📊 BTC Dominância (CoinGecko+2.1):', btcDominance.toFixed(2) + '%');
+                        /* console.log('📊 BTC Dominância (CoinGecko+2.1):', btcDominance.toFixed(2) + '%'); */
                         return btcDominance;
                     }
                 }
             } catch (e) {
-                console.log('CoinGecko failed:', e.message);
             }
             
             // Se falhar, manter "--" até próxima tentativa (sem fallback falso)
-            console.log('⚠️ BTC Dominância indisponível - aguardando próxima tentativa');
             return null;
         }
 
@@ -7583,7 +7489,6 @@
                 volChangeEl.className = `stat-change ${priceChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
                 
             } catch (e) {
-                console.error('Volume BTC error');
             }
 
             // Volume ETH
@@ -7604,7 +7509,6 @@
                 volChangeEl.className = `stat-change ${priceChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
                 
             } catch (e) {
-                console.error('Volume ETH error');
             }
         }
 
@@ -7731,7 +7635,6 @@
                 }
                 
             } catch (e) {
-                console.error('MA error:', e);
                 document.getElementById('ma-summary').innerHTML = '<span style="color: var(--text-muted);">Não foi possível calcular</span>';
             }
         }
@@ -7753,15 +7656,12 @@
             
             // Guardar seção atual para o botão voltar
             currentSection = sectionId;
-            console.log('📍 Seção atual:', currentSection);
-            
             // News: usar cache se já carregou e não passou 5 minutos
             if (sectionId === 'news') {
                 const now = Date.now();
                 const fiveMinutes = 5 * 60 * 1000;
                 if (newsLoaded && allNews.length > 0 && (now - newsLastFetch) < fiveMinutes) {
                     // Usar cache - apenas renderizar o que já tem
-                    console.log('📰 Usando cache de notícias');
                     renderNews();
                 } else {
                     // Recarregar notícias
@@ -7929,18 +7829,16 @@
                                 holdProb = 100 - cutProb - hikeProb;
                                 holdProb = Math.max(0, holdProb);
                                 dataSource = 'polymarket';
-                                console.log('✅ Fed Watch via Polymarket:', { cutProb, holdProb, hikeProb });
                             }
                         }
                     }
                 } catch (e) {
-                    console.log('Polymarket API falhou:', e.message);
                 }
                 
                 // 2. Tentar buscar taxa atual do FRED
                 try {
-                    const fredApiKey = '289c022214958a3eb611142e8dc34f6b'; // FRED API key
-                    const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=FEDFUNDS&api_key=${fredApiKey}&file_type=json&limit=3&sort_order=desc`;
+                    // API key moved to backend proxy
+                    const fredUrl = `https://visor-crypto-api.onrender.com/api/proxy/fred?series_id=FEDFUNDS&limit=3&sort_order=desc`;
                     
                     const fredRes = await fetchWithTimeout(fredUrl, {}, 5000);
                     if (fredRes.ok) {
@@ -7957,13 +7855,11 @@
                         }
                     }
                 } catch (e) {
-                    console.log('FRED API falhou');
                     // Não usar dados estáticos - manter currentRate como padrão se não conseguir
                 }
                 
                 // Se não conseguiu dados de Polymarket, mostrar erro
                 if (dataSource === 'estimated') {
-                    console.log('⚠️ Não foi possível obter probabilidades do Fed Watch');
                     container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;"><i class="fas fa-chart-line"></i> Não foi possível carregar probabilidades do Fed. Tente novamente mais tarde.</p>';
                     return;
                 }
@@ -7986,7 +7882,6 @@
                 renderFedProbabilities(container, fedData, nextMeeting, nextMeeting2);
                 
             } catch (e) {
-                console.error('Fed Watch error:', e);
                 container.innerHTML = '<p style="text-align: center; color: var(--accent-red); padding: 20px;"><i class="fas fa-exclamation-triangle"></i> Erro ao carregar dados do Fed Watch</p>';
             }
         }
@@ -8050,13 +7945,14 @@
             const container = document.getElementById('fed-history-container');
             const lastDecisionEl = document.getElementById('last-fed-decision');
             
-            const FRED_KEY = '289c022214958a3eb611142e8dc34f6b';
+            // FRED API key moved to backend proxy
+            const FRED_KEY = null; // Key is now server-side
             const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             
             try {
                 // Buscar últimas 400 observações do DFEDTARU (Target Rate Upper) para encontrar mudanças
                 // ~400 business days = ~1.5 anos, suficiente para 3+ decisões
-                const baseUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&api_key=${FRED_KEY}&file_type=json&sort_order=desc&limit=400`;
+                const baseUrl = `https://visor-crypto-api.onrender.com/api/proxy/fred?series_id=DFEDTARU&sort_order=desc&limit=400`;
                 
                 let response = null;
                 const proxies = [
@@ -8152,7 +8048,6 @@
                 }
                 
             } catch (e) {
-                console.error('Fed History error:', e);
                 if (container) {
                     container.innerHTML = `
                         <div style="flex: 1; text-align: center; padding: 12px; background: var(--bg-secondary); border-radius: 10px;">
@@ -8342,8 +8237,9 @@
         // ============================================
         // CALENDÁRIO ECONÔMICO - FMP API
         // ============================================
-        const FMP_API_KEY = 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
-        window._FMP_API_KEY = FMP_API_KEY; // Expose for TA Engine v2
+        // FMP API key moved to backend proxy
+        const FMP_API_KEY = null; // Key is now server-side
+        window._FMP_API_KEY = null; // Key is now server-side, use proxy endpoint
         const CALENDAR_CACHE_KEY = 'economic_calendar_cache';
         const CALENDAR_CACHE_DURATION = 10 * 60 * 1000; // 10 minutos
         
@@ -8535,14 +8431,11 @@
                                     ]
                                 };
                             });
-                        
-                        console.log('✅ Calendário FMP carregado:', events.length, 'eventos');
                     }
                 }
                 
                 // Se não conseguiu dados da API, mostrar mensagem de erro
                 if (events.length === 0) {
-                    console.log('⚠️ API FMP não retornou eventos');
                     container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;"><i class="fas fa-calendar-times"></i> Não foi possível carregar o calendário econômico. Tente novamente mais tarde.</p>';
                     return;
                 }
@@ -8555,7 +8448,6 @@
                 renderCalendarEvents(container, events);
                 
             } catch (e) {
-                console.error('Calendário FMP error:', e);
                 container.innerHTML = '<p style="text-align: center; color: var(--accent-red); padding: 20px;"><i class="fas fa-exclamation-triangle"></i> Erro ao carregar calendário econômico</p>';
             }
         }
@@ -8672,7 +8564,6 @@
                         });
                     }
                 } catch (e) {
-                    console.error('S&P 500 error:', e.message);
                     // Não adicionar fallback falso
                 }
                 
@@ -8699,7 +8590,6 @@
                         });
                     }
                 } catch (e) {
-                    console.error('DXY error:', e.message);
                     // Não adicionar fallback falso
                 }
                 
@@ -8726,7 +8616,6 @@
                         });
                     }
                 } catch (e) {
-                    console.error('VIX error:', e.message);
                     // Não adicionar fallback falso
                 }
                 
@@ -8753,7 +8642,6 @@
                         });
                     }
                 } catch (e) {
-                    console.error('Ouro error:', e.message);
                     // Não adicionar fallback falso
                 }
                 
@@ -8780,7 +8668,6 @@
                         });
                     }
                 } catch (e) {
-                    console.error('Petróleo WTI error:', e.message);
                     // Não adicionar fallback falso
                 }
                 
@@ -8815,7 +8702,6 @@
                 `).join('');
                 
             } catch (e) {
-                console.error('Market indicators error:', e);
                 container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Erro ao carregar indicadores</p>';
             }
         }
@@ -8925,18 +8811,13 @@
         
         async function loadIndicatorChart() {
             if (!window.currentIndicator) {
-                console.log('❌ Nenhum indicador selecionado');
                 return;
             }
             
             const symbol = INDICATOR_SYMBOLS[window.currentIndicator.icon];
             if (!symbol) {
-                console.log('❌ Símbolo não encontrado para:', window.currentIndicator.icon);
                 return;
             }
-            
-            console.log('📊 Carregando gráfico para:', symbol, window.currentIndicator.name);
-            
             const period = window.currentIndicatorPeriod || '1h';
             
             // Mostrar loading no canvas
@@ -8945,8 +8826,6 @@
             if (canvas && container) {
                 const ctx = canvas.getContext('2d');
                 const rect = container.getBoundingClientRect();
-                console.log('📐 Container size:', rect.width, 'x', rect.height);
-                
                 canvas.width = rect.width * (window.devicePixelRatio || 1);
                 canvas.height = rect.height * (window.devicePixelRatio || 1);
                 canvas.style.width = rect.width + 'px';
@@ -8959,7 +8838,6 @@
                 ctx.textAlign = 'center';
                 ctx.fillText('Carregando...', rect.width / 2, rect.height / 2);
             } else {
-                console.log('❌ Canvas ou container não encontrados');
             }
             
             // Mapear período para intervalo/range do Yahoo Finance
@@ -8978,9 +8856,6 @@
             const config = periodConfig[period] || { interval: '5m', range: '1d' };
             const interval = config.interval;
             const range = config.range;
-            
-            console.log('📊 Config:', { period, interval, range, symbol });
-            
             try {
                 // URLs para tentar (Yahoo Finance direto)
                 const urls = [
@@ -8999,37 +8874,30 @@
                 // Primeiro tentar diretamente (funciona no APK e às vezes no browser)
                 for (const url of urls) {
                     try {
-                        console.log('🔄 Tentando URL direta:', url);
                         const response = await fetch(url, { 
                             headers: { 'Accept': 'application/json' },
                             mode: 'cors'
                         });
                         if (response.ok) {
                             data = await response.json();
-                            console.log('✅ Dados recebidos:', data?.chart?.result?.[0]?.timestamp?.length || 0, 'pontos');
                             if (data?.chart?.result?.[0]?.timestamp?.length > 0) break;
                         }
                     } catch (e) {
-                        console.log('❌ URL falhou (provavelmente CORS):', e.message);
                     }
                 }
                 
                 // Se falhou, tentar com CORS proxy
                 if (!data?.chart?.result?.[0]?.timestamp?.length) {
-                    console.log('🔄 Tentando com CORS proxy...');
                     for (const proxy of corsProxies) {
                         for (const url of urls) {
                             try {
                                 const proxyUrl = proxy + encodeURIComponent(url);
-                                console.log('🔄 Proxy URL:', proxyUrl.substring(0, 80) + '...');
                                 const response = await fetch(proxyUrl);
                                 if (response.ok) {
                                     data = await response.json();
-                                    console.log('✅ Dados via proxy:', data?.chart?.result?.[0]?.timestamp?.length || 0, 'pontos');
                                     if (data?.chart?.result?.[0]?.timestamp?.length > 0) break;
                                 }
                             } catch (e) {
-                                console.log('❌ Proxy falhou:', e.message);
                             }
                         }
                         if (data?.chart?.result?.[0]?.timestamp?.length > 0) break;
@@ -9055,7 +8923,6 @@
                     showIndicatorChartError('Mercado fechado');
                 }
             } catch (error) {
-                console.error('Erro ao carregar gráfico do indicador:', error);
                 showIndicatorChartError('Erro ao carregar');
             }
         }
@@ -9241,7 +9108,6 @@
                 renderIndicatorTechnicalAnalysis(analysis, indicator);
                 
             } catch (e) {
-                console.error('Indicator Technical Analysis error:', e);
                 body.innerHTML = `
                     <div style="text-align: center; padding: 40px 20px;">
                         <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: var(--accent-red); margin-bottom: 16px;"></i>
@@ -9270,7 +9136,6 @@
                             return data?.chart?.result?.[0] || null;
                         }
                     } catch (e) {
-                        console.error(`Error fetching ${period}:`, e);
                     }
                     return null;
                 })
@@ -9612,7 +9477,6 @@
                     }
                 }
             } catch (e) {
-                console.log('Fullscreen não disponível:', e);
             }
             
             document.body.classList.add('fullscreen-active');
@@ -9665,7 +9529,6 @@
                             if (data?.chart?.result?.[0]?.timestamp?.length > 0) break;
                         }
                     } catch (e) {
-                        console.log('Tentando próxima URL...');
                     }
                 }
                 
@@ -9686,7 +9549,6 @@
                     renderFullscreenChart();
                 }
             } catch (error) {
-                console.error('Erro ao carregar dados do indicador fullscreen:', error);
             }
         }
         
@@ -9720,8 +9582,6 @@
         // INIT
         // ============================================
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 Visor Crypto iniciando...');
-            
             // Renderizar UI imediatamente com placeholders
             try {
                 renderAllPrices();
@@ -9729,17 +9589,13 @@
                 renderDropdownMenu();
                 startTopOpportunitiesRefresh();
                 initSignalSettingsSummary();
-                console.log('✅ UI inicial renderizada');
             } catch (e) {
-                console.error('❌ Erro na renderização inicial:', e);
             }
             
             // Buscar preços imediatamente via REST (garantido)
             try {
                 fetchPricesViaREST();
-                console.log('✅ Preços carregados via REST');
             } catch (e) {
-                console.error('❌ Erro ao buscar preços REST:', e);
             }
             
             // Depois tentar WebSocket para updates em tempo real
@@ -9747,26 +9603,25 @@
                 try {
                     connectPriceStream();
                 } catch (e) {
-                    console.error('❌ Erro ao conectar WebSocket:', e);
                 }
             }, 2000);
             
             // Carregar dados em background (não bloqueia UI)
             setTimeout(() => {
-                try { fetchNews(); } catch(e) { console.error('News error:', e); }
+                try { fetchNews(); } catch(e) { /* console.error('News error:', e); */ }
                 // NÃO chamar fetchHotNews aqui - ela interfere com o allNews
                 // Hot news são identificadas automaticamente pelo mergeNews via isHotNews()
-                try { fetchFearGreed(); } catch(e) { console.error('FearGreed error:', e); }
-                try { fetchAltseasonIndex(); } catch(e) { console.error('Altseason error:', e); }
-                try { fetchGlobalData(); } catch(e) { console.error('GlobalData error:', e); }
-                try { fetchOrderBook(); } catch(e) { console.error('OrderBook error:', e); }
-                try { fetchVolume(); } catch(e) { console.error('Volume error:', e); }
-                try { fetchCryptoStats(); } catch(e) { console.error('CryptoStats error:', e); }
-                try { fetchMovingAverages(); } catch(e) { console.error('MA error:', e); }
+                try { fetchFearGreed(); } catch(e) { /* console.error('FearGreed error:', e); */ }
+                try { fetchAltseasonIndex(); } catch(e) { /* console.error('Altseason error:', e); */ }
+                try { fetchGlobalData(); } catch(e) { /* console.error('GlobalData error:', e); */ }
+                try { fetchOrderBook(); } catch(e) { /* console.error('OrderBook error:', e); */ }
+                try { fetchVolume(); } catch(e) { /* console.error('Volume error:', e); */ }
+                try { fetchCryptoStats(); } catch(e) { /* console.error('CryptoStats error:', e); */ }
+                try { fetchMovingAverages(); } catch(e) { /* console.error('MA error:', e); */ }
                 try { 
                     fetchWhaleActivity('1h'); 
                     startWhaleActivityAutoRefresh(); 
-                } catch(e) { console.error('WhaleActivity error:', e); }
+                } catch(e) { /* console.error('WhaleActivity error:', e); */ }
             }, 1000);
             
             // AI update every 2s
@@ -9818,9 +9673,6 @@
                 _updateAutoRefreshUI(true);
             }
         });
-
-        console.log('🚀 Visor Crypto - Real-Time');
-
         // v7.1: Auto-Refresh Toggle
         function _updateAutoRefreshUI(paused) {
             const btn = document.getElementById('auto-refresh-toggle');
@@ -10080,7 +9932,7 @@
                     analytics.marketBreadth = fullAnalysis.marketBreadth?.pctLong || null;
                     analytics.macroRegime = fullAnalysis.macroRegime?.regime || null;
                     analytics.systemicRisk = fullAnalysis.systemicRisk?.level || null;
-                } catch (e) { console.warn('[CallHistory] Analytics capture error:', e); }
+                } catch (e) { /* console.warn('[CallHistory] Analytics capture error:', e); */ }
             }
             
             history.push({
@@ -10098,7 +9950,6 @@
             });
             
             saveCallHistory(history);
-            console.log(`[CallHistory] Recorded ${direction} on ${symbol} @ $${entryPrice} (${confidence}%) with full analytics`);
         }
         
         async function fetchCurrentPrice(symbol) {
@@ -10199,7 +10050,6 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            console.log('[CallHistory] Exported ' + history.length + ' calls as JSON');
         }
         
         function exportCallHistoryCSV() {
@@ -10250,7 +10100,6 @@
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            console.log('[CallHistory] Exported ' + history.length + ' calls as CSV');
         }
         
         function getCallAnalyticsSummary() {
@@ -10525,7 +10374,7 @@
                                 currentChartSymbol
                             );
                         }
-                    } catch (v3err) { console.warn('[V3] Enhancement error:', v3err); }
+                    } catch (v3err) { /* console.warn('[V3] Enhancement error:', v3err); */ }
                 }
                 
                 // V4 Enhancement — Reactive Trading Intelligence + Collective Learning
@@ -10547,7 +10396,7 @@
                                 analysis.aiSummary += '\n\n━━━ ANÁLISE AVANÇADA ━━━\n' + v4Enhanced.reactiveSummary;
                             }
                         }
-                    } catch (v4err) { console.warn('[V4] Enhancement error:', v4err); }
+                    } catch (v4err) { /* console.warn('[V4] Enhancement error:', v4err); */ }
                 }
                 
                 // Salvar no cache
@@ -10564,13 +10413,12 @@
                     if (callSignal && callConf && callEntry > 0) {
                         recordCall(currentChartSymbol, callSignal, callConf, callEntry, crypto, analysis);
                     }
-                } catch (e) { console.warn('[CallHistory] Record error:', e); }
+                } catch (e) { /* console.warn('[CallHistory] Record error:', e); */ }
                 
                 // Iniciar auto-refresh a cada 5 minutos
                 startTAAutoRefresh(currentChartSymbol);
                 
             } catch (e) {
-                console.error('Technical Analysis error:', e);
                 body.innerHTML = `
                     <div style="text-align: center; padding: 40px 20px;">
                         <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: var(--accent-red); margin-bottom: 16px;"></i>
@@ -10937,7 +10785,6 @@
                     const { LocalNotifications } = window.Capacitor.Plugins;
                     // Request permission
                     const perm = await LocalNotifications.requestPermissions();
-                    console.log('🔔 Notification permission:', perm.display);
                     // Create notification channel for Android
                     try {
                         await LocalNotifications.createChannel({
@@ -10949,10 +10796,10 @@
                             vibration: true,
                             sound: 'default'
                         });
-                    } catch (chErr) { console.warn('Channel creation:', chErr); }
+                    } catch (chErr) { /* console.warn('Channel creation:', chErr); */ }
                     return true;
                 }
-            } catch (e) { console.warn('Local notifications init:', e); }
+            } catch (e) { /* console.warn('Local notifications init:', e); */ }
             return false;
         }
 
@@ -10972,19 +10819,17 @@
                             largeIcon: 'ic_launcher'
                         }]
                     });
-                    console.log('🔔 Notification fired:', title);
                 }
-            } catch (e) { console.warn('Notification fire error:', e); }
+            } catch (e) { /* console.warn('Notification fire error:', e); */ }
         }
 
         async function startBackgroundService() {
             try {
                 if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BackgroundScan) {
                     await window.Capacitor.Plugins.BackgroundScan.start();
-                    console.log('✅ Background scan service started');
                     return true;
                 }
-            } catch (e) { console.warn('Background service start error:', e); }
+            } catch (e) { /* console.warn('Background service start error:', e); */ }
             return false;
         }
 
@@ -10992,9 +10837,8 @@
             try {
                 if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BackgroundScan) {
                     await window.Capacitor.Plugins.BackgroundScan.stop();
-                    console.log('⏹️ Background scan service stopped');
                 }
-            } catch (e) { console.warn('Background service stop error:', e); }
+            } catch (e) { /* console.warn('Background service stop error:', e); */ }
         }
 
         function getScanLastResults() {
@@ -11012,8 +10856,6 @@
             isScanning = true;
             const lastResults = getScanLastResults();
             const now = Date.now();
-            console.log('🔍 Auto-scan starting...');
-
             const enabledCryptos = Object.keys(CRYPTO_DATABASE).filter(sym => {
                 if (prefs.cryptos[sym]?.enabled === false) return false;
                 // Dedup: skip if we already notified this crypto recently
@@ -11097,12 +10939,10 @@
                     await new Promise(r => setTimeout(r, 2000));
 
                 } catch (scanErr) {
-                    console.warn(`Auto-scan error for ${symbol}:`, scanErr);
                 }
             }
 
             saveScanLastResults(lastResults);
-            console.log(`🔍 Auto-scan complete: ${scannedCount} scanned, ${signalsFound} signals found`);
             isScanning = false;
         }
 
@@ -11110,8 +10950,6 @@
             if (autoScanTimer) return;
             const prefs = getSignalPrefs();
             if (!prefs.masterEnabled) return;
-
-            console.log('🔄 Auto-scan enabled: every 5 minutes');
             // Run first scan after 30 seconds (let app load first)
             setTimeout(() => runAutoScan(), 30000);
             // Then repeat every 5 min
@@ -11122,7 +10960,6 @@
             if (autoScanTimer) {
                 clearInterval(autoScanTimer);
                 autoScanTimer = null;
-                console.log('⏹️ Auto-scan stopped');
             }
         }
 
@@ -11174,7 +11011,10 @@
                             <p style="margin-bottom:12px;">Faça sua própria pesquisa (<strong style="color:var(--accent-blue,#60a5fa);">DYOR</strong>) antes de tomar qualquer decisão financeira.</p>
                             <p style="font-size:10px;color:var(--text-muted,#666);margin-top:16px;">Ao utilizar este aplicativo, você reconhece e aceita que todas as decisões de investimento são de sua exclusiva responsabilidade.</p>
                         </div>
-                        <button onclick="document.getElementById('aviso-legal-modal').remove()" style="display:block;width:100%;margin-top:16px;padding:10px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:10px;color:#f59e0b;font-weight:600;font-size:12px;cursor:pointer;">Entendi</button>
+                        <div style="margin-top:14px;text-align:center;">
+                            <a href="privacy-policy.html" target="_blank" style="color:#58a6ff;font-size:11px;text-decoration:underline;">Política de Privacidade</a>
+                        </div>
+                        <button onclick="document.getElementById('aviso-legal-modal').remove()" style="display:block;width:100%;margin-top:12px;padding:10px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:10px;color:#f59e0b;font-weight:600;font-size:12px;cursor:pointer;">Entendi</button>
                     </div>
                 `;
                 m.addEventListener('click', (e) => { if (e.target === m) m.remove(); });
@@ -11214,7 +11054,6 @@
                 }
                 
                 try {
-                    console.log('🔄 Auto-refresh da Análise Técnica v2.0...');
                     const crypto = CRYPTO_DATABASE[symbol];
                     const [analysisData, macroNewsData, bigTechData] = await Promise.all([
                         fetchTechnicalAnalysisData(symbol),
@@ -11267,7 +11106,7 @@
                                     symbol
                                 );
                             }
-                        } catch (v3err) { console.warn('[V3] Refresh enhancement error:', v3err); }
+                        } catch (v3err) { /* console.warn('[V3] Refresh enhancement error:', v3err); */ }
                     }
                     
                     // V4 Enhancement on auto-refresh
@@ -11287,7 +11126,7 @@
                                     analysis.aiSummary += '\n\n━━━ ANÁLISE AVANÇADA ━━━\n' + v4Enhanced.reactiveSummary;
                                 }
                             }
-                        } catch (v4err) { console.warn('[V4] Refresh enhancement error:', v4err); }
+                        } catch (v4err) { /* console.warn('[V4] Refresh enhancement error:', v4err); */ }
                     }
                     
                     // Atualizar cache
@@ -11296,10 +11135,8 @@
                     // Re-renderizar se modal ainda estiver aberto
                     if (modal.classList.contains('active')) {
                         renderTechnicalAnalysis(analysis, crypto);
-                        console.log('✅ Análise Técnica atualizada!');
                     }
                 } catch (e) {
-                    console.error('Erro no auto-refresh TA:', e);
                 }
             }, 300000); // 5 minutos
         }
@@ -13288,7 +13125,6 @@
         async function fetchWhaleActivity(period = '1h') {
             let config = WHALE_PERIODS[period];
             if (!config) {
-                console.warn(`🐋 Período inválido: ${period}, usando 1h`);
                 period = '1h';
                 config = WHALE_PERIODS[period];
             }
@@ -13305,7 +13141,7 @@
                 const priceData = await priceRes.json();
                 const btcPrice = parseFloat(priceData.price);
                 
-                console.log(`🐋 BTC Price: $${btcPrice.toLocaleString()} | Min whale: $${(WHALE_MIN_USD/1000000).toFixed(1)}M`);
+                /* console.log(`🐋 BTC Price: $${btcPrice.toLocaleString()} | Min whale: $${(WHALE_MIN_USD/1000000).toFixed(1)}M`); */
                 
                 // ESTRATÉGIA: Usar MEMPOOL.SPACE para dados 100% reais
                 let transactions = [];
@@ -13314,7 +13150,6 @@
                 const mempoolTxs = await fetchMempoolWhales(btcPrice);
                 if (mempoolTxs.length > 0) {
                     transactions = [...transactions, ...mempoolTxs];
-                    console.log(`🐋 Mempool: ${mempoolTxs.length} baleias pendentes`);
                 }
                 
                 // 2. Buscar transações de blocos recentes (confirmadas)
@@ -13322,7 +13157,6 @@
                 const blockTxs = await fetchBlockWhales(btcPrice, blocksToFetch, config.seconds);
                 if (blockTxs.length > 0) {
                     transactions = [...transactions, ...blockTxs];
-                    console.log(`🐋 Blocos: ${blockTxs.length} baleias confirmadas`);
                 }
                 
                 // Processar resultados
@@ -13377,9 +13211,8 @@
                         btcPrice
                     };
                     
-                    console.log(`🐋 ${transactions.length} transações encontradas! Total: $${(totalVolume/1000000).toFixed(0)}M`);
+                    /* console.log(`🐋 ${transactions.length} transações encontradas! Total: $${(totalVolume/1000000).toFixed(0)}M`); */
                 } else {
-                    console.log(`🐋 Nenhuma baleia encontrada no período (${period}).`);
                     whaleActivityData = {
                         transactions: [],
                         totalVolume: 0,
@@ -13397,7 +13230,6 @@
                 renderWhaleActivityUI();
                 
             } catch (e) {
-                console.error('Erro ao buscar baleias:', e);
                 whaleActivityData = {
                     transactions: [],
                     totalVolume: 0,
@@ -13418,10 +13250,8 @@
             try {
                 // API mempool/recent não retorna vin/vout detalhado
                 // Retornar vazio - usaremos apenas blocos confirmados
-                console.log(`🐋 Mempool: Transações pendentes não suportam identificação de endereços (API limitada)`);
                 return [];
             } catch (e) {
-                console.error('Mempool.space error:', e);
                 return [];
             }
         }
@@ -13445,9 +13275,6 @@
                 // Filtrar blocos pelo período selecionado
                 const blocksInPeriod = blocks.filter(b => b.timestamp >= periodStart);
                 const blocksToAnalyze = blocksInPeriod.slice(0, maxBlocks);
-                
-                console.log(`🐋 Período: ${periodSeconds/3600}h | ${blocksInPeriod.length} blocos | Analisando ${blocksToAnalyze.length}...`);
-                
                 let totalAnalyzed = 0;
                 let totalMatched = 0;
                 
@@ -13557,15 +13384,10 @@
                             });
                         }
                     } catch (blockErr) {
-                        console.warn(`Erro ao analisar bloco ${block.height}:`, blockErr);
                     }
                 }
-                
-                console.log(`🐋 Analisadas ${totalAnalyzed} transações | ${totalMatched} envolvem entidades conhecidas`);
-                
                 return whales;
             } catch (e) {
-                console.error('Blocks fetch error:', e);
                 return [];
             }
         }
@@ -13581,7 +13403,6 @@
         function startWhaleActivityAutoRefresh() {
             if (whaleActivityInterval) clearInterval(whaleActivityInterval);
             whaleActivityInterval = setInterval(() => {
-                console.log('🐋 Auto-refresh: Buscando novos dados...');
                 fetchWhaleActivity(whaleActivityPeriod);
             }, 120000); // 2 minutos para dados mais frescos
         }
@@ -14443,9 +14264,7 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                                 <span style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">✅ ${analysis.v4GatesPassed || 0}/${analysis.v4GatesTotal || 9} confirmações</span>
                                 ${analysis.dataIntegrity && !analysis.dataIntegrity.valid ? `<span style="font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(239,68,68,0.2); color: #f87171; font-weight: 700;">⚠️ DADOS</span>` : ''}
                             </div>
-                            ${analysis.v4ActionMessage ? `<div style="margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: ${signalType === 'long' ? 'rgba(34,197,94,0.1)' : signalType === 'short' ? 'rgba(239,68,68,0.1)' : signalType === 'aguardar' ? 'rgba(245,158,11,0.1)' : 'rgba(100,116,139,0.1)'}; border: 1px solid ${signalType === 'long' ? 'rgba(34,197,94,0.2)' : signalType === 'short' ? 'rgba(239,68,68,0.2)' : signalType === 'aguardar' ? 'rgba(245,158,11,0.2)' : 'rgba(100,116,139,0.2)'}; font-size: 11px; color: var(--text-secondary); line-height: 1.4; white-space: pre-line;">${analysis.v4ActionIcon || ''} ${analysis.v4ActionMessage}</div>` : ''}` : v3Signal ? `<div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
-                                <span style="font-size: 10px; color: var(--text-muted);">Probabilidade: ${v3Probability || '?'}%</span>
-                            </div>` : ''}
+                            ${analysis.v4ActionMessage ? `<div style="margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: ${signalType === 'long' ? 'rgba(34,197,94,0.1)' : signalType === 'short' ? 'rgba(239,68,68,0.1)' : signalType === 'aguardar' ? 'rgba(245,158,11,0.1)' : 'rgba(100,116,139,0.1)'}; border: 1px solid ${signalType === 'long' ? 'rgba(34,197,94,0.2)' : signalType === 'short' ? 'rgba(239,68,68,0.2)' : signalType === 'aguardar' ? 'rgba(245,158,11,0.2)' : 'rgba(100,116,139,0.2)'}; font-size: 11px; color: var(--text-secondary); line-height: 1.4; white-space: pre-line;">${analysis.v4ActionIcon || ''} ${analysis.v4ActionMessage}</div>` : ''}` : ''}
                         </div>
                     </div>
                     
@@ -16033,13 +15852,11 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                     // Esconder StatusBar
                     if (window.Capacitor.Plugins.StatusBar) {
                         await window.Capacitor.Plugins.StatusBar.hide();
-                        console.log('✅ StatusBar escondida');
                     }
                     
                     // Tentar modo fullscreen nativo
                     if (window.Capacitor.Plugins.Fullscreen) {
                         await window.Capacitor.Plugins.Fullscreen.enterFullscreen();
-                        console.log('✅ Modo fullscreen ativado');
                     }
                 }
                 
@@ -16055,7 +15872,6 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                     await docEl.msRequestFullscreen();
                 }
             } catch (e) {
-                console.log('Fullscreen API não disponível:', e);
             }
             
             // Adicionar classe ao body para ocultar outros elementos
@@ -16116,13 +15932,11 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                     // Sair do modo fullscreen nativo
                     if (window.Capacitor.Plugins.Fullscreen) {
                         await window.Capacitor.Plugins.Fullscreen.exitFullscreen();
-                        console.log('✅ Saiu do modo fullscreen');
                     }
                     
                     // Mostrar StatusBar
                     if (window.Capacitor.Plugins.StatusBar) {
                         await window.Capacitor.Plugins.StatusBar.show();
-                        console.log('✅ StatusBar restaurada');
                     }
                 }
                 
@@ -16137,7 +15951,6 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                     await document.msExitFullscreen();
                 }
             } catch (e) {
-                console.log('Fullscreen API não disponível:', e);
             }
             
             // Pequeno delay para a rotação completar antes de esconder o modal
@@ -16269,15 +16082,9 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
             
             const interval = intervalMap[fullscreenPeriod] || '1m';
             const limit = limitMap[fullscreenPeriod] || 300;
-            
-            console.log(`📊 Carregando gráfico fullscreen: ${symbol}, interval=${interval}, limit=${limit}`);
-            
             try {
                 const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
                 const data = await response.json();
-                
-                console.log(`📊 Dados recebidos:`, data?.length || 0, 'candles');
-                
                 if (data && Array.isArray(data) && data.length > 0) {
                     fullscreenCandleData = data.map(k => ({
                         time: new Date(k[0]),
@@ -16287,18 +16094,12 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                         close: parseFloat(k[4]),
                         volume: parseFloat(k[5])
                     }));
-                    
-                    console.log(`📊 Primeiro candle:`, fullscreenCandleData[0]);
-                    console.log(`📊 Último candle:`, fullscreenCandleData[fullscreenCandleData.length - 1]);
-                    
                     renderFullscreenChart();
                 } else {
-                    console.error('📊 Dados inválidos recebidos:', data);
                     // Tentar renderizar mesmo assim com dados vazios para mostrar mensagem
                     renderFullscreenChart();
                 }
             } catch (error) {
-                console.error('📊 Erro ao carregar dados fullscreen:', error);
                 renderFullscreenChart();
             }
         }
@@ -16315,12 +16116,10 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
             const canvas = document.getElementById('fullscreen-chart-canvas');
             const container = document.getElementById('fullscreen-scroll-container');
             if (!canvas || !container) {
-                console.log('📊 Canvas ou container não encontrado');
                 return;
             }
             
             if (!fullscreenCandleData || fullscreenCandleData.length === 0) {
-                console.log('📊 Sem dados para renderizar');
                 const ctx = canvas.getContext('2d');
                 ctx.fillStyle = '#0a0a0f';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -16337,7 +16136,6 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
             const chartHeight = containerRect.height || (window.innerHeight - 100);
             
             if (chartWidth <= 0 || chartHeight <= 0) {
-                console.log('📊 Dimensões inválidas:', chartWidth, chartHeight);
                 return;
             }
             
@@ -16555,8 +16353,6 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                 ctx.textAlign = 'center';
                 ctx.fillText(`${fsZoom.toFixed(1)}x`, 40, 26);
             }
-            
-            console.log(`📊 Gráfico renderizado: ${chartWidth}x${chartHeight}, ${visibleData.length} candles visíveis`);
         }
 
         // Touch events para zoom e pan no gráfico fullscreen
@@ -16864,7 +16660,6 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                     updateChartStats(candleData.map(k => [k[0], k[4]]));
                 }
             } catch (e) {
-                console.error('Chart error:', e);
             }
             
             loadingEl.style.display = 'none';
@@ -17137,8 +16932,6 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         let _lastModalCloseTime = 0; // Guard contra double-fire do back button
 
         function handleBackButton() {
-            console.log('🔙 Back button pressed, current section:', currentSection);
-            
             // ====== MACRO-SECTION.JS MODALS (created dynamically with .remove()) ======
             
             // Análise Técnica de indicador (macro-section.js)
@@ -17231,7 +17024,6 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                     sessionStorage.removeItem('returnToNewsModal');
                     currentBrowserUrl = '';
                     browserReturnToNews = false;
-                    console.log('🔙 Voltou do browser, mantendo modal da notícia');
                     return true;
                 }
                 closeNewsModal();
@@ -17244,16 +17036,13 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
             // E se não acabamos de fechar um modal (guard contra double-fire)
             if (currentSection !== 'home') {
                 if (Date.now() - _lastModalCloseTime < 600) {
-                    console.log('🔙 Modal acabou de fechar, ignorando nav para HOME');
                     return true;
                 }
-                console.log('🔙 Tela principal da seção', currentSection, '→ voltando para HOME');
                 showSection('home');
                 return true;
             }
             
             // Já está na HOME - não fazer nada (não fechar o app)
-            console.log('📱 Já está na HOME');
             return true; // Sempre retorna true para NUNCA fechar o app
         }
 
@@ -17289,7 +17078,6 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
 
         // Listener para o evento deviceready do Capacitor/Cordova
         document.addEventListener('deviceready', function() {
-            console.log('📱 Device ready - configurando back button');
             document.addEventListener('backbutton', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -17310,17 +17098,12 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                         
                         // Registrar listener para back button
                         App.addListener('backButton', ({ canGoBack }) => {
-                            console.log('🔙 Capacitor backButton event triggered');
                             const handled = handleBackButton();
-                            console.log('🔙 Back button handled:', handled);
                             // Nunca deixar fechar o app
                         });
-                        
-                        console.log('✅ Capacitor App plugin inicializado');
                     }
                 }
             } catch (e) {
-                console.log('⚠️ Capacitor App não disponível:', e);
             }
         }
         
@@ -17329,52 +17112,129 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         window.addEventListener('load', initCapacitorApp);
         
         // ═══════════════════════════════════════
-        // ADMOB INTERSTITIAL — Monetização
+        // FIRST-LAUNCH DISCLAIMER (Aviso Legal obrigatório)
+        // ═══════════════════════════════════════
+        function showFirstLaunchDisclaimer() {
+            if (localStorage.getItem('visor_disclaimer_accepted')) return;
+            const overlay = document.createElement('div');
+            overlay.id = 'first-launch-disclaimer';
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:9999999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.92);backdrop-filter:blur(8px);padding:16px;';
+            overlay.innerHTML = `
+                <div style="background:#1a1a2e;border:1px solid rgba(245,158,11,0.4);border-radius:16px;max-width:400px;width:100%;padding:24px;max-height:90vh;overflow-y:auto;">
+                    <div style="text-align:center;margin-bottom:16px;">
+                        <div style="font-size:36px;margin-bottom:8px;">⚠️</div>
+                        <div style="font-size:16px;color:#f59e0b;font-weight:700;">AVISO LEGAL IMPORTANTE</div>
+                    </div>
+                    <div style="font-size:12px;color:#c9d1d9;line-height:1.8;">
+                        <p style="margin-bottom:12px;"><strong style="color:#f59e0b;">Este aplicativo é meramente informativo e educacional.</strong></p>
+                        <p style="margin-bottom:12px;"><strong style="color:#ef4444;">NÃO constitui recomendação de investimento</strong>, consultoria financeira, ou solicitação de compra/venda de qualquer ativo digital.</p>
+                        <p style="margin-bottom:12px;">Investimentos em criptomoedas envolvem <strong style="color:#f59e0b;">alto risco de perda total</strong> do capital investido. O mercado de criptomoedas é extremamente volátil e imprevisível.</p>
+                        <p style="margin-bottom:12px;">Os sinais, indicadores e análises apresentados são gerados por algoritmos automatizados e <strong style="color:#ef4444;">podem conter erros</strong>. Resultados passados não garantem resultados futuros.</p>
+                        <p style="margin-bottom:12px;">Faça sua própria pesquisa (<strong style="color:#58a6ff;">DYOR</strong>) e consulte um profissional financeiro antes de tomar qualquer decisão de investimento.</p>
+                        <p style="font-size:10px;color:#8b949e;margin-top:16px;border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;">Ao utilizar este aplicativo, você reconhece e aceita que todas as decisões de investimento são de sua exclusiva responsabilidade. Os desenvolvedores não se responsabilizam por quaisquer perdas financeiras.</p>
+                    </div>
+                    <div style="margin-top:16px;display:flex;flex-direction:column;gap:8px;">
+                        <button id="disclaimer-accept" style="width:100%;padding:12px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);border-radius:10px;color:#f59e0b;font-weight:700;font-size:13px;cursor:pointer;">Li e Aceito os Termos</button>
+                        <a href="privacy-policy.html" target="_blank" style="text-align:center;color:#58a6ff;font-size:10px;text-decoration:underline;">Política de Privacidade</a>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            overlay.querySelector('#disclaimer-accept').addEventListener('click', () => {
+                localStorage.setItem('visor_disclaimer_accepted', Date.now().toString());
+                overlay.remove();
+            });
+        }
+        document.addEventListener('DOMContentLoaded', () => setTimeout(showFirstLaunchDisclaimer, 500));
+
+        // ═══════════════════════════════════════
+        // GDPR / LGPD CONSENT + ADMOB INTERSTITIAL
         // ═══════════════════════════════════════
         const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-2121626726443679/9603615439';
         let admobReady = false;
         let admobLoaded = false;
-        
+        let userAdConsent = localStorage.getItem('visor_ad_consent'); // 'granted' | 'denied' | null
+
+        // Show consent dialog on first launch (LGPD/GDPR compliance)
+        function showAdConsentDialog() {
+            return new Promise((resolve) => {
+                if (userAdConsent === 'granted' || userAdConsent === 'denied') {
+                    return resolve(userAdConsent === 'granted');
+                }
+                const overlay = document.createElement('div');
+                overlay.id = 'ad-consent-overlay';
+                overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.8);backdrop-filter:blur(6px);padding:20px;';
+                overlay.innerHTML = `
+                    <div style="background:#1a1a2e;border:1px solid rgba(88,166,255,0.3);border-radius:16px;max-width:380px;width:100%;padding:24px;text-align:center;">
+                        <div style="font-size:28px;margin-bottom:12px;">🔒</div>
+                        <div style="font-size:15px;color:#58a6ff;font-weight:700;margin-bottom:16px;">Privacidade e Anúncios</div>
+                        <div style="font-size:12px;color:#c9d1d9;line-height:1.7;margin-bottom:20px;">
+                            <p style="margin-bottom:10px;">O Visor Crypto exibe anúncios através do <strong>Google AdMob</strong> para manter o app gratuito.</p>
+                            <p style="margin-bottom:10px;">Ao aceitar, você permite que o Google colete dados anônimos do dispositivo para exibir <strong>anúncios personalizados</strong>.</p>
+                            <p style="margin-bottom:10px;">Ao recusar, anúncios serão exibidos de forma <strong>não personalizada</strong>.</p>
+                            <p style="font-size:10px;color:#8b949e;">Você pode alterar esta escolha a qualquer momento nas configurações do dispositivo.</p>
+                        </div>
+                        <div style="display:flex;gap:10px;">
+                            <button id="consent-deny" style="flex:1;padding:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:10px;color:#8b949e;font-weight:600;font-size:12px;cursor:pointer;">Recusar</button>
+                            <button id="consent-accept" style="flex:1;padding:10px;background:rgba(88,166,255,0.15);border:1px solid rgba(88,166,255,0.4);border-radius:10px;color:#58a6ff;font-weight:600;font-size:12px;cursor:pointer;">Aceitar</button>
+                        </div>
+                        <a href="privacy-policy.html" target="_blank" style="display:inline-block;margin-top:12px;color:#58a6ff;font-size:10px;text-decoration:underline;">Política de Privacidade</a>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+                overlay.querySelector('#consent-accept').addEventListener('click', () => {
+                    localStorage.setItem('visor_ad_consent', 'granted');
+                    userAdConsent = 'granted';
+                    overlay.remove();
+                    resolve(true);
+                });
+                overlay.querySelector('#consent-deny').addEventListener('click', () => {
+                    localStorage.setItem('visor_ad_consent', 'denied');
+                    userAdConsent = 'denied';
+                    overlay.remove();
+                    resolve(false);
+                });
+            });
+        }
+
         async function initAdMob() {
             try {
                 if (!window.Capacitor || !window.Capacitor.Plugins) return;
                 const AdMob = window.Capacitor.Plugins.AdMob || 
                     (window.Capacitor.registerPlugin ? window.Capacitor.registerPlugin('AdMob') : null);
-                if (!AdMob) { console.log('⚠️ AdMob plugin not available'); return; }
+                if (!AdMob) return;
+                
+                // Ask for consent before initializing
+                const consentGranted = await showAdConsentDialog();
                 
                 window._AdMob = AdMob;
                 
-                // Event listeners for debugging
-                AdMob.addListener('interstitialAdLoaded', () => {
-                    console.log('✅ Interstitial ad loaded (event)');
-                    admobLoaded = true;
-                });
-                AdMob.addListener('interstitialAdFailedToLoad', (err) => {
-                    console.warn('❌ Interstitial failed to load:', JSON.stringify(err));
+                AdMob.addListener('interstitialAdLoaded', () => { admobLoaded = true; });
+                AdMob.addListener('interstitialAdFailedToLoad', () => {
                     admobLoaded = false;
                     setTimeout(() => prepareInterstitial(), 30000);
                 });
                 AdMob.addListener('interstitialAdDismissed', () => {
-                    console.log('📌 Interstitial dismissed');
                     admobLoaded = false;
                     setTimeout(() => prepareInterstitial(), 5000);
                 });
-                AdMob.addListener('interstitialAdFailedToShow', (err) => {
-                    console.warn('❌ Interstitial failed to show:', JSON.stringify(err));
+                AdMob.addListener('interstitialAdFailedToShow', () => {
                     admobLoaded = false;
                     setTimeout(() => prepareInterstitial(), 10000);
                 });
                 
                 await AdMob.initialize({
-                    initializeForTesting: false
+                    initializeForTesting: false,
+                    tagForChildDirectedTreatment: false,
+                    tagForUnderAgeOfConsent: false,
+                    maxAdContentRating: 'General',
+                    requestNonPersonalizedAdsOnly: !consentGranted
                 });
                 admobReady = true;
-                console.log('✅ AdMob initialized');
                 
-                // Pre-load first interstitial
                 await prepareInterstitial();
             } catch (e) {
-                console.warn('⚠️ AdMob init error:', e);
+                // AdMob init silently fails on web/non-Capacitor
             }
         }
         
@@ -17386,9 +17246,7 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                     isTesting: false
                 });
                 admobLoaded = true;
-                console.log('✅ Interstitial ad loaded');
             } catch (e) {
-                console.warn('⚠️ Interstitial prepare error:', e);
                 admobLoaded = false;
             }
         }
@@ -17398,11 +17256,9 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
             try {
                 await window._AdMob.showInterstitial();
                 admobLoaded = false;
-                // Pre-load next ad for future use
                 setTimeout(() => prepareInterstitial(), 3000);
                 return true;
             } catch (e) {
-                console.warn('⚠️ Show interstitial error:', e);
                 admobLoaded = false;
                 setTimeout(() => prepareInterstitial(), 5000);
                 return false;
@@ -17417,7 +17273,6 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         document.addEventListener('androidBackButton', function(e) {
             e.preventDefault();
             window.backButtonHandled = handleBackButton();
-            console.log('🔙 Android back button handled:', window.backButtonHandled);
         }, false);
         
         // Inicializar variável global
@@ -17467,18 +17322,37 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
                     .then(registration => {
-                        console.log('✅ Service Worker registrado:', registration.scope);
                     })
                     .catch(error => {
-                        console.log('❌ Erro ao registrar Service Worker:', error);
                     });
             });
         }
         
         // Detectar se é PWA instalado
         if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-            console.log('📱 Executando como PWA instalado');
         }
+        
+        // ═══════════════════════════════════════
+        // OFFLINE / ONLINE INDICATOR
+        // ═══════════════════════════════════════
+        (function() {
+            const banner = document.createElement('div');
+            banner.id = 'offline-banner';
+            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:#ef4444;color:white;text-align:center;padding:6px 12px;font-size:12px;font-weight:600;transform:translateY(-100%);transition:transform 0.3s ease;display:flex;align-items:center;justify-content:center;gap:6px;';
+            banner.innerHTML = '<i class="fas fa-wifi-slash" style="font-size:11px;"></i> Sem conexão — dados podem estar desatualizados';
+            document.body.appendChild(banner);
+            
+            function updateStatus() {
+                if (!navigator.onLine) {
+                    banner.style.transform = 'translateY(0)';
+                } else {
+                    banner.style.transform = 'translateY(-100%)';
+                }
+            }
+            window.addEventListener('online', updateStatus);
+            window.addEventListener('offline', updateStatus);
+            updateStatus();
+        })();
     </script>
     
     <!-- TA Engine v2.0 - Market Regime, Structure, CVD Advanced, Macro/News, Volatility -->

@@ -4,8 +4,13 @@ const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 horas
 
 // Recursos para cache inicial
 const STATIC_ASSETS = [
-    './tradebot-mobile.html',
-    './manifest.json'
+    './index.html',
+    './manifest.json',
+    './ta-engine-v2.js',
+    './ta-engine-v3.js',
+    './ta-engine-v4.js',
+    './realtime-cvd.js',
+    './macro-section.js'
 ];
 
 // URLs de CDN para cache
@@ -15,11 +20,9 @@ const CDN_ASSETS = [
 
 // Instalação do Service Worker
 self.addEventListener('install', event => {
-    console.log('[SW] Instalando Service Worker...');
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
-                console.log('[SW] Cache aberto, adicionando arquivos...');
                 return cache.addAll([...STATIC_ASSETS]);
             })
             .then(() => self.skipWaiting())
@@ -28,14 +31,12 @@ self.addEventListener('install', event => {
 
 // Ativação - limpa caches antigos
 self.addEventListener('activate', event => {
-    console.log('[SW] Service Worker ativado');
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
                 cacheNames
                     .filter(name => name !== CACHE_NAME)
                     .map(name => {
-                        console.log('[SW] Removendo cache antigo:', name);
                         return caches.delete(name);
                     })
             );
@@ -103,7 +104,6 @@ self.addEventListener('fetch', event => {
 
 // Sincronização em background (quando voltar online)
 self.addEventListener('sync', event => {
-    console.log('[SW] Sync event:', event.tag);
 });
 
 // Push notifications (preparado para futuro)
@@ -118,5 +118,3 @@ self.addEventListener('push', event => {
         });
     }
 });
-
-console.log('[SW] Service Worker carregado');

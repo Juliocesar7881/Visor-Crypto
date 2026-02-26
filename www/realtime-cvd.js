@@ -61,7 +61,6 @@
 
             ws.onopen = () => {
                 state.reconnectAttempts = 0;
-                console.log(`[RealCVD] ✅ WebSocket conectado: ${symbol}`);
             };
 
             ws.onmessage = (event) => {
@@ -74,11 +73,9 @@
             };
 
             ws.onerror = (err) => {
-                console.warn(`[RealCVD] WebSocket error: ${symbol}`, err);
             };
 
             ws.onclose = () => {
-                console.log(`[RealCVD] WebSocket fechado: ${symbol}`);
                 // Auto-reconnect com backoff exponencial
                 state.reconnectAttempts++;
                 const delay = Math.min(
@@ -93,7 +90,6 @@
                 }, delay);
             };
         } catch (e) {
-            console.warn(`[RealCVD] Falha ao conectar WebSocket: ${symbol}`, e);
         }
     }
 
@@ -107,7 +103,6 @@
             // Salvar stats antes de desconectar
             saveStats(symbol, state.stats);
             delete connections[symbol];
-            console.log(`[RealCVD] Desconectado: ${symbol}`);
         }
     }
 
@@ -411,6 +406,4 @@
         saveStats,
         loadStats
     };
-
-    console.log('[RealtimeCVD] Módulo carregado — WebSocket aggTrade');
 })();

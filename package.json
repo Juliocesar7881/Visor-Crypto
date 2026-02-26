@@ -1,6 +1,6 @@
 {
   "name": "visor-crypto",
-  "version": "0.1.0-alpha",
+  "version": "1.0.0",
   "description": "Visor Crypto - Visualizador de criptomoedas em tempo real",
   "main": "index.js",
   "scripts": {

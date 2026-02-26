@@ -6,19 +6,18 @@
 
 (function() {
     'use strict';
+
+    const BACKEND_PROXY = 'https://visor-crypto-api.onrender.com/api/proxy';
     
-    const FINNHUB_API_KEY = 'd5j4209r01qh37ui6ehgd5j4209r01qh37ui6ei0';
-    const FINNHUB_WS_URL = 'wss://ws.finnhub.io';
+    // API keys moved to backend proxy
+    const FINNHUB_API_KEY = null; // Server-side
+    const FINNHUB_WS_URL = null; // Finnhub WS disabled (use REST proxy);
     // Twelve Data - 3 chaves = 2400 créditos/dia (800 cada)
-    const TWELVE_DATA_API_KEYS = [
-        'f3eee307545843abb139dc2e68932f16',
-        '07a47c138e344323add83b5e97bb2bd6',
-        '8449b7e97a8641a7a2126f0ccd7cea2d'
-    ];
+    const TWELVE_DATA_API_KEYS = []; // Keys moved to backend proxy
     let currentTwelveDataKeyIndex = 0;
-    const FMP_API_KEY = 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
-    const FRED_API_KEY = '289c022214958a3eb611142e8dc34f6b'; // FRED - Taxa do Fed
-    const ALPHA_VANTAGE_KEY = 'G5QZWN5KBTAEORIT'; // Para histórico de eventos
+    const FMP_API_KEY = null; // Key moved to backend proxy
+    const FRED_API_KEY = null; // Key moved to backend proxy // FRED - Taxa do Fed
+    const ALPHA_VANTAGE_KEY = null; // Key moved to backend proxy // Para histórico de eventos
     
     // Função para alternar chaves Twelve Data
     function getTwelveDataKey() {
@@ -57,7 +56,6 @@
 
     function macroLog(msg, type = 'info') {
         const colors = { info: '#0af', error: '#f44', success: '#0f0', warn: '#fa0' };
-        console.log(`%c[MACRO] ${msg}`, `color: ${colors[type] || colors.info}`);
     }
 
     // ============================================
@@ -680,7 +678,7 @@
                 if (window.Capacitor.Plugins.StatusBar) await window.Capacitor.Plugins.StatusBar.hide();
                 if (window.Capacitor.Plugins.Fullscreen) await window.Capacitor.Plugins.Fullscreen.enterFullscreen();
             }
-        } catch (e) { console.log('Fullscreen API error:', e); }
+        } catch (e) { /* console.log('Fullscreen API error:', e); */ }
         
         const fsModal = document.createElement('div');
         fsModal.id = 'indicator-fullscreen-modal';
@@ -809,7 +807,7 @@
                     if (window.Capacitor.Plugins.Fullscreen) await window.Capacitor.Plugins.Fullscreen.exitFullscreen();
                     if (window.Capacitor.Plugins.StatusBar) await window.Capacitor.Plugins.StatusBar.show();
                 }
-            } catch (e) { console.log('Restore portrait error:', e); }
+            } catch (e) { /* console.log('Restore portrait error:', e); */ }
             // Reabrir modal do indicador após fechar fullscreen
             if (fsSymbol) {
                 setTimeout(() => openIndicatorModal(fsSymbol), 100);
@@ -2037,7 +2035,6 @@
             `;
             
         } catch (e) {
-            console.error('TA Error:', e);
             const contentDiv = taModal.querySelector('div > div:last-child');
             contentDiv.innerHTML = `
                 <div style="text-align: center; padding: 30px;">

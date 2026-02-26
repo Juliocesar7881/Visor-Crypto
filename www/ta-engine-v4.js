@@ -1365,7 +1365,6 @@
             safeSet(MACRO_LIQ_CACHE_KEY, result);
 
         } catch (e) {
-            console.log('[MacroLiquidity] Error:', e.message);
         }
 
         return result;
@@ -2550,7 +2549,6 @@
                 return { submitted: queue.length, response: await resp.json() };
             }
         } catch (e) {
-            console.log('[V4.1] Backend submit failed (optional):', e.message);
         }
         return { submitted: 0 };
     }
@@ -2573,7 +2571,6 @@
                 return data;
             }
         } catch (e) {
-            console.log('[V4.1] Backend fetch failed (optional):', e.message);
         }
         return null;
     }
@@ -2586,7 +2583,6 @@
             clearTimeout(t);
             if (resp.ok) return await resp.json();
         } catch (e) {
-            console.log('[V4.1] Model weights fetch failed:', e.message);
         }
         return null;
     }
@@ -4002,6 +3998,4 @@
         // Version
         VERSION
     };
-
-    console.log(`[TA Engine] Loaded â€” v${VERSION}`);
 })();
