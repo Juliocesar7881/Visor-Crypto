@@ -9,15 +9,16 @@
 
     const BACKEND_PROXY = 'https://visor-crypto-api.onrender.com/api/proxy';
     
-    // API keys moved to backend proxy
-    const FINNHUB_API_KEY = null; // Server-side
+    // API keys - used as fallback when backend proxy is unavailable
+    // In production APK these are compiled into the WebView bundle (not publicly exposed)
+    const FINNHUB_API_KEY = 'd5j4209r01qh37ui6ehgd5j4209r01qh37ui6ei0';
     const FINNHUB_WS_URL = null; // Finnhub WS disabled (use REST proxy);
     // Twelve Data - 3 chaves = 2400 créditos/dia (800 cada)
-    const TWELVE_DATA_API_KEYS = []; // Keys moved to backend proxy
+    const TWELVE_DATA_API_KEYS = ['f3eee307545843abb139dc2e68932f16', '07a47c138e344323add83b5e97bb2bd6', '8449b7e97a8641a7a2126f0ccd7cea2d'];
     let currentTwelveDataKeyIndex = 0;
-    const FMP_API_KEY = null; // Key moved to backend proxy
-    const FRED_API_KEY = null; // Key moved to backend proxy // FRED - Taxa do Fed
-    const ALPHA_VANTAGE_KEY = null; // Key moved to backend proxy // Para histórico de eventos
+    const FMP_API_KEY = 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
+    const FRED_API_KEY = '289c022214958a3eb611142e8dc34f6b';
+    const ALPHA_VANTAGE_KEY = 'G5QZWN5KBTAEORIT';
     
     // Função para alternar chaves Twelve Data
     function getTwelveDataKey() {
@@ -2227,6 +2228,40 @@
         }
     }
     
+    // Smart FRED fetch: tries backend proxy first (fast, no key exposed),
+    // then falls back to direct FRED API (works in Android WebView)
+    let _backendProxyAvailable = null; // null = unknown, true/false = cached
+    async function fetchFredSmart(seriesId, opts = {}) {
+        const { sortOrder = 'desc', limit = 10, units } = opts;
+        
+        // Build direct FRED URL as fallback
+        let directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json&sort_order=${sortOrder}&limit=${limit}`;
+        if (units) directUrl += `&units=${units}`;
+        
+        // Try backend proxy first (only if not known to be down)
+        if (_backendProxyAvailable !== false) {
+            try {
+                let proxyUrl = `${BACKEND_PROXY}/fred?series_id=${seriesId}&sort_order=${sortOrder}&limit=${limit}`;
+                if (units) proxyUrl += `&units=${units}`;
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 8000);
+                const resp = await fetch(proxyUrl, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (resp.ok) {
+                    _backendProxyAvailable = true;
+                    return await resp.json();
+                }
+                if (resp.status === 404) _backendProxyAvailable = false; // proxy not deployed
+            } catch(e) {
+                macroLog('⚠️ Backend proxy indisponível, usando FRED direto', 'warn');
+                _backendProxyAvailable = false;
+            }
+        }
+        
+        // Fallback: direct FRED API (works in Android WebView without CORS issues)
+        return await fetchWithCorsProxy(directUrl);
+    }
+    
     // ============================================
     // BUSCAR TAXA DO FED VIA FRED API
     // DFF = Effective Federal Funds Rate (mais preciso)
@@ -2245,7 +2280,6 @@
             macroLog('🔄 Buscando taxa do Fed via FRED API...', 'info');
             
             // 1. Buscar DFF (Effective Federal Funds Rate) - taxa real negociada
-            const dffUrl = `${BACKEND_PROXY}/fred?series_id=DFF&sort_order=desc&limit=5`;
             
             let effectiveRate = null;
             let targetUpper = null, targetLower = null;
@@ -2253,7 +2287,7 @@
             let unemployment = null;
             
             try {
-                const dffData = await fetchWithCorsProxy(dffUrl);
+                const dffData = await fetchFredSmart('DFF', { limit: 5 });
                 
                 if (dffData.observations && dffData.observations.length > 0) {
                     const latestObs = dffData.observations.find(o => o.value !== '.');
@@ -2268,16 +2302,14 @@
             
             // 2. Buscar Range Target (Upper/Lower)
             try {
-                const upperUrl = `${BACKEND_PROXY}/fred?series_id=DFEDTARU&sort_order=desc&limit=5`;
-                const upperData = await fetchWithCorsProxy(upperUrl);
+                const upperData = await fetchFredSmart('DFEDTARU', { limit: 5 });
                 
                 if (upperData.observations && upperData.observations.length > 0) {
                     const obs = upperData.observations.find(o => o.value !== '.');
                     if (obs) targetUpper = parseFloat(obs.value);
                 }
                 
-                const lowerUrl = `${BACKEND_PROXY}/fred?series_id=DFEDTARL&sort_order=desc&limit=5`;
-                const lowerData = await fetchWithCorsProxy(lowerUrl);
+                const lowerData = await fetchFredSmart('DFEDTARL', { limit: 5 });
                 
                 if (lowerData.observations && lowerData.observations.length > 0) {
                     const obs = lowerData.observations.find(o => o.value !== '.');
@@ -2300,8 +2332,7 @@
             
             // 3. Buscar CPI (inflação) - CPIAUCSL
             try {
-                const cpiUrl = `${BACKEND_PROXY}/fred?series_id=CPIAUCSL&sort_order=desc&limit=13&units=pc1`;
-                const cpiData = await fetchWithCorsProxy(cpiUrl);
+                const cpiData = await fetchFredSmart('CPIAUCSL', { limit: 13, units: 'pc1' });
                 
                 if (cpiData.observations && cpiData.observations.length > 0) {
                     const obs = cpiData.observations.find(o => o.value !== '.');
@@ -2316,8 +2347,7 @@
             
             // 4. Buscar taxa de desemprego - UNRATE
             try {
-                const unUrl = `${BACKEND_PROXY}/fred?series_id=UNRATE&sort_order=desc&limit=5`;
-                const unData = await fetchWithCorsProxy(unUrl);
+                const unData = await fetchFredSmart('UNRATE', { limit: 5 });
                 
                 if (unData.observations && unData.observations.length > 0) {
                     const obs = unData.observations.find(o => o.value !== '.');
@@ -2710,14 +2740,10 @@
         if (FOMC_DECISIONS_HISTORY_CACHE) return FOMC_DECISIONS_HISTORY_CACHE;
         
         try {
-            const url = `${BACKEND_PROXY}/fred?series_id=DFEDTARU&sort_order=desc&limit=500`;
             let data = null;
             
             try {
-                const resp = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined });
-                if (resp.ok) {
-                    data = await resp.json();
-                }
+                data = await fetchFredSmart('DFEDTARU', { limit: 500 });
             } catch(e) { /* fallback below */ }
             
             if (!data || !data.observations) return [];
@@ -2813,9 +2839,10 @@
             // Para FOMC/Fed Rate, buscar mais dados e filtrar apenas mudanças
             const limit = fredSeries === 'DFEDTARU' ? 50 : 12;
             
-            const url = `${BACKEND_PROXY}/fred?series_id=${fredSeries}&sort_order=desc&limit=${limit}${units}`;
+            const opts = { limit };
+            if (needsYoY) opts.units = 'pc1';
             
-            const data = await fetchWithCorsProxy(url);
+            const data = await fetchFredSmart(fredSeries, opts);
             
             if (data.observations && data.observations.length > 0) {
                 // Filtrar valores válidos
@@ -2921,18 +2948,45 @@
             
             macroLog('🔄 Carregando calendário econômico...', 'info');
             
-            // ====== FONTE 1: Forex Factory (dados reais, gratuito) ======
-            let events = await fetchCalendarFromForexFactory();
+            // ====== Buscar TODAS as fontes em paralelo e mesclar ======
+            const [ffEvents, fmpEvents] = await Promise.all([
+                fetchCalendarFromForexFactory().catch(() => null),
+                fetchCalendarFromFMP().catch(() => null)
+            ]);
             
-            // ====== FONTE 2: FMP API (backup, se disponível) ======
-            if (!events || events.length === 0) {
-                events = await fetchCalendarFromFMP();
-            }
+            // Mesclar ForexFactory + FMP (sem duplicatas)
+            let allEvents = [];
+            if (ffEvents && ffEvents.length > 0) allEvents.push(...ffEvents);
+            if (fmpEvents && fmpEvents.length > 0) allEvents.push(...fmpEvents);
             
-            // ====== FONTE 3: Calendário oficial BLS/Fed (sempre funciona) ======
+            // Remover duplicatas globais (mesmo título + mesma data)
+            const seenGlobal = new Set();
+            let events = allEvents.filter(e => {
+                const key = `${e.title}-${e.fullDate}`;
+                if (seenGlobal.has(key)) return false;
+                seenGlobal.add(key);
+                return true;
+            });
+            
+            // Ordenar por data
+            events.sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate));
+            
+            // Limitar a 30 eventos
+            events = events.slice(0, 30);
+            
+            // ====== FALLBACK: Calendário oficial BLS/Fed (sempre funciona) ======
             if (!events || events.length === 0) {
                 macroLog('⚠️ APIs indisponíveis, usando calendário oficial BLS/Fed', 'warn');
                 return calculateFallbackEvents();
+            }
+            
+            // Se poucos eventos, complementar com fallback
+            if (events.length < 5) {
+                const fallback = calculateFallbackEvents();
+                const existingDates = new Set(events.map(e => `${e.title}-${e.fullDate}`));
+                const extras = fallback.filter(e => !existingDates.has(`${e.title}-${e.fullDate}`));
+                events = [...events, ...extras].sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate)).slice(0, 30);
+                macroLog(`📊 Calendário complementado com fallback: ${events.length} eventos total`, 'info');
             }
             
             // Atualizar cache
@@ -3009,7 +3063,7 @@
                 if (seenEvents.has(key)) return false;
                 seenEvents.add(key);
                 return true;
-            }).slice(0, 15);
+            }).slice(0, 25);
             
             events.sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate));
             macroLog(`✅ Calendário Forex Factory: ${events.length} eventos reais`, 'success');
@@ -3026,22 +3080,40 @@
         try {
             const today = new Date();
             const fromDate = today.toISOString().split('T')[0];
-            const toDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-            
-            // Usar backend proxy para FMP calendar
-            const url = `${BACKEND_PROXY}/fmp/calendar?from=${fromDate}&to=${toDate}`;
+            const toDate = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             
             let data = null;
-            try {
-                const response = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined });
-                if (response.ok) {
-                    const result = await response.json();
-                    if (Array.isArray(result) && result.length > 0) {
-                        data = result;
+            
+            // Tentar backend proxy primeiro
+            if (_backendProxyAvailable !== false) {
+                try {
+                    const proxyUrl = `${BACKEND_PROXY}/fmp/calendar?from=${fromDate}&to=${toDate}`;
+                    const response = await fetch(proxyUrl, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (Array.isArray(result) && result.length > 0) {
+                            data = result;
+                        }
+                    } else if (response.status === 404) {
+                        _backendProxyAvailable = false;
                     }
+                } catch(e) {
+                    macroLog('⚠️ Proxy FMP indisponível, tentando direto...', 'warn');
                 }
-            } catch(e) {
-                macroLog('⚠️ Erro ao buscar calendário FMP via proxy: ' + e.message, 'warn');
+            }
+            
+            // Fallback: FMP API direto
+            if (!data && FMP_API_KEY) {
+                try {
+                    const directUrl = `https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`;
+                    const resp = await fetchWithCorsProxy(directUrl);
+                    if (Array.isArray(resp) && resp.length > 0) {
+                        data = resp;
+                        macroLog('✅ FMP Calendar via API direta', 'success');
+                    }
+                } catch(e) {
+                    macroLog('⚠️ FMP Calendar direto falhou: ' + e.message, 'warn');
+                }
             }
             
             if (!data || data.length === 0) return null;
@@ -3081,7 +3153,7 @@
                 if (seenFMPEvents.has(key)) return false;
                 seenFMPEvents.add(key);
                 return true;
-            }).slice(0, 15);
+            }).slice(0, 25);
             
             events.sort((a, b) => new Date(a.fullDate) - new Date(b.fullDate));
             macroLog(`✅ Calendário FMP: ${events.length} eventos`, 'success');

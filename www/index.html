@@ -7837,10 +7837,19 @@
                 
                 // 2. Tentar buscar taxa atual do FRED
                 try {
-                    // API key moved to backend proxy
-                    const fredUrl = `https://visor-crypto-api.onrender.com/api/proxy/fred?series_id=FEDFUNDS&limit=3&sort_order=desc`;
+                    // API key - tentar proxy primeiro, fallback direto
+                    const proxyUrl = `https://visor-crypto-api.onrender.com/api/proxy/fred?series_id=FEDFUNDS&limit=3&sort_order=desc`;
+                    const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=FEDFUNDS&sort_order=desc&limit=3&api_key=289c022214958a3eb611142e8dc34f6b&file_type=json`;
                     
-                    const fredRes = await fetchWithTimeout(fredUrl, {}, 5000);
+                    let fredRes = null;
+                    try {
+                        fredRes = await fetchWithTimeout(proxyUrl, {}, 5000);
+                        if (!fredRes.ok) fredRes = null;
+                    } catch(e) { fredRes = null; }
+                    
+                    if (!fredRes) {
+                        fredRes = await fetchWithTimeout(directUrl, {}, 8000);
+                    }
                     if (fredRes.ok) {
                         const fredData = await fredRes.json();
                         if (fredData.observations && fredData.observations.length > 0) {
@@ -7945,20 +7954,21 @@
             const container = document.getElementById('fed-history-container');
             const lastDecisionEl = document.getElementById('last-fed-decision');
             
-            // FRED API key moved to backend proxy
-            const FRED_KEY = null; // Key is now server-side
+            // FRED API key - fallback direto quando proxy indisponível
+            const FRED_KEY = '289c022214958a3eb611142e8dc34f6b';
             const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             
             try {
-                // Buscar últimas 400 observações do DFEDTARU (Target Rate Upper) para encontrar mudanças
-                // ~400 business days = ~1.5 anos, suficiente para 3+ decisões
-                const baseUrl = `https://visor-crypto-api.onrender.com/api/proxy/fred?series_id=DFEDTARU&sort_order=desc&limit=400`;
+                // Buscar últimas 400 observações do DFEDTARU para encontrar mudanças
+                const proxyUrl = `https://visor-crypto-api.onrender.com/api/proxy/fred?series_id=DFEDTARU&sort_order=desc&limit=400`;
+                const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&sort_order=desc&limit=400&api_key=${FRED_KEY}&file_type=json`;
                 
                 let response = null;
                 const proxies = [
-                    baseUrl, // Direto (funciona em muitos contextos)
-                    `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}`, // AllOrigins (comprovado)
-                    `https://corsproxy.io/?${encodeURIComponent(baseUrl)}` // CorsProxy
+                    proxyUrl,
+                    directUrl,
+                    `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`,
+                    `https://corsproxy.io/?${encodeURIComponent(directUrl)}`
                 ];
                 
                 for (const proxyUrl of proxies) {
@@ -8238,8 +8248,8 @@
         // CALENDÁRIO ECONÔMICO - FMP API
         // ============================================
         // FMP API key moved to backend proxy
-        const FMP_API_KEY = null; // Key is now server-side
-        window._FMP_API_KEY = null; // Key is now server-side, use proxy endpoint
+        const FMP_API_KEY = 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
+        window._FMP_API_KEY = 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
         const CALENDAR_CACHE_KEY = 'economic_calendar_cache';
         const CALENDAR_CACHE_DURATION = 10 * 60 * 1000; // 10 minutos
         
@@ -8284,10 +8294,21 @@
                 const fromDate = today.toISOString().split('T')[0];
                 const toDate = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                 
-                // FMP Economic Calendar API via backend proxy
-                const fmpUrl = `https://visor-crypto-api.onrender.com/api/proxy/fmp/calendar?from=${fromDate}&to=${toDate}`;
+                // FMP Economic Calendar API - proxy com fallback direto
+                let fmpResponse = null;
+                const fmpProxyUrl = `https://visor-crypto-api.onrender.com/api/proxy/fmp/calendar?from=${fromDate}&to=${toDate}`;
+                const fmpDirectUrl = `https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`;
                 
-                const response = await fetchWithTimeout(fmpUrl, {}, 10000);
+                try {
+                    fmpResponse = await fetchWithTimeout(fmpProxyUrl, {}, 8000);
+                    if (!fmpResponse.ok) fmpResponse = null;
+                } catch(e) { fmpResponse = null; }
+                
+                if (!fmpResponse) {
+                    fmpResponse = await fetchWithTimeout(fmpDirectUrl, {}, 10000);
+                }
+                
+                const response = fmpResponse;
                 let events = [];
                 
                 if (response.ok) {
