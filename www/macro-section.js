@@ -2223,7 +2223,7 @@
             macroLog('🔄 Buscando taxa do Fed via FRED API...', 'info');
             
             // 1. Buscar DFF (Effective Federal Funds Rate) - taxa real negociada
-            const dffUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFF&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=5`;
+            const dffUrl = `${BACKEND_PROXY}/fred?series_id=DFF&sort_order=desc&limit=5`;
             
             let effectiveRate = null;
             let targetUpper = null, targetLower = null;
@@ -2246,7 +2246,7 @@
             
             // 2. Buscar Range Target (Upper/Lower)
             try {
-                const upperUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=5`;
+                const upperUrl = `${BACKEND_PROXY}/fred?series_id=DFEDTARU&sort_order=desc&limit=5`;
                 const upperData = await fetchWithCorsProxy(upperUrl);
                 
                 if (upperData.observations && upperData.observations.length > 0) {
@@ -2254,7 +2254,7 @@
                     if (obs) targetUpper = parseFloat(obs.value);
                 }
                 
-                const lowerUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARL&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=5`;
+                const lowerUrl = `${BACKEND_PROXY}/fred?series_id=DFEDTARL&sort_order=desc&limit=5`;
                 const lowerData = await fetchWithCorsProxy(lowerUrl);
                 
                 if (lowerData.observations && lowerData.observations.length > 0) {
@@ -2278,7 +2278,7 @@
             
             // 3. Buscar CPI (inflação) - CPIAUCSL
             try {
-                const cpiUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=CPIAUCSL&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=13&units=pc1`;
+                const cpiUrl = `${BACKEND_PROXY}/fred?series_id=CPIAUCSL&sort_order=desc&limit=13&units=pc1`;
                 const cpiData = await fetchWithCorsProxy(cpiUrl);
                 
                 if (cpiData.observations && cpiData.observations.length > 0) {
@@ -2294,7 +2294,7 @@
             
             // 4. Buscar taxa de desemprego - UNRATE
             try {
-                const unUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=UNRATE&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=5`;
+                const unUrl = `${BACKEND_PROXY}/fred?series_id=UNRATE&sort_order=desc&limit=5`;
                 const unData = await fetchWithCorsProxy(unUrl);
                 
                 if (unData.observations && unData.observations.length > 0) {
@@ -2688,24 +2688,15 @@
         if (FOMC_DECISIONS_HISTORY_CACHE) return FOMC_DECISIONS_HISTORY_CACHE;
         
         try {
-            const url = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=500`;
+            const url = `${BACKEND_PROXY}/fred?series_id=DFEDTARU&sort_order=desc&limit=500`;
             let data = null;
             
-            const urls = [
-                url,
-                `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-                `https://corsproxy.io/?${encodeURIComponent(url)}`
-            ];
-            
-            for (const u of urls) {
-                try {
-                    const resp = await fetch(u, { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined });
-                    if (resp.ok) {
-                        data = await resp.json();
-                        if (data.observations) break;
-                    }
-                } catch(e) { continue; }
-            }
+            try {
+                const resp = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined });
+                if (resp.ok) {
+                    data = await resp.json();
+                }
+            } catch(e) { /* fallback below */ }
             
             if (!data || !data.observations) return [];
             
@@ -2800,7 +2791,7 @@
             // Para FOMC/Fed Rate, buscar mais dados e filtrar apenas mudanças
             const limit = fredSeries === 'DFEDTARU' ? 50 : 12;
             
-            const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${fredSeries}&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=${limit}${units}`;
+            const url = `${BACKEND_PROXY}/fred?series_id=${fredSeries}&sort_order=desc&limit=${limit}${units}`;
             
             const data = await fetchWithCorsProxy(url);
             
@@ -3015,33 +3006,20 @@
             const fromDate = today.toISOString().split('T')[0];
             const toDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             
-            // Tentar endpoint novo (stable) e legado (v3)
-            const urls = [
-                `https://financialmodelingprep.com/stable/economic-calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`,
-                `https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`
-            ];
+            // Usar backend proxy para FMP calendar
+            const url = `${BACKEND_PROXY}/fmp/calendar?from=${fromDate}&to=${toDate}`;
             
             let data = null;
-            for (const baseUrl of urls) {
-                const proxyUrls = [
-                    baseUrl,
-                    `https://api.allorigins.win/raw?url=${encodeURIComponent(baseUrl)}`,
-                    `https://corsproxy.io/?${encodeURIComponent(baseUrl)}`
-                ];
-                for (const url of proxyUrls) {
-                    try {
-                        const response = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
-                        if (!response.ok) continue;
-                        const result = await response.json();
-                        if (Array.isArray(result) && result.length > 0) {
-                            data = result;
-                            break;
-                        }
-                    } catch(e) {
-                        continue;
+            try {
+                const response = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined });
+                if (response.ok) {
+                    const result = await response.json();
+                    if (Array.isArray(result) && result.length > 0) {
+                        data = result;
                     }
                 }
-                if (data) break;
+            } catch(e) {
+                macroLog('⚠️ Erro ao buscar calendário FMP via proxy: ' + e.message, 'warn');
             }
             
             if (!data || data.length === 0) return null;

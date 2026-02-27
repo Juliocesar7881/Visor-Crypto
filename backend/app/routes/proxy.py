@@ -35,6 +35,7 @@ async def proxy_fred(
     series_id: str = Query(..., description="FRED series ID"),
     sort_order: str = Query("desc"),
     limit: int = Query(10),
+    units: Optional[str] = Query(None, description="Data transformation (e.g. pc1 for percent change)"),
 ):
     """Proxy FRED API requests."""
     url = (
@@ -42,6 +43,8 @@ async def proxy_fred(
         f"?series_id={series_id}&api_key={FRED_API_KEY}"
         f"&file_type=json&sort_order={sort_order}&limit={limit}"
     )
+    if units:
+        url += f"&units={units}"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url)

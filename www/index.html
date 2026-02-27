@@ -8284,8 +8284,8 @@
                 const fromDate = today.toISOString().split('T')[0];
                 const toDate = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                 
-                // FMP Economic Calendar API
-                const fmpUrl = `https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`;
+                // FMP Economic Calendar API via backend proxy
+                const fmpUrl = `https://visor-crypto-api.onrender.com/api/proxy/fmp/calendar?from=${fromDate}&to=${toDate}`;
                 
                 const response = await fetchWithTimeout(fmpUrl, {}, 10000);
                 let events = [];
