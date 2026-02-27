@@ -456,7 +456,7 @@
                     <!-- Chart Container v22 - IDs ÚNICOS -->
                     <div id="macro-chart-container" style="background: #0d0d1a; border-radius: 12px; margin-bottom: 16px; width: 100%; height: 280px; position: relative; overflow: hidden;">
                         <canvas id="macro-chart-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></canvas>
-                        <div id="macro-chart-loading" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(13,13,26,0.95); z-index: 5;">
+                        <div id="macro-chart-loading" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(13,13,26,0.95); z-index: 5; transition: opacity 0.3s ease;">
                             <i class="fas fa-spinner fa-spin" style="color: #3b82f6; font-size: 24px;"></i>
                         </div>
                         <button id="macro-maximize-btn" style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); border: none; width: 32px; height: 32px; border-radius: 8px; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 15;" title="Maximizar">
@@ -464,13 +464,31 @@
                         </button>
                     </div>
                     
-                    <!-- Stats -->
-                    <div id="indicator-stats" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;"></div>
+                    <!-- Stats (skeleton placeholders to reserve height) -->
+                    <div id="indicator-stats" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 10px;">
+                            <div style="color: #888; font-size: 11px;">Abertura</div>
+                            <div style="font-weight: 600; color: #555; height: 20px; background: rgba(255,255,255,0.04); border-radius: 4px; width: 70%; animation: macroPulse 1.5s infinite;"></div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 10px;">
+                            <div style="color: #888; font-size: 11px;">Fech. Anterior</div>
+                            <div style="font-weight: 600; color: #555; height: 20px; background: rgba(255,255,255,0.04); border-radius: 4px; width: 70%; animation: macroPulse 1.5s infinite;"></div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 10px;">
+                            <div style="color: #888; font-size: 11px;">Máxima</div>
+                            <div style="font-weight: 600; color: #555; height: 20px; background: rgba(255,255,255,0.04); border-radius: 4px; width: 70%; animation: macroPulse 1.5s infinite;"></div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 10px;">
+                            <div style="color: #888; font-size: 11px;">Mínima</div>
+                            <div style="font-weight: 600; color: #555; height: 20px; background: rgba(255,255,255,0.04); border-radius: 4px; width: 70%; animation: macroPulse 1.5s infinite;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <style>
                 @keyframes slideUp { from { transform: translate3d(0, 100%, 0); } to { transform: translate3d(0, 0, 0); } }
                 @keyframes spin { to { transform: rotate(360deg); } }
+                @keyframes macroPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
                 .macro-tf-dropdown { position: relative; }
                 .macro-tf-selector {
                     display: flex; align-items: center; justify-content: space-between;
@@ -542,7 +560,7 @@
                 const canvas = document.getElementById('macro-chart-canvas');
                 const loadingEl = document.getElementById('macro-chart-loading');
                 if (canvas) { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); }
-                if (loadingEl) loadingEl.style.display = 'flex';
+                if (loadingEl) { loadingEl.style.opacity = '1'; loadingEl.style.display = 'flex'; }
                 indicatorCandleData = null;
                 loadIndicatorChartData(symbol);
             });
@@ -635,7 +653,10 @@
             if (prefetchedData) {
                 indicatorCandleData = prefetchedData;
                 const loadingEl = document.getElementById('macro-chart-loading');
-                if (loadingEl) loadingEl.style.display = 'none';
+                if (loadingEl) {
+                    loadingEl.style.opacity = '0';
+                    setTimeout(() => { loadingEl.style.display = 'none'; }, 300);
+                }
                 if (indicatorChartType === 'candle') {
                     drawIndicatorCandleChart(indicatorCandleData);
                 } else {
@@ -1458,7 +1479,7 @@
             return;
         }
         
-        if (loadingEl) loadingEl.style.display = 'flex';
+        if (loadingEl) { loadingEl.style.opacity = '1'; loadingEl.style.display = 'flex'; }
         
         // Verificar cache
         const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
@@ -1466,7 +1487,7 @@
         if (cached && (Date.now() - cached.timestamp) < CHART_CACHE_TTL) {
             macroLog(`📦 Gráfico ${symbol} (${indicatorChartPeriod}) do cache`, 'info');
             indicatorCandleData = cached.data;
-            loadingEl.style.display = 'none';
+            if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
             if (indicatorChartType === 'candle') {
                 drawIndicatorCandleChart(indicatorCandleData, symbol);
             } else {
@@ -1475,6 +1496,7 @@
             return;
         }
         
+        loadingEl.style.opacity = '1';
         loadingEl.style.display = 'flex';
         
         try {
@@ -1559,8 +1581,8 @@
                 
                 macroLog('✅ Dados prontos! Candles: ' + indicatorCandleData.length, 'success');
                 
-                // Esconder loading ANTES de desenhar
-                loadingEl.style.display = 'none';
+                // Esconder loading ANTES de desenhar (com fade)
+                if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
                 
                 if (indicatorChartType === 'candle') {
                     macroLog('📊 Chamando drawIndicatorCandleChart...', 'info');
@@ -1577,7 +1599,7 @@
             macroLog('❌ Erro gráfico: ' + e.message, 'error');
             const container = document.getElementById('macro-chart-container');
             const loadingEl = document.getElementById('macro-chart-loading');
-            if (loadingEl) loadingEl.style.display = 'none';
+            if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
             if (container) {
                 container.innerHTML = `
                     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #666;">
@@ -1606,8 +1628,8 @@
             return;
         }
         
-        // Esconder loading
-        if (loadingEl) loadingEl.style.display = 'none';
+        // Esconder loading com fade
+        if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
         
         // Usar getBoundingClientRect como na HOME
         const rect = container.getBoundingClientRect();
@@ -1727,8 +1749,8 @@
             return;
         }
         
-        // Esconder loading
-        if (loadingEl) loadingEl.style.display = 'none';
+        // Esconder loading com fade
+        if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
         
         // Usar getBoundingClientRect como na HOME
         const rect = container.getBoundingClientRect();
