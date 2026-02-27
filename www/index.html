@@ -17174,6 +17174,8 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-2121626726443679/9603615439';
         let admobReady = false;
         let admobLoaded = false;
+        let _admobInitStarted = false;
+        let _admobConsentGranted = false;
         let userAdConsent = localStorage.getItem('visor_ad_consent'); // 'granted' | 'denied' | null
 
         // Show consent dialog on first launch (LGPD/GDPR compliance)
@@ -17219,28 +17221,43 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         }
 
         async function initAdMob() {
+            if (_admobInitStarted) return; // Guard against double initialization
+            _admobInitStarted = true;
+            
             try {
-                if (!window.Capacitor || !window.Capacitor.Plugins) return;
+                if (!window.Capacitor || !window.Capacitor.Plugins) {
+                    _admobInitStarted = false; // Allow retry when Capacitor loads
+                    return;
+                }
                 const AdMob = window.Capacitor.Plugins.AdMob || 
                     (window.Capacitor.registerPlugin ? window.Capacitor.registerPlugin('AdMob') : null);
-                if (!AdMob) return;
+                if (!AdMob) {
+                    console.warn('[AdMob] Plugin not available');
+                    return;
+                }
                 
                 // Ask for consent before initializing
                 const consentGranted = await showAdConsentDialog();
+                _admobConsentGranted = consentGranted;
                 
                 window._AdMob = AdMob;
                 
-                AdMob.addListener('interstitialAdLoaded', () => { admobLoaded = true; });
-                AdMob.addListener('interstitialAdFailedToLoad', () => {
+                AdMob.addListener('interstitialAdLoaded', () => { 
+                    admobLoaded = true; 
+                    console.log('[AdMob] Interstitial loaded and ready');
+                });
+                AdMob.addListener('interstitialAdFailedToLoad', (info) => {
                     admobLoaded = false;
+                    console.warn('[AdMob] Failed to load:', info?.message || info?.code || 'unknown');
                     setTimeout(() => prepareInterstitial(), 30000);
                 });
                 AdMob.addListener('interstitialAdDismissed', () => {
                     admobLoaded = false;
                     setTimeout(() => prepareInterstitial(), 5000);
                 });
-                AdMob.addListener('interstitialAdFailedToShow', () => {
+                AdMob.addListener('interstitialAdFailedToShow', (info) => {
                     admobLoaded = false;
+                    console.warn('[AdMob] Failed to show:', info?.message || info?.code || 'unknown');
                     setTimeout(() => prepareInterstitial(), 10000);
                 });
                 
@@ -17248,14 +17265,22 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                     initializeForTesting: false,
                     tagForChildDirectedTreatment: false,
                     tagForUnderAgeOfConsent: false,
-                    maxAdContentRating: 'General',
-                    requestNonPersonalizedAdsOnly: !consentGranted
+                    maxAdContentRating: 'General'
                 });
                 admobReady = true;
+                console.log('[AdMob] Initialized successfully');
                 
                 await prepareInterstitial();
+                
+                // Periodic retry: ensure an ad is always pre-loaded
+                setInterval(() => {
+                    if (admobReady && !admobLoaded) {
+                        console.log('[AdMob] Periodic retry: preparing interstitial...');
+                        prepareInterstitial();
+                    }
+                }, 60000);
             } catch (e) {
-                // AdMob init silently fails on web/non-Capacitor
+                console.warn('[AdMob] Init error:', e?.message || e);
             }
         }
         
@@ -17264,31 +17289,58 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
             try {
                 await window._AdMob.prepareInterstitial({
                     adId: ADMOB_INTERSTITIAL_ID,
-                    isTesting: false
+                    isTesting: false,
+                    npa: !_admobConsentGranted
                 });
                 admobLoaded = true;
+                console.log('[AdMob] Interstitial prepared');
             } catch (e) {
                 admobLoaded = false;
+                console.warn('[AdMob] Prepare error:', e?.message || e);
             }
         }
         
         async function showInterstitialAd() {
-            if (!admobReady || !admobLoaded || !window._AdMob) return false;
+            if (!admobReady || !window._AdMob) {
+                console.log('[AdMob] Not initialized, skipping ad');
+                return false;
+            }
+            
+            // If ad not loaded yet, try to prepare and wait briefly
+            if (!admobLoaded) {
+                console.log('[AdMob] Ad not loaded, attempting quick prepare...');
+                try {
+                    await prepareInterstitial();
+                    // Wait up to 3 seconds for the ad to be ready
+                    for (let i = 0; i < 6; i++) {
+                        if (admobLoaded) break;
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+                } catch(e) {}
+            }
+            
+            if (!admobLoaded) {
+                console.log('[AdMob] Ad still not loaded after retry, skipping');
+                return false;
+            }
+            
             try {
                 await window._AdMob.showInterstitial();
+                console.log('[AdMob] Ad shown successfully');
                 admobLoaded = false;
                 setTimeout(() => prepareInterstitial(), 3000);
                 return true;
             } catch (e) {
+                console.warn('[AdMob] Show error:', e?.message || e);
                 admobLoaded = false;
                 setTimeout(() => prepareInterstitial(), 5000);
                 return false;
             }
         }
         
-        // Initialize AdMob when Capacitor is ready
+        // Initialize AdMob when Capacitor is ready (single init with retry)
         document.addEventListener('DOMContentLoaded', () => setTimeout(initAdMob, 2000));
-        window.addEventListener('load', () => setTimeout(initAdMob, 3000));
+        window.addEventListener('load', () => setTimeout(initAdMob, 4000)); // retry if first attempt failed (guard prevents double init)
         
         // Listener para evento customizado do Android (MainActivity.java)
         document.addEventListener('androidBackButton', function(e) {
