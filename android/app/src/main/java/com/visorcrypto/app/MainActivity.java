@@ -1,5 +1,6 @@
 package com.visorcrypto.app;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Build;
 import android.webkit.WebView;
@@ -7,6 +8,8 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     
+    private boolean pendingDashboardOpen = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // Register custom plugins
@@ -14,9 +17,49 @@ public class MainActivity extends BridgeActivity {
         
         super.onCreate(savedInstanceState);
         
-        // WebView debugging desabilitado para produção (Play Store)
-        // Descomente a linha abaixo apenas para desenvolvimento local:
-        // WebView.setWebContentsDebuggingEnabled(true);
+        // WebView debugging habilitado temporariamente para diagnóstico AdMob
+        // DESABILITAR antes de publicar na Play Store:
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
+
+        // Check if launched from signal notification
+        checkNotificationIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        // App was already open, navigate to dashboard immediately
+        navigateToDashboard();
+    }
+
+    private void checkNotificationIntent(Intent intent) {
+        if (intent != null && intent.hasCategory("android.intent.category.LAUNCHER")) {
+            return; // Normal launch, not from notification
+        }
+        // If the intent comes from our notification (PendingIntent targets MainActivity)
+        // set flag to open dashboard once WebView is ready
+        pendingDashboardOpen = true;
+        // Delayed execution to wait for WebView to load
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView != null) {
+            webView.postDelayed(this::navigateToDashboard, 3000);
+        }
+    }
+
+    private void navigateToDashboard() {
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView != null) {
+            webView.post(() -> {
+                webView.evaluateJavascript(
+                    "if(typeof showSection==='function'){showSection('dashboard');}",
+                    null
+                );
+            });
+        }
+        pendingDashboardOpen = false;
     }
     
     @Override

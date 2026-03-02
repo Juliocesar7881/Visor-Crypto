@@ -1,7 +1,8 @@
 # Documentação Completa — Análise Técnica Avançada (Visor Crypto)
 
-> Versão: ta-engine-v2.js + **ta-engine-v3.js** + index.html  
-> Data: 2025
+> Versão: ta-engine-v2.js + **ta-engine-v3.js** + **ta-engine-v4.js (v7.2.0)** + index.html  
+> Data: Fevereiro 2026  
+> APK: v11 (23.1 MB)
 
 ---
 
@@ -41,11 +42,30 @@
     - [11k. Enhanced Regime Detector](#enhanced-regime)
     - [11l. BOS Validation (False Breakout Detector)](#bos-validation)
     - [11m. System Limitations & Warnings](#system-warnings)
-12. [Cálculo Final do Score e Sinal](#score-final)
-13. [Cache e Auto-Refresh](#cache-autorefresh)
-14. [AI Summary](#ai-summary)
-15. [Interface Renderizada (Seções da UI)](#ui-render)
-16. [Tabela Resumo de Pesos](#tabela-pesos)
+12. [**Módulo V4 — Reactive Intelligence Engine (v7.2.0)**](#modulo-v4)
+    - [12a. Arquitetura de 9 Gates](#9-gates)
+    - [12b. Regime-Adaptive Weights](#regime-weights)
+    - [12c. Sistema Centralizado de Soft Adjustments (±25)](#soft-adjustments)
+    - [12d. Penalidade de Redundância (Worst-Penalty)](#redundancy-v4)
+    - [12e. Calibração Piecewise](#calibracao-piecewise)
+    - [12f. Filtro de Funding Gradual (4 tiers)](#funding-gradual)
+    - [12g. Cold Start Guard (<8 sinais)](#cold-start)
+    - [12h. Acceptance Timing (15m candles)](#acceptance-timing)
+    - [12i. BOS Scoring Contínuo (0/0.5/1.0)](#bos-continuo)
+    - [12j. Liquidity Levels Analysis](#liquidity-levels)
+    - [12k. Hidden Divergence Detection](#hidden-divergence)
+    - [12l. Signal TTL (Time-To-Live)](#signal-ttl)
+    - [12m. Dynamic Exit Plan (TP1/TP2/TP3 + ATR Trailing)](#dynamic-exit)
+    - [12n. Liquidation Zones Estimation](#liquidation-zones)
+    - [12o. Order Flow Ring Buffer (WebSocket)](#order-flow-ws)
+    - [12p. Notification Cooldown](#notification-cooldown)
+    - [12q. EWMA Adaptive Alpha (V3 Enhancement)](#ewma-alpha)
+    - [12r. Pipeline Completo V2→V3→V4](#pipeline-completo)
+13. [Cálculo Final do Score e Sinal](#score-final)
+14. [Cache e Auto-Refresh](#cache-autorefresh)
+15. [AI Summary](#ai-summary)
+16. [Interface Renderizada (Seções da UI)](#ui-render)
+17. [Tabela Resumo de Pesos](#tabela-pesos)
 
 ---
 
@@ -97,6 +117,42 @@ www/
     ├── applyContextualScoring()
     ├── calculateDynamicTargets()
     └── improvedLiquidationModel()
+
+├── ta-engine-v3.js     (1.734 linhas, IIFE)
+│   Exporta para window.TAEngineV3:
+│   ├── detectCrash()
+│   ├── calculateDecorrelation()
+│   ├── updateAdaptiveWeights()
+│   ├── calculatePositionSize()
+│   ├── recordVirtualTrade()
+│   ├── analyzeOnChain()
+│   ├── aggregateCVDMultiExchange()
+│   ├── calculateEdge()
+│   ├── rollingCorrelationEngine()
+│   ├── nonLinearScoringEngine()
+│   ├── enhancedRegimeDetector()
+│   ├── validateBOS()
+│   └── getAdaptiveAlpha()          ← v7.2 (regime-adaptive EWMA)
+│
+└── ta-engine-v4.js     (4.678 linhas, v7.2.0)
+    Exporta para window.TAEngineV4:
+    ├── enhanceWithReactive()        ← entry point principal
+    ├── evaluateReactiveGates()      ← 9 gates regime-adaptivos
+    ├── calibrateConfidence()        ← piecewise 3-segment
+    ├── applyRedundancyPenalty()     ← worst-penalty + 2%/extra
+    ├── checkFundingFilter()         ← 4-tier gradual
+    ├── checkModelStability()        ← cold start guard
+    ├── scoreBosGate()               ← BOS contínuo 0-1
+    ├── detectAcceptance()           ← 15m acceptance timing
+    ├── analyzeLiquidityLevels()     ← pools de liquidez
+    ├── detectHiddenDivergence()     ← divergência oculta
+    ├── checkSignalTTL()             ← time-to-live 4h
+    ├── generateDynamicExitPlan()    ← TP1-3 + ATR trailing
+    ├── estimateLiquidationZones()   ← 5x/10x/25x/50x
+    ├── connectOrderFlowWS()         ← WebSocket ring buffer 500
+    ├── getOrderFlowAnalysis()       ← análise tempo real
+    ├── isNotificationOnCooldown()   ← cooldown por tipo
+    └── markNotificationSent()
 ```
 
 ---
@@ -930,7 +986,673 @@ threshold = crash ? 6 : 4
 
 ---
 
-## 12. Cálculo Final do Score e Sinal {#score-final}
+## 12. Módulo V4 — Reactive Intelligence Engine (v7.2.0) {#modulo-v4}
+
+O **ta-engine-v4.js** é a camada final do pipeline de análise. Recebe os outputs de V2 e V3 e aplica um sistema de **9 gates regime-adaptivos** que modulam a confiança final do sinal. Introduzido na v7.0 e significativamente refatorado na **v7.2.0** com 17 mudanças arquiteturais.
+
+**Arquivo:** `www/ta-engine-v4.js` — 4.678 linhas  
+**Versão atual:** 7.2.0  
+**Entry point:** `enhanceWithReactive(analysis, rawData)`
+
+### Filosofia do V4
+
+```
+V2 (score bruto + regime + BOS + targets)
+  │
+  ▼
+V3 (crash detector, decorrelation, adaptive weights, edge, on-chain)
+  │
+  ▼
+V4 (9 gates → soft adjustments → confiança calibrada → módulos finais)
+```
+
+O V4 **não substitui** V2/V3 — ele **refina** o score via:
+1. **Gates** que devem ser "passados" para o sinal ser válido
+2. **Soft adjustments** que somam/subtraem da confiança (±25 cap)
+3. **Módulos enrichment** que adicionam contexto extra (liquidez, divergência, exit plan, etc.)
+
+---
+
+### 12a. Arquitetura de 9 Gates {#9-gates}
+
+O sistema de gates é o coração do V4. Cada gate retorna `true/false` + um score parcial. O `gateScore` acumulado determina se o sinal é aceito.
+
+| Gate | Nome | O que avalia | Score máx |
+|------|------|-------------|-----------|
+| 1 | **Trend Alignment** | Regime + direção do sinal | 2.0 |
+| 2 | **Volume Confirmation** | Volume relativo da vela | 2.0 |
+| 3 | **Order Flow Agreement** | CVD + book delta na direção | 2.0 |
+| 4 | **MultTF Consensus** | Confluência 1h + 4h | 2.0 |
+| 5 | **Funding Sentiment** | Funding rate (4 tiers) | 1.5 |
+| 6 | **Volatility Regime** | ATR + volRegime check | 1.5 |
+| 7 | **BOS Validation** | Break of Structure contínuo | 2.0 |
+| 8 | **Risk/Reward** | TP1/SL ratio mínimo | 1.5 |
+| 9 | **Acceptance** | Candle fecha acima/abaixo nível | 1.0 |
+
+**Threshold de aceitação:** `gateScore ≥ requiredGateScore(regime)`
+
+```
+regimeThresholds = {
+  VOLATILE: 4.5,   // mais rígido
+  TREND:    3.0,   // mais flexível em tendência
+  RANGE:    4.0,
+  SQUEEZE:  3.5,
+  DEFAULT:  4.0
+}
+```
+
+---
+
+### 12b. Regime-Adaptive Weights {#regime-weights}
+
+Cada gate tem seu peso modulado pelo regime de mercado atual. Isso permite que o sistema seja **mais exigente** em mercados laterais/voláteis e **mais flexível** em tendências claras.
+
+**Mapa de pesos por regime:**
+
+| Gate | TREND | VOLATILE | RANGE | SQUEEZE | DEFAULT |
+|------|-------|----------|-------|---------|---------|
+| Trend Alignment | 1.5 | 0.8 | 1.0 | 1.0 | 1.0 |
+| Volume | 1.0 | 1.5 | 1.2 | 1.3 | 1.0 |
+| Order Flow | 1.2 | 1.3 | 1.0 | 1.0 | 1.0 |
+| MultTF | 1.3 | 0.7 | 1.0 | 1.0 | 1.0 |
+| Funding | 0.8 | 1.2 | 1.0 | 1.0 | 1.0 |
+| Volatility | 0.7 | 1.5 | 1.0 | 1.2 | 1.0 |
+| BOS | 1.3 | 0.9 | 1.2 | 1.0 | 1.0 |
+| Risk/Reward | 1.0 | 1.2 | 1.0 | 1.1 | 1.0 |
+| Acceptance | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 |
+
+---
+
+### 12c. Sistema Centralizado de Soft Adjustments (±25) {#soft-adjustments}
+
+**Mudança central da v7.2.0.** Antes, ~12 ajustes de confiança pós-gate estavam espalhados pelo código, cada um com seu próprio `clamp()`. Agora existe um **array centralizado** que coleta todos os ajustes e aplica uma vez só.
+
+**Funcionamento:**
+
+```javascript
+const softAdjustments = [];
+
+// Cada módulo adiciona um ajuste:
+softAdjustments.push({ source: 'regime_align', delta: +5 });
+softAdjustments.push({ source: 'liquidity_near', delta: -3 });
+softAdjustments.push({ source: 'hidden_div', delta: +4 });
+// ... até ~15 fontes possíveis
+
+// Aplicação final:
+const rawSoftTotal = softAdjustments.reduce((s, a) => s + a.delta, 0);
+const cappedSoftTotal = clamp(rawSoftTotal, -25, +25);
+confidence = clamp(confidence + cappedSoftTotal, 0, 100);
+```
+
+**Fontes de soft adjustments:**
+
+| Fonte | Delta | Condição |
+|-------|-------|----------|
+| Regime alignment | +3 a +5 | Regime favorece direção |
+| Regime misalignment | −5 | Regime contra sinal |
+| Strong trend | +5 | Trend Alignment gate forte |
+| Volume surge | +3 | Volume > 2× média |
+| Funding OK | +2 | Funding favorece |
+| Funding penalty | −3 a −15 | Funding adverso (gradual) |
+| Edge positivo | +3 | Edge > 1% |
+| Edge negativo | −5 | Edge < −1% |
+| Macro favorável | +2 a +3 | DXY/VIX confirmam |
+| Crash state | −10 | crashDetector ativo |
+| Liquidity levels | −3 a +3 | Proximidade de pools |
+| Hidden divergence | +4 | Divergência oculta confirmada |
+| Signal age | −2 a −8 | TTL decaying |
+| High decorrelation | +3 | Sinais independentes |
+| Low decorrelation | −4 | Sinais redundantes |
+
+**Cap ±25:** Nenhuma combinação de ajustes ultrapassa 25 pontos positivos ou negativos, evitando overshoot.
+
+---
+
+### 12d. Penalidade de Redundância (Worst-Penalty) {#redundancy-v4}
+
+**Antes (v7.1):** Fazia média das penalidades de sobreposição.  
+**Agora (v7.2):** Usa **worst-penalty** como base + 2% por sobreposição adicional.
+
+```javascript
+function applyRedundancyPenalty(indicators) {
+  const overlaps = findOverlappingIndicators(indicators);
+  if (overlaps.length === 0) return indicators;
+
+  // Pega a MAIOR penalidade individual
+  const worstPenalty = Math.max(...overlaps.map(o => o.penalty));
+
+  // Adiciona 2% por cada sobreposição extra
+  const totalPenalty = worstPenalty + (overlaps.length - 1) * 0.02;
+
+  // Aplica aos pesos dos indicadores redundantes
+  overlaps.forEach(o => {
+    o.indicator.weight *= (1 - totalPenalty);
+  });
+}
+```
+
+**Exemplo:** Se RSI e Stochastic RSI ambos dizem "sobrecomprado" (overlap), e RSI + CCI também se sobrepõem:
+- Worst penalty = max(0.30, 0.20) = 0.30
+- Total = 0.30 + (2−1) × 0.02 = 0.32
+- Pesos dos indicadores redundantes × 0.68
+
+---
+
+### 12e. Calibração Piecewise {#calibracao-piecewise}
+
+**Antes (v7.1):** Usava sigmoid logística para mapear confiança bruta → calibrada.  
+**Agora (v7.2):** Usa **função piecewise de 3 segmentos** que é mais previsível e interpretável.
+
+```
+calibrateConfidence(raw):
+  Se raw ≤ 30:   → raw × 0.5          // Sinais fracos: mantém baixo
+  Se raw ≤ 70:   → 15 + (raw-30) × 1.0  // Zona média: linear 1:1
+  Se raw > 70:   → 55 + (raw-70) × 0.6  // Sinais fortes: comprime
+```
+
+**Gráfico:**
+```
+Calibrada
+  80 │                         ╱╱╱
+  60 │                    ╱╱╱╱
+  40 │               ╱╱╱╱
+  20 │          ╱╱╱╱
+  10 │    ╱╱╱
+   0 ├───┬───┬───┬───┬───┬───┬───
+     0   20  30  40  50  60  70  80  100  Raw
+```
+
+**Vantagens sobre sigmoid:**
+- Linear na zona média (30-70) = mais sensível onde importa
+- Comprime extremos sem platô artificial
+- Fácil de tunar (3 coeficientes vs sigmoid opaca)
+
+---
+
+### 12f. Filtro de Funding Gradual (4 Tiers) {#funding-gradual}
+
+**Antes:** Funding rate fora do limiar = sinal **bloqueado** (binário).  
+**Agora:** Sistema de 4 tiers com penalidade gradual.
+
+| Tier | Funding Rate | Ação | Penalty |
+|------|-------------|------|---------|
+| 1 - Normal | |rate| < 0.01% | Nenhuma | 0 |
+| 2 - Watch | 0.01% ≤ |rate| < 0.03% | Soft warning | −3 |
+| 3 - Elevated | 0.03% ≤ |rate| < 0.06% | Confiança reduzida | −8 |
+| 4 - Extreme | |rate| ≥ 0.06% | Quase-bloqueio | −15 |
+
+**Nota:** Penalidades entram no soft adjustments system. Apenas taxa ≥ 0.10% bloqueia completamente o sinal (backward compat com `blocked: true`).
+
+Também verifica **direção**: funding rate positivo alto + sinal LONG = penalidade extra (crowded trade).
+
+---
+
+### 12g. Cold Start Guard (<8 Sinais) {#cold-start}
+
+Quando o modelo tem poucos dados históricos (< 8 sinais processados), os gates e weights ainda não são confiáveis. O cold start guard:
+
+1. Reduz `maxConfidence` em 20% (cap temporário)
+2. Adiciona warning `"COLD_START: modelo com poucos dados, confiança reduzida"`
+3. Desabilita gates que dependem de histórico (edge, decorrelation)
+4. Mantém apenas gates baseados em dados atuais (volume, funding, BOS)
+
+```
+if (signalCount < 8) {
+  maxConfidence *= 0.80;
+  warnings.push("COLD_START");
+  gates.edge.enabled = false;
+  gates.decorrelation.enabled = false;
+}
+```
+
+**Após 8+ sinais:** comportamento normal restaurado automaticamente.
+
+---
+
+### 12h. Acceptance Timing (15m Candles) {#acceptance-timing}
+
+O gate de **Acceptance** verifica se o preço "aceitou" um nível-chave em timeframe rápido (15 minutos), aumentando a confiança de que o breakout/rejection é real.
+
+**Função:** `detectAcceptance(rawData, direction)`
+
+```
+Lógica:
+1. Pega as últimas 4 candles de 15m
+2. Se direction = 'LONG':
+   - Verifica se ≥ 3 candles fecharam ACIMA do nível de breakout
+   - Close da última candle > Open (bullish)
+3. Se direction = 'SHORT':
+   - Verifica se ≥ 3 candles fecharam ABAIXO do nível
+   - Close da última candle < Open (bearish)
+
+Retorno:
+  { accepted: true/false, strength: 0-1.0 }
+```
+
+**Score do gate:**
+- `accepted + strength > 0.7` → gate score = 1.0
+- `accepted + strength > 0.4` → gate score = 0.5
+- Caso contrário → gate score = 0
+
+---
+
+### 12i. BOS Scoring Contínuo (0/0.5/1.0) {#bos-continuo}
+
+**Antes:** BOS gate era binário (pass/fail).  
+**Agora:** Retorna score contínuo via `scoreBosGate()`.
+
+**Função:** `scoreBosGate(bosData, direction)`
+
+| Condição | Score |
+|----------|-------|
+| BOS confirmado (REAL) na mesma direção do sinal | 1.0 |
+| BOS não-confirmado (UNCONFIRMED) na direção | 0.5 |
+| Sem BOS / BOS contra direção | 0.0 |
+| FAKE_SWEEP detectado (contra sinal) | −0.5 |
+
+**Integração no gateScore:**
+```
+bosGateScore = scoreBosGate(v2.bos, direction) * regimeWeight.bos;
+gateScore += bosGateScore;
+```
+
+Isso permite sinais com BOS parcial passarem com score reduzido em vez de serem descartados.
+
+---
+
+### 12j. Liquidity Levels Analysis {#liquidity-levels}
+
+**Função:** `analyzeLiquidityLevels(rawData, currentPrice)`
+
+Identifica **pools de liquidez** onde existem concentrações de ordens, usando dados do order book e volume profile.
+
+**Análise:**
+
+1. **Mapeamento:** Identifica clusters de bid/ask no livro de ordens (> 2× média)
+2. **Proximidade:** Calcula distância do preço atual a cada pool
+3. **Magnetismo:** Pools próximos (< 0.5% de distância) "atraem" o preço
+
+**Output:**
+```javascript
+{
+  nearestSupport: { price: 64200, strength: 8.5, distance: -0.3% },
+  nearestResistance: { price: 65800, strength: 6.2, distance: +0.8% },
+  liquidityImbalance: 'BID_HEAVY',  // mais liquidez no bid
+  poolsNearby: 3,
+  magneticBias: 'DOWN'  // preço tende a ser puxado para suporte forte
+}
+```
+
+**Soft adjustment:**
+- Pool forte na direção do sinal = +3
+- Pool forte contra = −3
+- Imbalance favorece = +2
+
+---
+
+### 12k. Hidden Divergence Detection {#hidden-divergence}
+
+**Função:** `detectHiddenDivergence(rawData, direction)`
+
+Divergências **ocultas** (hidden) são sinais de **continuação** da tendência, ao contrário das regulares (que indicam reversão).
+
+**Tipos detectados:**
+
+| Tipo | Preço | RSI | Significado |
+|------|-------|-----|-------------|
+| Hidden Bullish | Higher Low | Lower Low | Tendência de alta continua |
+| Hidden Bearish | Lower High | Higher High | Tendência de baixa continua |
+
+**Algoritmo:**
+1. Identifica os últimos 3 pivots de preço (swing highs/lows)
+2. Compara com os pivots correspondentes do RSI
+3. Se preço faz HL mas RSI faz LL → hidden bullish divergence
+
+**Output:**
+```javascript
+{
+  detected: true,
+  type: 'HIDDEN_BULLISH',
+  strength: 0.75,      // 0-1 baseado na magnitude
+  pivotCount: 3,
+  confirmedByVolume: true
+}
+```
+
+**Soft adjustment:** +4 se hidden divergence confirma direção do sinal. Ignorada se contra.
+
+---
+
+### 12l. Signal TTL (Time-To-Live) {#signal-ttl}
+
+**Função:** `checkSignalTTL(signalTimestamp)`
+
+Sinais não devem viver eternamente. O TTL system controla a **idade** do sinal e aplica **decay**.
+
+**Regras:**
+
+| Idade do Sinal | Status | Ação |
+|----------------|--------|------|
+| 0 – 2 horas | FRESH | Nenhuma penalidade |
+| 2 – 3 horas | AGING | −2 no soft adjustment |
+| 3 – 4 horas | STALE | −5 no soft adjustment |
+| > 4 horas | EXPIRED | Sinal invalidado |
+
+**Output:**
+```javascript
+{
+  age: 150,           // minutos
+  status: 'AGING',
+  remainingMinutes: 90,
+  decayFactor: 0.92,  // multiplicador de confiança
+  expired: false
+}
+```
+
+**Integração:** Se `expired: true`, o sinal é removido da UI e não gera notificações.
+
+---
+
+### 12m. Dynamic Exit Plan (TP1/TP2/TP3 + ATR Trailing) {#dynamic-exit}
+
+**Função:** `generateDynamicExitPlan(analysis, rawData)`
+
+Gera targets de saída **adaptativos** baseados em volatilidade (ATR) e estrutura de mercado.
+
+**Targets:**
+
+| Target | Cálculo | Saída sugerida |
+|--------|---------|----------------|
+| TP1 | entry ± 1.0 × ATR(14) | 40% da posição |
+| TP2 | entry ± 2.0 × ATR(14) | 35% da posição |
+| TP3 | entry ± 3.5 × ATR(14) | 25% da posição |
+| Stop Loss | entry ∓ 1.5 × ATR(14) | 100% (proteção) |
+
+**ATR Trailing Stop:**
+
+Após atingir TP1:
+1. Stop move para **breakeven** (entry)
+2. Trailing stop = último high/low − 1.2 × ATR
+3. Move apenas na direção favorável (nunca recua)
+
+**Output:**
+```javascript
+{
+  entry: 64500,
+  tp1: { price: 65130, pct: 0.98, exitPortion: 0.40 },
+  tp2: { price: 65760, pct: 1.95, exitPortion: 0.35 },
+  tp3: { price: 66705, pct: 3.42, exitPortion: 0.25 },
+  stopLoss: { price: 63555, pct: -1.46 },
+  atrTrailing: {
+    enabled: true,
+    activateAfterTP1: true,
+    multiplier: 1.2,
+    currentTrail: null  // null até TP1 atingido
+  },
+  riskReward: 2.34
+}
+```
+
+---
+
+### 12n. Liquidation Zones Estimation {#liquidation-zones}
+
+**Função:** `estimateLiquidationZones(currentPrice, direction)`
+
+Estima onde posições alavancadas seriam liquidadas, ajudando a identificar **cascatas potenciais**.
+
+**Leverage levels analisados:** 5×, 10×, 25×, 50×
+
+**Cálculo para LONG:**
+```
+liquidationPrice = currentPrice × (1 - 1/leverage)
+  5×:  currentPrice × 0.80  = -20%
+  10×: currentPrice × 0.90  = -10%
+  25×: currentPrice × 0.96  = -4%
+  50×: currentPrice × 0.98  = -2%
+```
+
+**Cálculo para SHORT:**
+```
+liquidationPrice = currentPrice × (1 + 1/leverage)
+  5×:  currentPrice × 1.20  = +20%
+  10×: currentPrice × 1.10  = +10%
+  25×: currentPrice × 1.04  = +4%
+  50×: currentPrice × 1.02  = +2%
+```
+
+**Output:**
+```javascript
+{
+  longLiquidations: [
+    { leverage: '5x',  price: 51600, distance: '-20.0%' },
+    { leverage: '10x', price: 58050, distance: '-10.0%' },
+    { leverage: '25x', price: 61920, distance: '-4.0%'  },
+    { leverage: '50x', price: 63210, distance: '-2.0%'  }
+  ],
+  shortLiquidations: [
+    { leverage: '5x',  price: 77400, distance: '+20.0%' },
+    { leverage: '10x', price: 70950, distance: '+10.0%' },
+    { leverage: '25x', price: 67080, distance: '+4.0%'  },
+    { leverage: '50x', price: 65790, distance: '+2.0%'  }
+  ],
+  nearestCascade: { side: 'LONG_50x', distance: '-2.0%', risk: 'HIGH' }
+}
+```
+
+**Uso:** Zonas de liquidação 50× e 25× próximas do preço = risco de squeeze/cascade.
+
+---
+
+### 12o. Order Flow Ring Buffer (WebSocket) {#order-flow-ws}
+
+**Funções:** `connectOrderFlowWS()`, `pushToOrderFlowBuffer()`, `getOrderFlowBuffer()`, `getOrderFlowAnalysis()`
+
+Buffer circular de **500 trades** em tempo real via WebSocket da Binance (`@aggTrade`).
+
+**Estrutura do buffer:**
+```javascript
+const ORDER_FLOW_BUFFER = {
+  trades: [],           // ring buffer, max 500
+  pointer: 0,           // índice circular
+  buyVolume: 0,         // volume acumulado buy
+  sellVolume: 0,        // volume acumulado sell
+  lastUpdate: null,     // timestamp
+  connected: false      // estado do WebSocket
+};
+```
+
+**Análise em tempo real:**
+```javascript
+getOrderFlowAnalysis() → {
+  totalTrades: 500,
+  buyRatio: 0.58,       // 58% do volume é compra
+  sellRatio: 0.42,
+  netDelta: +16.2,      // BTC (buy - sell)
+  avgTradeSize: 0.034,  // BTC por trade
+  largeTradesCount: 12, // trades > 3× média
+  largeTradesBias: 'BUY',
+  vwap: 64523.50,
+  lastTradeTime: '2026-02-01T15:23:45Z'
+}
+```
+
+**Integração:** Alimenta o gate de Order Flow Agreement e o soft adjustment de volume.
+
+---
+
+### 12p. Notification Cooldown {#notification-cooldown}
+
+**Funções:** `isNotificationOnCooldown(type)`, `markNotificationSent(type)`
+
+Evita spam de notificações repetidas. Cada tipo de notificação tem seu **cooldown independente**.
+
+| Tipo de Notificação | Cooldown |
+|---------------------|----------|
+| `signal_new` | 30 min |
+| `signal_update` | 15 min |
+| `crash_alert` | 60 min |
+| `whale_alert` | 45 min |
+| `funding_alert` | 30 min |
+| `ttl_warning` | 10 min |
+
+**Implementação:**
+```javascript
+const NOTIFICATION_COOLDOWNS = {};
+
+function isNotificationOnCooldown(type) {
+  const last = NOTIFICATION_COOLDOWNS[type];
+  if (!last) return false;
+  const cooldownMs = COOLDOWN_TIMES[type] || 30 * 60 * 1000;
+  return (Date.now() - last) < cooldownMs;
+}
+
+function markNotificationSent(type) {
+  NOTIFICATION_COOLDOWNS[type] = Date.now();
+}
+```
+
+---
+
+### 12q. EWMA Adaptive Alpha (V3 Enhancement) {#ewma-alpha}
+
+**Mudança no ta-engine-v3.js**, mas documentada aqui como parte do pacote v7.2.
+
+O **adaptive weight engine** do V3 usa EWMA (Exponentially Weighted Moving Average) para aprender quais indicadores performam melhor. O alpha da EWMA controla a velocidade de aprendizado.
+
+**Antes:** Alpha fixo = 0.05  
+**Agora:** Alpha adaptativo por regime:
+
+| Regime | Alpha | Razão |
+|--------|-------|-------|
+| VOLATILE | 0.10 | Adapta rápido em volatilidade |
+| TREND | 0.03 | Adapta lento em tendência estável |
+| RANGE | 0.05 | Velocidade média |
+| SQUEEZE | 0.07 | Levemente mais rápido |
+| DEFAULT | 0.05 | Fallback |
+
+**Função:** `getAdaptiveAlpha(regime)` em `ta-engine-v3.js`
+
+```javascript
+const ADAPTIVE_ALPHA_MAP = {
+  VOLATILE: 0.10,
+  TREND: 0.03,
+  RANGE: 0.05,
+  SQUEEZE: 0.07,
+  DEFAULT: 0.05
+};
+
+function getAdaptiveAlpha(regime) {
+  return ADAPTIVE_ALPHA_MAP[regime] || ADAPTIVE_ALPHA_MAP.DEFAULT;
+}
+```
+
+**Impacto:** Em mercados voláteis, o sistema aprende 3× mais rápido que em tendências, permitindo adaptação dinâmica.
+
+---
+
+### 12r. Pipeline Completo V2→V3→V4 {#pipeline-completo}
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    PIPELINE DE ANÁLISE                          │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│  ┌─────────────────────────────────────┐                      │
+│  │  DADOS BRUTOS (rawData)              │                      │
+│  │  • 16 endpoints Binance              │                      │
+│  │  • 5 APIs externas                   │                      │
+│  │  • WebSocket aggTrade (500 buffer)   │                      │
+│  └──────────────┬──────────────────────┘                      │
+│                 │                                               │
+│                 ▼                                               │
+│  ┌─────────────────────────────────────┐                      │
+│  │  V2 — ENGINE INSTITUCIONAL           │                      │
+│  │  • 13 indicadores multi-TF           │                      │
+│  │  • Regime detection                  │                      │
+│  │  • BOS/CHoCH detection               │                      │
+│  │  • CVD + order flow                  │                      │
+│  │  • Dynamic targets TP1/2/3           │                      │
+│  │  • Contextual scoring (non-linear)   │                      │
+│  │  OUTPUT: score + regime + targets     │                      │
+│  └──────────────┬──────────────────────┘                      │
+│                 │                                               │
+│                 ▼                                               │
+│  ┌─────────────────────────────────────┐                      │
+│  │  V3 — ADVANCED TRADING INTEL         │                      │
+│  │  • Crash/Black Swan detector         │                      │
+│  │  • Decorrelation engine              │                      │
+│  │  • Adaptive weights (EWMA α adapt.)  │                      │
+│  │  • Kelly position sizing             │                      │
+│  │  • Virtual trade tracker             │                      │
+│  │  • On-chain analysis                 │                      │
+│  │  • Edge calculator                   │                      │
+│  │  • Enhanced regime                   │                      │
+│  │  OUTPUT: adjustedScore + edge + risk  │                      │
+│  └──────────────┬──────────────────────┘                      │
+│                 │                                               │
+│                 ▼                                               │
+│  ┌─────────────────────────────────────┐                      │
+│  │  V4 — REACTIVE INTELLIGENCE (v7.2)   │                      │
+│  │                                      │                      │
+│  │  ┌──────────────────────────┐       │                      │
+│  │  │ 9 GATES (regime-adaptive) │       │                      │
+│  │  │ • Trend Alignment         │       │                      │
+│  │  │ • Volume Confirmation     │       │                      │
+│  │  │ • Order Flow Agreement    │       │                      │
+│  │  │ • MultTF Consensus        │       │                      │
+│  │  │ • Funding (4-tier)        │       │                      │
+│  │  │ • Volatility Regime       │       │                      │
+│  │  │ • BOS Contínuo (0-1)      │       │                      │
+│  │  │ • Risk/Reward             │       │                      │
+│  │  │ • Acceptance (15m)        │       │                      │
+│  │  └────────────┬─────────────┘       │                      │
+│  │               │                      │                      │
+│  │               ▼                      │                      │
+│  │  ┌──────────────────────────┐       │                      │
+│  │  │ SOFT ADJUSTMENTS (±25)    │       │                      │
+│  │  │ ~15 fontes → array →     │       │                      │
+│  │  │ sum → clamp(−25,+25)     │       │                      │
+│  │  │ → confidence final       │       │                      │
+│  │  └────────────┬─────────────┘       │                      │
+│  │               │                      │                      │
+│  │               ▼                      │                      │
+│  │  ┌──────────────────────────┐       │                      │
+│  │  │ MÓDULOS ENRICHMENT        │       │                      │
+│  │  │ • Liquidity Levels        │       │                      │
+│  │  │ • Hidden Divergence       │       │                      │
+│  │  │ • Signal TTL              │       │                      │
+│  │  │ • Dynamic Exit Plan       │       │                      │
+│  │  │ • Liquidation Zones       │       │                      │
+│  │  │ • Order Flow WS Buffer    │       │                      │
+│  │  │ • Calibração Piecewise    │       │                      │
+│  │  │ • Notification Cooldown   │       │                      │
+│  │  └────────────┬─────────────┘       │                      │
+│  │               │                      │                      │
+│  └───────────────┼──────────────────────┘                      │
+│                  │                                              │
+│                  ▼                                              │
+│  ┌─────────────────────────────────────┐                      │
+│  │  OUTPUT FINAL                        │                      │
+│  │  • signal: LONG/SHORT/NEUTRAL        │                      │
+│  │  • confidence: 0-100 (calibrada)     │                      │
+│  │  • gateScore / gatesPassed           │                      │
+│  │  • softAdjustments[] (detalhado)     │                      │
+│  │  • dynamicExitPlan (TP1-3 + trail)   │                      │
+│  │  • liquidityLevels                   │                      │
+│  │  • hiddenDivergence                  │                      │
+│  │  • signalTTL                         │                      │
+│  │  • liquidationZones (5×-50×)         │                      │
+│  │  • orderFlow (real-time)             │                      │
+│  │  • warnings[]                        │                      │
+│  └─────────────────────────────────────┘                      │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 13. Cálculo Final do Score e Sinal {#score-final}
 
 ```
 confluenceScore      ← soma dos 13 indicadores da grade
@@ -976,6 +1698,33 @@ v3Score = 35 × tanh(rawScore / 20)  ← NON-LINEAR COMPRESSION
         ├── positionSize(kelly, crash, edge) → % of portfolio
         ├── trackVirtualTrade(symbol) → forward testing database
         └── generateWarnings() → context-aware risk alerts
+        │
+        ▼ ══════ V4 REACTIVE INTELLIGENCE (v7.2) ══════
+        │
+        ├── evaluateReactiveGates(analysis, rawData, regime)
+        │     └── 9 gates × regime weights → gateScore
+        │         ├── gateScore ≥ threshold → ACCEPTED
+        │         └── gateScore < threshold → REJECTED / confidence reduced
+        │
+        ├── softAdjustments[] ← ~15 fontes (regime, funding, edge, macro, etc.)
+        │     └── clamp(sum, -25, +25) → confiança ajustada
+        │
+        ├── calibrateConfidence(raw) → piecewise 3-segment
+        │     ├── raw ≤ 30:  raw × 0.5
+        │     ├── raw ≤ 70:  15 + (raw-30) × 1.0
+        │     └── raw > 70:  55 + (raw-70) × 0.6
+        │
+        ├── Módulos enrichment:
+        │     ├── analyzeLiquidityLevels()
+        │     ├── detectHiddenDivergence()
+        │     ├── checkSignalTTL() → expire at 4h
+        │     ├── generateDynamicExitPlan() → TP1/2/3 + ATR trailing
+        │     ├── estimateLiquidationZones() → 5x/10x/25x/50x
+        │     └── getOrderFlowAnalysis() → 500-trade WS buffer
+        │
+        ▼
+v4Confidence = clamp(calibrated + softTotal, 0, 100)
+        v4Signal = gatesPassed ? v3Signal : "NEUTRO"
 ```
 
 ### Probabilidade
@@ -1005,7 +1754,7 @@ Clampeado entre **10% e 95%**
 
 ---
 
-## 13. Cache e Auto-Refresh {#cache-autorefresh}
+## 14. Cache e Auto-Refresh {#cache-autorefresh}
 
 ### Cache
 - **TTL**: 5 minutos  
@@ -1021,7 +1770,7 @@ Clampeado entre **10% e 95%**
 
 ---
 
-## 14. AI Summary {#ai-summary}
+## 15. AI Summary {#ai-summary}
 
 **Função**: `generateAISummary(signalType, confidence, contextData, symbol)`
 
@@ -1038,7 +1787,7 @@ Gera um texto narrativo em português descrevendo:
 
 ---
 
-## 15. Interface Renderizada — Seções da UI {#ui-render}
+## 16. Interface Renderizada — Seções da UI {#ui-render}
 
 `renderTechnicalAnalysis(analysis, crypto)` renderiza as seguintes seções:
 
@@ -1062,7 +1811,7 @@ Gera um texto narrativo em português descrevendo:
 
 ---
 
-## 16. Tabela Resumo de Pesos {#tabela-pesos}
+## 17. Tabela Resumo de Pesos {#tabela-pesos}
 
 | Fonte | Score Máximo LONG | Score Máximo SHORT |
 |---|---|---|
@@ -1131,4 +1880,4 @@ Gera um texto narrativo em português descrevendo:
 ---
 
 *Documentação gerada pelo GitHub Copilot com base na leitura completa do código fonte.*  
-*Arquivos de referência: `www/index.html` e `www/ta-engine-v2.js`*
+*Arquivos de referência: `www/index.html`, `www/ta-engine-v2.js`, `www/ta-engine-v3.js` e `www/ta-engine-v4.js` (v7.2.0)*

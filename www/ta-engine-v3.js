@@ -1,6 +1,6 @@
 ﻿/**
- * TA Engine V3 â€” Advanced Trading Intelligence Engine
- * Visor Crypto â€” Institutional-Grade Quantitative Analysis
+ * TA Engine V3 — Advanced Trading Intelligence Engine
+ * Visor Crypto — Institutional-Grade Quantitative Analysis
  * 
  * MODULES:
  *  1.  Crash / Black Swan Detector
@@ -21,9 +21,9 @@
 (function () {
     'use strict';
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
     // UTILS & STORAGE HELPERS
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
     const STORAGE_PREFIX = 'vc3_';
     const MAX_STORAGE_AGE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
@@ -44,7 +44,7 @@
         try {
             localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify({ data, _ts: Date.now() }));
         } catch (e) {
-            // Quota exceeded â€” prune old entries
+            // Quota exceeded — prune old entries
             pruneStorage();
             try { localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify({ data, _ts: Date.now() })); } catch {}
         }
@@ -77,7 +77,7 @@
         const m = mean(arr);
         return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / (arr.length - 1));
     }
-    function sigmoid(x, k = 1) { return 2 / (1 + Math.exp(-k * x)) - 1; } // maps â„ â†’ (-1, 1)
+    function sigmoid(x, k = 1) { return 2 / (1 + Math.exp(-k * x)) - 1; } // maps ℝ → (-1, 1)
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
     function pearsonCorrelation(x, y) {
         const n = Math.min(x.length, y.length);
@@ -92,9 +92,9 @@
         return den === 0 ? 0 : num / den;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 1: CRASH / BLACK SWAN DETECTOR
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Detects rapid price movements that invalidate oscillator-based signals.
      * When a crash is detected, oscillator "buy" signals are suppressed and
@@ -197,27 +197,27 @@
                 result.override.suppressOscillatorBuy = true;
                 result.override.trendWeightMultiplier = 1.5 + sev * 0.3;
                 result.override.confidencePenalty = sev * 5;
-                result.override.icon = 'ðŸš¨';
+                result.override.icon = '🚨';
                 result.override.message = sev >= 3
-                    ? `CRASH DETECTADO (${result.severity}): Queda de ${Math.abs(w5m.roc).toFixed(1)}% em 30min. Sinais de compra DESATIVADOS. NÃ£o compre durante queda livre.`
+                    ? `CRASH DETECTADO (${result.severity}): Queda de ${Math.abs(w5m.roc).toFixed(1)}% em 30min. Sinais de compra DESATIVADOS. Não compre durante queda livre.`
                     : `QUEDA ACENTUADA (${result.severity}): Osciladores de compra com peso reduzido.`;
             } else {
                 result.override.suppressOscillatorSell = true;
                 result.override.trendWeightMultiplier = 1.5 + sev * 0.3;
                 result.override.confidencePenalty = sev * 5;
-                result.override.icon = 'ðŸš€';
+                result.override.icon = '🚀';
                 result.override.message = sev >= 3
                     ? `PUMP VIOLENTO (${result.severity}): Alta de ${w5m.roc.toFixed(1)}% em 30min. Sinais de venda DESATIVADOS. Evite shorts em pump.`
-                    : `ALTA RÃPIDA (${result.severity}): Osciladores de venda com peso reduzido.`;
+                    : `ALTA RÁPIDA (${result.severity}): Osciladores de venda com peso reduzido.`;
             }
         }
 
         return result;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 2: INDICATOR DECORRELATION ENGINE
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Groups indicators by family and reduces effective weight of redundant signals.
      * Prevents 3 momentum oscillators all saying "BUY" from triple-counting.
@@ -318,17 +318,42 @@
         };
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 3: ADAPTIVE WEIGHT ENGINE (Online Learning)
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Tracks which indicators actually predicted correctly.
      * Uses exponential weighted moving average (EWMA) of recent accuracy.
-     * Weights evolve: weight = base Ã— (0.5 + 0.5 Ã— recentAccuracy)
+     * Weights evolve: weight = base × (0.5 + 0.5 × recentAccuracy)
      * 
      * Half-life: ~30 signals (recent signals matter more)
+     * v7.2: Alpha is now regime-adaptive — faster in volatile regimes (0.10),
+     * slower in trending (0.03), default 0.05 for range/unknown.
      */
-    const ADAPTIVE_ALPHA = 0.05; // EWMA smoothing factor
+    const ADAPTIVE_ALPHA_DEFAULT = 0.05;
+    const ADAPTIVE_ALPHA_MAP = {
+        'VOLATILE': 0.10,
+        'HIGH_VOL': 0.10,
+        'EXPANSION_UP': 0.08,
+        'EXPANSION_DOWN': 0.08,
+        'TREND_UP': 0.03,
+        'TREND_DOWN': 0.03,
+        'RANGE': 0.05,
+        'RANGING': 0.05,
+        'COMPRESSION': 0.04,
+        'DEFAULT': 0.05
+    };
+
+    function getAdaptiveAlpha(regime) {
+        if (!regime) return ADAPTIVE_ALPHA_DEFAULT;
+        // Try exact match first
+        if (ADAPTIVE_ALPHA_MAP[regime]) return ADAPTIVE_ALPHA_MAP[regime];
+        // Fuzzy match
+        if (regime.includes('VOLATILE') || regime.includes('HIGH_VOL')) return 0.10;
+        if (regime.includes('TREND')) return 0.03;
+        if (regime.includes('EXPANSION')) return 0.08;
+        return ADAPTIVE_ALPHA_DEFAULT;
+    }
 
     function getAdaptiveWeights(symbol) {
         const key = 'adaptive_' + symbol;
@@ -345,10 +370,11 @@
         return Object.keys(weights).length > 0 ? weights : null;
     }
 
-    function updateAdaptiveWeights(symbol, indicatorResults) {
+    function updateAdaptiveWeights(symbol, indicatorResults, regime) {
         // indicatorResults: [{ name, signal, wasCorrect }]
         const key = 'adaptive_' + symbol;
         const stored = storageGet(key) || {};
+        const alpha = getAdaptiveAlpha(regime); // v7.2: regime-adaptive alpha
 
         indicatorResults.forEach(({ name, wasCorrect }) => {
             if (!stored[name]) {
@@ -356,7 +382,7 @@
             }
             const s = stored[name];
             const correctVal = wasCorrect ? 1 : 0;
-            s.ewmaAccuracy = ADAPTIVE_ALPHA * correctVal + (1 - ADAPTIVE_ALPHA) * s.ewmaAccuracy;
+            s.ewmaAccuracy = alpha * correctVal + (1 - alpha) * s.ewmaAccuracy;
             s.count++;
         });
 
@@ -376,9 +402,9 @@
         });
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 4: POSITION SIZING ENGINE
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Calculates recommended position size based on:
      *   - Modified Kelly Criterion
@@ -402,14 +428,14 @@
 
         if (signalType === 'neutral') {
             return {
-                recommendation: 'SEM POSIÃ‡ÃƒO',
+                recommendation: 'SEM POSIÇÃO',
                 sizePercent: 0,
                 kellyFraction: 0,
                 riskPerTrade: 0,
                 contracts: 0,
-                reasoning: 'Sinal neutro â€” nenhuma posiÃ§Ã£o recomendada.',
+                reasoning: 'Sinal neutro — nenhuma posição recomendada.',
                 riskLevel: 'NONE',
-                icon: 'â¸ï¸'
+                icon: '⏸️'
             };
         }
 
@@ -449,10 +475,10 @@
         const riskPerTrade = +(portfolioBalance * sizePercent / 100).toFixed(2);
 
         let riskLevel, recommendation, icon;
-        if (sizePercent <= 2) { riskLevel = 'CONSERVADOR'; icon = 'ðŸŸ¢'; recommendation = `Entrada conservadora: ${sizePercent}% da banca`; }
-        else if (sizePercent <= 5) { riskLevel = 'MODERADO'; icon = 'ðŸŸ¡'; recommendation = `Entrada moderada: ${sizePercent}% da banca`; }
-        else if (sizePercent <= 10) { riskLevel = 'AGRESSIVO'; icon = 'ðŸŸ '; recommendation = `Entrada agressiva: ${sizePercent}% da banca (alta confianÃ§a)`; }
-        else { riskLevel = 'MÃXIMO'; icon = 'ðŸ”´'; recommendation = `PosiÃ§Ã£o mÃ¡xima: ${sizePercent}% (somente com edge comprovado)`; }
+        if (sizePercent <= 2) { riskLevel = 'CONSERVADOR'; icon = '🟢'; recommendation = `Entrada conservadora: ${sizePercent}% da banca`; }
+        else if (sizePercent <= 5) { riskLevel = 'MODERADO'; icon = '🟡'; recommendation = `Entrada moderada: ${sizePercent}% da banca`; }
+        else if (sizePercent <= 10) { riskLevel = 'AGRESSIVO'; icon = '🟠'; recommendation = `Entrada agressiva: ${sizePercent}% da banca (alta confiança)`; }
+        else { riskLevel = 'MÁXIMO'; icon = '🔴'; recommendation = `Posição máxima: ${sizePercent}% (somente com edge comprovado)`; }
 
         return {
             recommendation,
@@ -462,7 +488,7 @@
             contracts: currentPrice > 0 ? +(riskPerTrade / currentPrice).toFixed(6) : 0,
             riskLevel,
             icon,
-            reasoning: `KellyÂ½=${(kellyHalf * 100).toFixed(1)}% Ã— Conf=${confMultiplier.toFixed(2)} Ã— Crash=${crashMultiplier} Ã— Edge=${edgeMultiplier.toFixed(1)} â†’ ${sizePercent}%`,
+            reasoning: `Kelly½=${(kellyHalf * 100).toFixed(1)}% × Conf=${confMultiplier.toFixed(2)} × Crash=${crashMultiplier} × Edge=${edgeMultiplier.toFixed(1)} → ${sizePercent}%`,
             breakdown: {
                 kellyHalf: +(kellyHalf * 100).toFixed(1),
                 confMultiplier: +confMultiplier.toFixed(2),
@@ -473,13 +499,13 @@
         };
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 5: VIRTUAL TRADE TRACKER & FORWARD TESTER
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Saves every signal generated. On subsequent analyses, checks past signals
      * against current price data to determine outcomes. Builds a performance
-     * database over time â€” the "forward testing" backtester.
+     * database over time — the "forward testing" backtester.
      */
     function trackVirtualTrade(symbol, analysis) {
         const key = 'trades_' + symbol;
@@ -592,7 +618,7 @@
                         ? ((trade.tp1 - entryPrice) / entryPrice) * 100
                         : ((entryPrice - trade.tp1) / entryPrice) * 100;
                 } else if (ageMs > 24 * 60 * 60 * 1000) {
-                    // Timed out after 24h â€” evaluate at current price
+                    // Timed out after 24h — evaluate at current price
                     const pnl = isLong
                         ? ((currentPrice - entryPrice) / entryPrice) * 100
                         : ((entryPrice - currentPrice) / entryPrice) * 100;
@@ -718,9 +744,9 @@
         };
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 6: ON-CHAIN ANALYZER
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Fetches on-chain data for BTC:
      *   - Mempool size (network congestion)
@@ -745,7 +771,7 @@
         // Only for BTC/ETH based pairs
         const baseSymbol = symbol.replace('USDT', '').replace('BUSD', '');
         if (!['BTC', 'ETH'].includes(baseSymbol)) {
-            result.details.push({ name: 'On-Chain', value: 'DisponÃ­vel somente para BTC/ETH', signal: 'N/A' });
+            result.details.push({ name: 'On-Chain', value: 'Disponível somente para BTC/ETH', signal: 'N/A' });
             return result;
         }
 
@@ -814,7 +840,7 @@
                         result.onChainScore -= 1;
                         result.details.push({ name: 'Hash Rate', value: `Caindo (${hrChange.toFixed(1)}%)`, signal: 'BEARISH', color: '#ef4444' });
                     } else {
-                        result.details.push({ name: 'Hash Rate', value: `EstÃ¡vel`, signal: 'NEUTRO', color: '#94a3b8' });
+                        result.details.push({ name: 'Hash Rate', value: `Estável`, signal: 'NEUTRO', color: '#94a3b8' });
                     }
                 }
 
@@ -827,9 +853,9 @@
                     const volRatio = avgVol > 0 ? recentVol / avgVol : 1;
 
                     if (volRatio > 1.5) {
-                        result.details.push({ name: 'Volume On-Chain', value: `Alto (${(volRatio * 100).toFixed(0)}% da mÃ©dia)`, signal: 'ATIVO', color: '#eab308' });
+                        result.details.push({ name: 'Volume On-Chain', value: `Alto (${(volRatio * 100).toFixed(0)}% da média)`, signal: 'ATIVO', color: '#eab308' });
                     } else if (volRatio < 0.5) {
-                        result.details.push({ name: 'Volume On-Chain', value: `Baixo(${(volRatio * 100).toFixed(0)}% da mÃ©dia)`, signal: 'INATIVO', color: '#94a3b8' });
+                        result.details.push({ name: 'Volume On-Chain', value: `Baixo(${(volRatio * 100).toFixed(0)}% da média)`, signal: 'INATIVO', color: '#94a3b8' });
                     } else {
                         result.details.push({ name: 'Volume On-Chain', value: 'Normal', signal: 'NEUTRO', color: '#94a3b8' });
                     }
@@ -855,7 +881,7 @@
                         result.details.push({ name: 'Stablecoin Supply', value: `USDT encolhendo (${mcapChange.toFixed(1)}%)`, signal: 'BEARISH', color: '#ef4444' });
                     } else {
                         result.stablecoinSignal = 'STABLE';
-                        result.details.push({ name: 'Stablecoin Supply', value: 'EstÃ¡vel', signal: 'NEUTRO', color: '#94a3b8' });
+                        result.details.push({ name: 'Stablecoin Supply', value: 'Estável', signal: 'NEUTRO', color: '#94a3b8' });
                     }
                 }
                 storageSet('usdt_mcap', { value: usdtMcap, ts: Date.now() });
@@ -870,9 +896,9 @@
         return result;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 7: MULTI-EXCHANGE AGGREGATED CVD
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Fetches recent trades from Bybit to complement Binance CVD.
      * True market picture requires seeing multiple venues.
@@ -959,8 +985,8 @@
             if ((binanceDelta > 0 && bybitDelta < 0) || (binanceDelta < 0 && bybitDelta > 0)) {
                 result.divergence = true;
                 result.divergenceDescription = binanceDelta > 0
-                    ? 'Binance comprando, Bybit vendendo â€” divergÃªncia entre exchanges (cautela)'
-                    : 'Binance vendendo, Bybit comprando â€” divergÃªncia entre exchanges (cautela)';
+                    ? 'Binance comprando, Bybit vendendo — divergência entre exchanges (cautela)'
+                    : 'Binance vendendo, Bybit comprando — divergência entre exchanges (cautela)';
                 result.score *= 0.5; // reduce confidence
             }
         }
@@ -968,12 +994,12 @@
         return result;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 8: EDGE CALCULATOR
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Calculates statistical edge from trade history.
-     * Edge = (WinRate Ã— AvgWin) - (LossRate Ã— AvgLoss)
+     * Edge = (WinRate × AvgWin) - (LossRate × AvgLoss)
      * Returns edge per score bucket.
      */
     function calculateEdge(symbol) {
@@ -984,8 +1010,8 @@
                 edge: 0,
                 edgePercent: '0%',
                 classification: 'INSUFICIENTE',
-                description: `${stats.totalTrades}/5 trades mÃ­nimos. O sistema coleta dados automaticamente.`,
-                icon: 'ðŸ“Š',
+                description: `${stats.totalTrades}/5 trades mínimos. O sistema coleta dados automaticamente.`,
+                icon: '📊',
                 color: '#94a3b8',
                 stats
             };
@@ -997,22 +1023,22 @@
         if (edge > 0.05) {
             classification = 'FORTE';
             description = `Edge positivo de ${(edge * 100).toFixed(2)}% por trade. Sistema comprovado.`;
-            icon = 'ðŸ†';
+            icon = '🏆';
             color = '#22c55e';
         } else if (edge > 0.02) {
             classification = 'MODERADO';
             description = `Edge positivo de ${(edge * 100).toFixed(2)}% por trade. Promissor.`;
-            icon = 'âœ…';
+            icon = '✅';
             color = '#84cc16';
         } else if (edge > 0) {
             classification = 'FRACO';
             description = `Edge marginal de ${(edge * 100).toFixed(2)}%. Precisa de mais dados.`;
-            icon = 'âš ï¸';
+            icon = '⚠️';
             color = '#eab308';
         } else {
             classification = 'NEGATIVO';
             description = `Edge negativo (${(edge * 100).toFixed(2)}%). Sistema ajustando pesos automaticamente.`;
-            icon = 'âŒ';
+            icon = '❌';
             color = '#ef4444';
         }
 
@@ -1028,9 +1054,9 @@
         };
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 9: ROLLING CORRELATION ENGINE
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Calculates dynamic correlation between BTC and traditional markets.
      * Used to adjust macro impact: high correlation = macro matters more.
@@ -1072,41 +1098,41 @@
         if (absCorr > 0.7) {
             result.correlationRegime = 'HIGH';
             result.macroWeightMultiplier = 1.5;
-            result.description = `Alta correlaÃ§Ã£o BTC-SP500 (${result.btcSp500Correlation}). Macro tem FORTE impacto.`;
+            result.description = `Alta correlação BTC-SP500 (${result.btcSp500Correlation}). Macro tem FORTE impacto.`;
         } else if (absCorr > 0.4) {
             result.correlationRegime = 'MODERATE';
             result.macroWeightMultiplier = 1.2;
-            result.description = `CorrelaÃ§Ã£o moderada BTC-SP500 (${result.btcSp500Correlation}). Macro tem impacto relevante.`;
+            result.description = `Correlação moderada BTC-SP500 (${result.btcSp500Correlation}). Macro tem impacto relevante.`;
         } else if (absCorr > 0.2) {
             result.correlationRegime = 'LOW';
             result.macroWeightMultiplier = 0.8;
-            result.description = `Baixa correlaÃ§Ã£o BTC-SP500 (${result.btcSp500Correlation}). Crypto segue dinÃ¢mica prÃ³pria.`;
+            result.description = `Baixa correlação BTC-SP500 (${result.btcSp500Correlation}). Crypto segue dinâmica própria.`;
         } else {
             result.correlationRegime = 'DECORRELATED';
             result.macroWeightMultiplier = 0.5;
-            result.description = `DecorrelaÃ§Ã£o BTC-SP500 (${result.btcSp500Correlation}). Macro Ã© pouco relevante agora.`;
+            result.description = `Decorrelação BTC-SP500 (${result.btcSp500Correlation}). Macro é pouco relevante agora.`;
         }
 
         return result;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 10: NON-LINEAR SCORING ENGINE
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Replaces linear summation with non-linear aggregation.
      * Uses sigmoid compression to prevent extreme scores.
      * Applies diminishing returns: 5th bullish signal adds less than 1st.
      * 
      * The mathematical formalization:
-     *   RawScore = Î£(weight_i Ã— signal_i)
+     *   RawScore = Σ(weight_i × signal_i)
      *   DecorrelatedScore = decorrelate(RawScore)
      *   CrashAdjustedScore = crashAdjust(DecorrelatedScore)
      *   ContextualScore = regimeAdjust(CrashAdjustedScore)
      *   FinalScore = sigmoid_compress(ContextualScore + MacroScore + OnChainScore)
      *
      * Formula:
-     *   S_final = S_max Ã— tanh(S_raw / S_scale)
+     *   S_final = S_max × tanh(S_raw / S_scale)
      *   where S_max = 35, S_scale = 20
      *   This creates natural diminishing returns.
      */
@@ -1147,7 +1173,7 @@
         // 5. Multi-exchange adjustment
         rawScore += (multiExchangeScore || 0);
 
-        // 6. Crash override â€” penalize score in crash direction
+        // 6. Crash override — penalize score in crash direction
         if (crashState && crashState.isCrash) {
             if (crashState.direction === 'down' && rawScore > 0) {
                 rawScore *= 0.2; // heavily suppress buy signals during crash
@@ -1161,7 +1187,7 @@
 
         // 8. Determine signal
         let signal = 'NEUTRO', signalType = 'neutral';
-        const effectiveThreshold = crashState && crashState.severity !== 'NONE' ? 5 : 1.8;
+        const effectiveThreshold = crashState && crashState.severity !== 'NONE' ? 4 : 1.0;
 
         if (compressedScore >= effectiveThreshold) { signal = 'LONG'; signalType = 'long'; }
         else if (compressedScore <= -effectiveThreshold) { signal = 'SHORT'; signalType = 'short'; }
@@ -1183,9 +1209,9 @@
         }
         confidence = clamp(Math.round(confidence), 5, 100);
 
-        // 11. Confidence gate â€” if confidence is too low, force NEUTRO
-        // A signal with < 15% confidence is not actionable
-        if (confidence < 15 && signal !== 'NEUTRO') {
+        // 11. Confidence gate — if confidence is very low, force NEUTRO
+        // A signal with < 8% confidence is noise
+        if (confidence < 8 && signal !== 'NEUTRO') {
             signal = 'NEUTRO';
             signalType = 'neutral';
             probability = clamp(Math.round(50 + (compressedScore / S_MAX) * 15), 35, 65);
@@ -1199,7 +1225,7 @@
             probability,
             confidence,
             effectiveThreshold,
-            formula: `S = ${S_MAX} Ã— tanh(${rawScore.toFixed(1)} / ${S_SCALE}) = ${compressedScore.toFixed(2)}`,
+            formula: `S = ${S_MAX} × tanh(${rawScore.toFixed(1)} / ${S_SCALE}) = ${compressedScore.toFixed(2)}`,
             components: {
                 decorrelated: +(decorrelatedScore || 0).toFixed(2),
                 orderFlow: +(orderFlowScore || 0).toFixed(2),
@@ -1212,9 +1238,9 @@
         };
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 11: ENHANCED REGIME DETECTOR
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Improves upon V2's regime detection:
      *   - Volume confirmation for regime changes
@@ -1244,15 +1270,15 @@
         const adxVal = adx1h?.adx || 20;
         const adxIsTrending = adxVal > 25;
 
-        // If ADX says trending but volume is declining â†’ weak trend, possible false breakout
+        // If ADX says trending but volume is declining → weak trend, possible false breakout
         if (adxIsTrending && volTrend < -20) {
             result.falseBreakoutRisk = 'HIGH';
             result.volumeConfirmsRegime = false;
-            result.details.push('ADX indica tendÃªncia mas volume estÃ¡ caindo â€” risco de falso rompimento ALTO');
+            result.details.push('ADX indica tendência mas volume está caindo — risco de falso rompimento ALTO');
         } else if (adxIsTrending && volTrend > 10) {
             result.volumeConfirmsRegime = true;
             result.falseBreakoutRisk = 'LOW';
-            result.details.push('TendÃªncia confirmada por volume crescente');
+            result.details.push('Tendência confirmada por volume crescente');
         } else {
             result.falseBreakoutRisk = 'MEDIUM';
         }
@@ -1278,39 +1304,39 @@
         const adx4val = adx4h?.adx || 20;
 
         if (adxVal < 20 && adx4val < 20) {
-            // In squeeze â€” predict direction
+            // In squeeze — predict direction
             if (obv > 0 && volBelow > volAbove) {
                 result.squeezeDirection = 'UP';
-                result.details.push('Squeeze detectado: OBV positivo + volume acumulando abaixo â†’ provÃ¡vel rompimento para CIMA');
+                result.details.push('Squeeze detectado: OBV positivo + volume acumulando abaixo → provável rompimento para CIMA');
             } else if (obv < 0 && volAbove > volBelow) {
                 result.squeezeDirection = 'DOWN';
-                result.details.push('Squeeze detectado: OBV negativo + volume distribuindo acima â†’ provÃ¡vel rompimento para BAIXO');
+                result.details.push('Squeeze detectado: OBV negativo + volume distribuindo acima → provável rompimento para BAIXO');
             } else {
                 result.squeezeDirection = 'INDEFINIDO';
-                result.details.push('Squeeze detectado: direÃ§Ã£o indefinida');
+                result.details.push('Squeeze detectado: direção indefinida');
             }
             result.regimeTransition = 'SQUEEZING';
         } else if (adxVal > 25 && adx4val < 20) {
             result.regimeTransition = 'ENTERING_TREND';
-            result.details.push('TransiÃ§Ã£o de range para tendÃªncia detectada (1h trending, 4h ainda range)');
+            result.details.push('Transição de range para tendência detectada (1h trending, 4h ainda range)');
         } else if (adxVal < 20 && adx4val > 25) {
             result.regimeTransition = 'ENTERING_RANGE';
-            result.details.push('TransiÃ§Ã£o de tendÃªncia para range detectada (1h ranging, 4h ainda trending)');
+            result.details.push('Transição de tendência para range detectada (1h ranging, 4h ainda trending)');
         }
 
         // Regime confidence
         result.regimeConfidence = result.volumeConfirmsRegime ? 80 : 50;
         if (crashState && crashState.isCrash) {
             result.regimeConfidence = 30; // regimes are unreliable during crashes
-            result.details.push('ConfianÃ§a reduzida: mercado em crash/pump extremo');
+            result.details.push('Confiança reduzida: mercado em crash/pump extremo');
         }
 
         return result;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 12: FALSE BREAKOUT DETECTOR (BOS Validation)
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Validates BOS (Break of Structure) signals from V2.
      * True breakouts require volume + delta confirmation.
@@ -1364,17 +1390,17 @@
                 result.bosValidated = true;
                 result.bosType = 'REAL';
                 result.adjustedStructureScore = structScore; // full score
-                result.reasoning = 'BOS confirmado: Volume alto + fechamento consistente + CVD confirma pressÃ£o.';
+                result.reasoning = 'BOS confirmado: Volume alto + fechamento consistente + CVD confirma pressão.';
             } else if (!volConfirm && !bodyConfirm) {
                 result.bosValidated = false;
                 result.bosType = 'FAKE_SWEEP';
                 result.adjustedStructureScore = structScore * -0.5; // invert! fake breakout = opposite signal
-                result.reasoning = 'PROVÃVEL SWEEP: Volume baixo + wick (sem fechamento). Market Makers varrendo stops.';
+                result.reasoning = 'PROVÁVEL SWEEP: Volume baixo + wick (sem fechamento). Market Makers varrendo stops.';
             } else {
                 result.bosValidated = false;
                 result.bosType = 'UNCONFIRMED';
                 result.adjustedStructureScore = structScore * 0.3; // heavily reduced
-                result.reasoning = 'BOS nÃ£o confirmado: falta confirmaÃ§Ã£o de ' +
+                result.reasoning = 'BOS não confirmado: falta confirmação de ' +
                     (!volConfirm ? 'volume, ' : '') +
                     (!bodyConfirm ? 'fechamento, ' : '') +
                     (!cvdConfirm ? 'CVD' : '');
@@ -1385,21 +1411,21 @@
             result.reasoning = 'Dados insuficientes para validar BOS.';
         }
 
-        // Liquidity sweep detected by V2 â€” this is a strong counter-signal
+        // Liquidity sweep detected by V2 — this is a strong counter-signal
         if (marketStructure.liquiditySweeps && marketStructure.liquiditySweeps.detected) {
             if (result.bosType !== 'REAL') {
                 result.bosType = 'FAKE_SWEEP';
                 result.adjustedStructureScore = structScore * -0.3;
-                result.reasoning += ' Sweep de liquidez detectado â€” provÃ¡vel reversÃ£o.';
+                result.reasoning += ' Sweep de liquidez detectado — provável reversão.';
             }
         }
 
         return result;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 13: SYSTEM LIMITATIONS & RISK WARNINGS
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Generates context-aware warnings about when the system is unreliable.
      */
@@ -1411,9 +1437,9 @@
         if (crashState && crashState.isCrash) {
             warnings.push({
                 severity: 'CRITICAL',
-                icon: 'ðŸš¨',
+                icon: '🚨',
                 title: 'Mercado em Crash/Pump Extremo',
-                message: 'Indicadores tÃ©cnicos sÃ£o irrelevantes durante movimentos extremos. Todos os sinais de osciladores foram suprimidos. EVITE operar.',
+                message: 'Indicadores técnicos são irrelevantes durante movimentos extremos. Todos os sinais de osciladores foram suprimidos. EVITE operar.',
                 color: '#ef4444'
             });
         }
@@ -1422,9 +1448,9 @@
         if (analysis?.volatilityMetrics?.volRegime === 'EXTREME') {
             warnings.push({
                 severity: 'HIGH',
-                icon: 'âš¡',
+                icon: '⚡',
                 title: 'Volatilidade Extrema',
-                message: 'ATR acima do percentil 90. Stop losses podem ser atingidos por ruÃ­do de mercado. Reduza tamanho da posiÃ§Ã£o.',
+                message: 'ATR acima do percentil 90. Stop losses podem ser atingidos por ruído de mercado. Reduza tamanho da posição.',
                 color: '#f97316'
             });
         }
@@ -1433,9 +1459,9 @@
         if (enhancedRegime && enhancedRegime.falseBreakoutRisk === 'HIGH') {
             warnings.push({
                 severity: 'HIGH',
-                icon: 'ðŸª¤',
+                icon: '🪤',
                 title: 'Risco Alto de Falso Rompimento',
-                message: 'ADX indica tendÃªncia mas volume estÃ¡ caindo. Breakouts atuais podem ser armadilhas de liquidez.',
+                message: 'ADX indica tendência mas volume está caindo. Breakouts atuais podem ser armadilhas de liquidez.',
                 color: '#f97316'
             });
         }
@@ -1444,9 +1470,9 @@
         if (edgeData && edgeData.stats.totalTrades >= 10 && edgeData.edge < -0.01) {
             warnings.push({
                 severity: 'HIGH',
-                icon: 'ðŸ“‰',
-                title: 'Edge Negativo HistÃ³rico',
-                message: `Ãšltimos ${edgeData.stats.totalTrades} sinais resultaram em edge de ${edgeData.edgePercent}. Sistema estÃ¡ ajustando pesos automaticamente.`,
+                icon: '📉',
+                title: 'Edge Negativo Histórico',
+                message: `Últimos ${edgeData.stats.totalTrades} sinais resultaram em edge de ${edgeData.edgePercent}. Sistema está ajustando pesos automaticamente.`,
                 color: '#f97316'
             });
         }
@@ -1459,9 +1485,9 @@
             if (dominantCount >= 8) {
                 warnings.push({
                     severity: 'MEDIUM',
-                    icon: 'ðŸ”„',
-                    title: 'PossÃ­vel Falsa ConfluÃªncia',
-                    message: `${dominantCount} indicadores alinhados, mas vÃ¡rios sÃ£o correlacionados (RSI, Stoch, MACD medem momentum similar). O sistema aplicou decorrelaÃ§Ã£o para ajustar.`,
+                    icon: '🔄',
+                    title: 'Possível Falsa Confluência',
+                    message: `${dominantCount} indicadores alinhados, mas vários são correlacionados (RSI, Stoch, MACD medem momentum similar). O sistema aplicou decorrelação para ajustar.`,
                     color: '#eab308'
                 });
             }
@@ -1472,9 +1498,9 @@
         if (hour >= 18 && hour <= 19) { // FOMC typically 2pm ET = 18-19 UTC
             warnings.push({
                 severity: 'MEDIUM',
-                icon: 'ðŸ›ï¸',
-                title: 'PossÃ­vel HorÃ¡rio de FOMC',
-                message: 'O mercado pode estar em perÃ­odo de anÃºncio do FED. Indicadores tÃ©cnicos sÃ£o irrelevantes durante FOMC.',
+                icon: '🏛️',
+                title: 'Possível Horário de FOMC',
+                message: 'O mercado pode estar em período de anúncio do FED. Indicadores técnicos são irrelevantes durante FOMC.',
                 color: '#eab308'
             });
         }
@@ -1483,9 +1509,9 @@
         if (!analysis?.multiExchangeCVD?.exchanges?.bybit) {
             warnings.push({
                 severity: 'LOW',
-                icon: 'ðŸ‘ï¸',
-                title: 'VisÃ£o Limitada a Binance',
-                message: 'Dados de outras exchanges indisponÃ­veis. O CVD pode nÃ£o refletir o mercado global.',
+                icon: '👁️',
+                title: 'Visão Limitada a Binance',
+                message: 'Dados de outras exchanges indisponíveis. O CVD pode não refletir o mercado global.',
                 color: '#94a3b8'
             });
         }
@@ -1494,9 +1520,9 @@
         if (analysis?.timestamp && Date.now() - analysis.timestamp > 10 * 60 * 1000) {
             warnings.push({
                 severity: 'MEDIUM',
-                icon: 'â°',
+                icon: '⏰',
                 title: 'Dados Desatualizados',
-                message: 'AnÃ¡lise tem mais de 10 minutos. Considere atualizar antes de operar.',
+                message: 'Análise tem mais de 10 minutos. Considere atualizar antes de operar.',
                 color: '#eab308'
             });
         }
@@ -1504,9 +1530,9 @@
         return warnings;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // MODULE 14: MASTER ENHANCEMENT ORCHESTRATOR
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     /**
      * Main function that takes the basic V1/V2 analysis and enhances it
      * with all V3 modules. Called after generateTechnicalAnalysis().
@@ -1674,9 +1700,9 @@
         return enhancedAnalysis;
     }
 
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     // EXPORT
-    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    // ═══════════════════════════════════════════════════════
     window.TAEngineV3 = {
         // Core enhancement
         enhanceAnalysis,
@@ -1687,6 +1713,7 @@
         getAdaptiveWeights,
         updateAdaptiveWeights,
         applyAdaptiveWeights,
+        getAdaptiveAlpha,  // v7.2: regime-adaptive alpha
         calculatePositionSize,
         trackVirtualTrade,
         evaluatePendingTrades,

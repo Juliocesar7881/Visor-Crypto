@@ -23,5 +23,11 @@
     "allowMixedContent": false,
     "captureInput": true,
     "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "AdMob": {
+      "appId": "ca-app-pub-2121626726443679~6618029871",
+      "autoInit": true
+    }
   }
 }

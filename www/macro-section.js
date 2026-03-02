@@ -54,6 +54,7 @@
     let indicatorChartPeriod = '1d';
     let indicatorChartType = 'line';
     let indicatorCandleData = null;
+    let _chartRequestId = 0; // Race condition guard
 
     function macroLog(msg, type = 'info') {
         const colors = { info: '#0af', error: '#f44', success: '#0f0', warn: '#fa0' };
@@ -89,9 +90,47 @@
     let lastPriceUpdate = 0;
     const PRICE_UPDATE_INTERVAL = 1 * 60 * 1000; // 1 minuto
     
+    // ============================================
+    // CACHE DE PREÇOS - localStorage para load instantâneo
+    // ============================================
+    const INDICATOR_CACHE_KEY = 'vc_macro_indicator_cache';
+    const INDICATOR_CACHE_TTL = 5 * 60 * 1000; // 5 min para cache ser válido
+    
+    function loadCachedPrices() {
+        try {
+            const raw = localStorage.getItem(INDICATOR_CACHE_KEY);
+            if (!raw) return false;
+            const cache = JSON.parse(raw);
+            if (!cache.ts || (Date.now() - cache.ts) > INDICATOR_CACHE_TTL) return false;
+            if (cache.prices) Object.assign(indicatorPrices, cache.prices);
+            if (cache.changes) Object.assign(indicatorChanges, cache.changes);
+            if (cache.prev) Object.assign(previousIndicatorPrices, cache.prev);
+            macroLog('📦 Cache de preços carregado (instantâneo)', 'success');
+            return true;
+        } catch (e) { return false; }
+    }
+    
+    function savePriceCache() {
+        try {
+            localStorage.setItem(INDICATOR_CACHE_KEY, JSON.stringify({
+                prices: indicatorPrices,
+                changes: indicatorChanges,
+                prev: previousIndicatorPrices,
+                ts: Date.now()
+            }));
+        } catch (e) {}
+    }
+    
     async function loadAllPricesInstant() {
         macroLog('⚡ Carregando preços...', 'info');
         
+        // 1. Carregar cache imediatamente para UI instantânea
+        const hadCache = loadCachedPrices();
+        if (hadCache) {
+            renderAllIndicators(); // Renderizar com cache enquanto busca novos
+        }
+        
+        // 2. Buscar dados frescos em background
         // Tentar Yahoo Finance v8 (chart endpoint - mais confiável)
         macroLog('📊 Buscando via Yahoo Finance...', 'info');
         const yahooSuccess = await loadPricesViaYahooV8();
@@ -111,6 +150,7 @@
         }
         
         lastPriceUpdate = Date.now();
+        savePriceCache(); // Salvar no cache
         renderAllIndicators();
     }
     
@@ -170,12 +210,9 @@
             return false;
         }
         
-        // Buscar em paralelo (3 de cada vez para não sobrecarregar)
-        for (let i = 0; i < symbols.length; i += 3) {
-            const batch = symbols.slice(i, i + 3);
-            const results = await Promise.all(batch.map(s => fetchSymbol(s)));
-            successCount += results.filter(r => r).length;
-        }
+        // Buscar TODOS em paralelo (máxima velocidade)
+        const results = await Promise.all(symbols.map(s => fetchSymbol(s)));
+        successCount = results.filter(r => r).length;
         
         return successCount;
     }
@@ -377,6 +414,8 @@
     // ============================================
     function openIndicatorModal(symbol) {
         macroLog(`Abrindo modal para ${symbol}`, 'info');
+        _chartRequestId++; // Increment to invalidate any pending async callbacks
+        const myRequestId = _chartRequestId;
         currentIndicatorSymbol = symbol;
         indicatorChartPeriod = '1d';
         indicatorChartType = 'line';
@@ -650,7 +689,11 @@
         // Desenhar gráfico só quando animação terminar + dados prontos
         const modalContent = document.getElementById('indicator-modal-content');
         const onReady = async () => {
+            // Guard: if user clicked another indicator, abort
+            if (_chartRequestId !== myRequestId) return;
             await prefetchPromise;
+            // Double-check after async wait
+            if (_chartRequestId !== myRequestId) return;
             if (prefetchedData) {
                 indicatorCandleData = prefetchedData;
                 const loadingEl = document.getElementById('macro-chart-loading');
@@ -666,7 +709,7 @@
             } else {
                 loadIndicatorChartData(symbol);
             }
-            loadIndicatorStats(symbol);
+            if (_chartRequestId === myRequestId) loadIndicatorStats(symbol);
         };
         if (modalContent) {
             modalContent.addEventListener('animationend', onReady, { once: true });
@@ -1471,6 +1514,7 @@
     
     async function loadIndicatorChartData(symbol) {
         macroLog('🚀 loadIndicatorChartData para: ' + symbol, 'info');
+        const myRequestId = _chartRequestId; // Capture current request ID
         
         const loadingEl = document.getElementById('macro-chart-loading');
         const canvas = document.getElementById('macro-chart-canvas');
@@ -1562,6 +1606,11 @@
             
             const result = data?.chart?.result?.[0];
             if (result && result.timestamp && result.indicators?.quote?.[0]) {
+                // Guard: abort if user switched to another indicator
+                if (_chartRequestId !== myRequestId) {
+                    macroLog('⚠️ Chart request stale, ignoring result for ' + symbol, 'warn');
+                    return;
+                }
                 const timestamps = result.timestamp;
                 const quote = result.indicators.quote[0];
                 
@@ -2678,6 +2727,10 @@
                 <div style="font-size: 9px; color: #444;">
                     DFF: ${fedData.effectiveRate ? fedData.effectiveRate.toFixed(2) + '%' : '--'} | CPI: ${fedData.cpi ? fedData.cpi.toFixed(1) + '%' : '--'} | Desemp: ${fedData.unemployment ? fedData.unemployment.toFixed(1) + '%' : '--'}
                 </div>
+                <div style="margin-top: 6px; padding: 6px 8px; background: rgba(234,179,8,0.10); border-radius: 6px; font-size: 9px; color: #b89a00; line-height: 1.4;">
+                    <i class="fas fa-info-circle" style="margin-right: 3px;"></i>
+                    Estimativa própria baseada em Regra de Taylor (FRED: DFF, CPI, UNRATE). Não reflete dados reais do CME FedWatch.
+                </div>
             </div>
         `;
     }
@@ -3463,14 +3516,6 @@
     }
     
     async function showEventDetails(eventTitle, eventDate) {
-        // Buscar histórico real da API
-        let history = await fetchEventHistoryFromAPI(eventTitle);
-        
-        // Usar cache se disponível
-        if (!history || history.length === 0) {
-            history = ECONOMIC_HISTORY_CACHE[eventTitle] || [];
-        }
-        
         // Remover modal antigo
         const oldModal = document.getElementById('event-detail-modal');
         if (oldModal) oldModal.remove();
@@ -3479,14 +3524,11 @@
         function formatDateBR(dateStr) {
             if (!dateStr || dateStr === '-') return dateStr;
             try {
-                // Se já está no formato DD/MM/YYYY, retorna como está
                 if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
-                // Se está no formato YYYY-MM-DD, converte
                 if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
                     const [year, month, day] = dateStr.split('-');
                     return `${day}/${month}/${year}`;
                 }
-                // Tenta converter como Date
                 const date = new Date(dateStr);
                 if (!isNaN(date.getTime())) {
                     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -3499,12 +3541,12 @@
         
         const modal = document.createElement('div');
         modal.id = 'event-detail-modal';
-        modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 9999; display: flex; align-items: flex-end; justify-content: center;';
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0); z-index: 9999; display: flex; align-items: flex-end; justify-content: center; transition: background 0.25s ease;';
         
         const eventInfo = getEventInfo(eventTitle);
         
         modal.innerHTML = `
-            <div style="background: var(--bg-secondary, #1a1a2e); width: 100%; max-width: 420px; border-radius: 20px 20px 0 0; overflow: hidden; animation: slideUp 0.3s ease; max-height: 85vh; display: flex; flex-direction: column;">
+            <div id="event-modal-sheet" style="background: var(--bg-secondary, #1a1a2e); width: 100%; max-width: 420px; border-radius: 20px 20px 0 0; overflow: hidden; max-height: 85vh; display: flex; flex-direction: column; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);">
                 <!-- Header -->
                 <div style="padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
                     <div>
@@ -3512,7 +3554,7 @@
                             <i class="fas ${eventInfo.icon}" style="color: ${eventInfo.color};"></i>
                             ${eventTitle}
                         </h3>
-                        <p style="margin: 4px 0 0; font-size: 12px; color: #888;">Próximo: ${new Date(eventDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                        <p style="margin: 4px 0 0; font-size: 12px; color: #888;">Próximo: ${new Date(eventDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
                     </div>
                     <button id="close-event-modal" style="background: rgba(255,255,255,0.1); border: none; width: 36px; height: 36px; border-radius: 50%; color: white; font-size: 18px; cursor: pointer;">
                         <i class="fas fa-times"></i>
@@ -3525,81 +3567,18 @@
                         ${eventInfo.description}
                     </p>
                     
-
-                    
-                    <!-- Histórico -->
+                    <!-- Histórico (será preenchido quando dados chegarem) -->
                     <h4 style="margin: 0 0 12px; color: white; font-size: 14px; display: flex; align-items: center; gap: 8px;">
                         <i class="fas fa-history" style="color: #3b82f6;"></i>
                         Últimos Resultados
                     </h4>
                     
-                    ${history.length > 0 ? `
-                        <div style="display: flex; flex-direction: column; gap: 10px;">
-                            ${history.map((h, idx) => {
-                                // Calcular variação entre actual e previous
-                                const actualStr = String(h.actual);
-                                const prevStr = String(h.previous);
-                                const actualNum = parseFloat(actualStr.replace(/[^0-9.-]/g, ''));
-                                const prevNum = parseFloat(prevStr.replace(/[^0-9.-]/g, ''));
-                                let variacao = '';
-                                let varColor = '#888';
-                                
-                                // Detectar se actual é um valor delta (ex: +143K do NFP) - nestes casos previous é total e comparação não faz sentido
-                                const isDeltaValue = (actualStr.startsWith('+') || actualStr.startsWith('-')) && (actualStr.includes('K') || actualStr.includes('M'));
-                                const isPreviousTotal = prevStr.includes('(total)');
-                                const skipVariation = isDeltaValue || isPreviousTotal;
-                                
-                                if (!skipVariation && !isNaN(actualNum) && !isNaN(prevNum) && h.previous !== '-') {
-                                    const diff = actualNum - prevNum;
-                                    // Se os valores são percentuais (contém % ou valor < 50), mostrar diferença em pp
-                                    const isPercentageValue = actualStr.includes('%') || prevStr.includes('%') || 
-                                        (Math.abs(actualNum) < 50 && Math.abs(prevNum) < 50 && !actualStr.includes('K') && !actualStr.includes('M'));
-                                    
-                                    if (isPercentageValue) {
-                                        // Para valores em %, mostrar diferença em pontos percentuais
-                                        variacao = diff >= 0 ? `+${diff.toFixed(1)}pp` : `${diff.toFixed(1)}pp`;
-                                    } else if (prevNum !== 0) {
-                                        // Para valores absolutos, mostrar variação %
-                                        const diffPct = ((diff / Math.abs(prevNum)) * 100).toFixed(1);
-                                        variacao = diff >= 0 ? `+${diffPct}%` : `${diffPct}%`;
-                                    }
-                                    varColor = diff >= 0 ? '#22c55e' : '#ef4444';
-                                }
-                                
-                                // Mostrar informações úteis em vez de Prev/Ant com "-"
-                                const hasUsefulData = h.forecast !== '-' || h.previous !== '-';
-                                const showVariacao = variacao !== '';
-                                
-                                return `
-                                <div style="background: rgba(255,255,255,0.03); border-radius: 10px; padding: 12px;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                                        <span style="color: #888; font-size: 11px;">${formatDateBR(h.date)}</span>
-                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                            ${showVariacao ? `<span style="font-size: 10px; color: ${varColor}; background: ${varColor}15; padding: 2px 6px; border-radius: 4px;">${variacao}</span>` : ''}
-                                            <span style="font-size: 13px; font-weight: 600; color: ${String(h.actual).includes('+') || parseFloat(h.actual) > parseFloat(h.forecast) ? '#22c55e' : parseFloat(h.actual) < parseFloat(h.forecast) ? '#ef4444' : '#888'};">${h.actual}</span>
-                                        </div>
-                                    </div>
-                                    ${hasUsefulData ? `
-                                        <div style="display: flex; gap: 12px; font-size: 11px; color: #666;">
-                                            ${h.forecast !== '-' ? `<span>📊 Esperado: ${h.forecast}</span>` : ''}
-                                            ${h.previous !== '-' ? `<span>📈 Anterior: ${h.previous}</span>` : ''}
-                                        </div>
-                                    ` : `
-                                        <div style="font-size: 10px; color: #555; display: flex; align-items: center; gap: 4px;">
-                                            <i class="fas fa-info-circle"></i>
-                                            Resultado reportado na data
-                                        </div>
-                                    `}
-                                </div>
-                            `}).join('')}
+                    <div id="event-history-content">
+                        <div style="display: flex; flex-direction: column; align-items: center; padding: 24px; color: #888;">
+                            <div style="width: 24px; height: 24px; border: 2px solid #3b82f6; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 10px;"></div>
+                            <span style="font-size: 12px;">Carregando histórico...</span>
                         </div>
-                    ` : `
-                        <div style="text-align: center; padding: 24px; color: #888; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.1);">
-                            <i class="fas fa-exclamation-circle" style="font-size: 28px; margin-bottom: 10px; opacity: 0.5; color: #f59e0b;"></i>
-                            <p style="margin: 0; font-weight: 600; font-size: 14px; color: #ccc;">Histórico Indisponível</p>
-                            <p style="margin: 6px 0 0; font-size: 11px; color: #666; line-height: 1.5;">Não foi possível obter dados históricos para este indicador.<br>Isso pode ocorrer por limitação da API ou falta de mapeamento.</p>
-                        </div>
-                    `}
+                    </div>
                     
                     <!-- Expectativa -->
                     ${eventInfo.expectation ? `
@@ -3610,12 +3589,126 @@
                     ` : ''}
                 </div>
             </div>
+            <style>
+                @keyframes spin { to { transform: rotate(360deg); } }
+            </style>
         `;
         
         document.body.appendChild(modal);
         
-        document.getElementById('close-event-modal').addEventListener('click', () => modal.remove());
-        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        // Animate in (slide up + fade background)
+        requestAnimationFrame(() => {
+            modal.style.background = 'rgba(0,0,0,0.85)';
+            const sheet = document.getElementById('event-modal-sheet');
+            if (sheet) sheet.style.transform = 'translateY(0)';
+        });
+        
+        document.getElementById('close-event-modal').addEventListener('click', () => {
+            const sheet = document.getElementById('event-modal-sheet');
+            if (sheet) sheet.style.transform = 'translateY(100%)';
+            modal.style.background = 'rgba(0,0,0,0)';
+            setTimeout(() => modal.remove(), 300);
+        });
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                const sheet = document.getElementById('event-modal-sheet');
+                if (sheet) sheet.style.transform = 'translateY(100%)';
+                modal.style.background = 'rgba(0,0,0,0)';
+                setTimeout(() => modal.remove(), 300);
+            }
+        });
+        
+        // Fetch history in background (no blocking!)
+        let history = ECONOMIC_HISTORY_CACHE[eventTitle] || [];
+        
+        // If we have cached data, render it immediately
+        if (history.length > 0) {
+            renderEventHistory(history, formatDateBR);
+        }
+        
+        // Always try to fetch fresh data
+        try {
+            const freshHistory = await fetchEventHistoryFromAPI(eventTitle);
+            if (freshHistory && freshHistory.length > 0) {
+                history = freshHistory;
+            }
+        } catch(e) {}
+        
+        // Update the history section (whether fresh or from cache)
+        const historyEl = document.getElementById('event-history-content');
+        if (historyEl) {
+            renderEventHistory(history, formatDateBR);
+        }
+    }
+    
+    function renderEventHistory(history, formatDateBR) {
+        const historyEl = document.getElementById('event-history-content');
+        if (!historyEl) return;
+        
+        if (history.length > 0) {
+            historyEl.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    ${history.map((h, idx) => {
+                        const actualStr = String(h.actual);
+                        const prevStr = String(h.previous);
+                        const actualNum = parseFloat(actualStr.replace(/[^0-9.-]/g, ''));
+                        const prevNum = parseFloat(prevStr.replace(/[^0-9.-]/g, ''));
+                        let variacao = '';
+                        let varColor = '#888';
+                        
+                        const isDeltaValue = (actualStr.startsWith('+') || actualStr.startsWith('-')) && (actualStr.includes('K') || actualStr.includes('M'));
+                        const isPreviousTotal = prevStr.includes('(total)');
+                        const skipVariation = isDeltaValue || isPreviousTotal;
+                        
+                        if (!skipVariation && !isNaN(actualNum) && !isNaN(prevNum) && h.previous !== '-') {
+                            const diff = actualNum - prevNum;
+                            const isPercentageValue = actualStr.includes('%') || prevStr.includes('%') || 
+                                (Math.abs(actualNum) < 50 && Math.abs(prevNum) < 50 && !actualStr.includes('K') && !actualStr.includes('M'));
+                            
+                            if (isPercentageValue) {
+                                variacao = diff >= 0 ? '+' + diff.toFixed(1) + 'pp' : diff.toFixed(1) + 'pp';
+                            } else if (prevNum !== 0) {
+                                const diffPct = ((diff / Math.abs(prevNum)) * 100).toFixed(1);
+                                variacao = diff >= 0 ? '+' + diffPct + '%' : diffPct + '%';
+                            }
+                            varColor = diff >= 0 ? '#22c55e' : '#ef4444';
+                        }
+                        
+                        const hasUsefulData = h.forecast !== '-' || h.previous !== '-';
+                        const showVariacao = variacao !== '';
+                        
+                        return '<div style="background: rgba(255,255,255,0.03); border-radius: 10px; padding: 12px;">' +
+                            '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">' +
+                                '<span style="color: #888; font-size: 11px;">' + formatDateBR(h.date) + '</span>' +
+                                '<div style="display: flex; align-items: center; gap: 8px;">' +
+                                    (showVariacao ? '<span style="font-size: 10px; color: ' + varColor + '; background: ' + varColor + '15; padding: 2px 6px; border-radius: 4px;">' + variacao + '</span>' : '') +
+                                    '<span style="font-size: 13px; font-weight: 600; color: ' + (String(h.actual).includes('+') || parseFloat(h.actual) > parseFloat(h.forecast) ? '#22c55e' : parseFloat(h.actual) < parseFloat(h.forecast) ? '#ef4444' : '#888') + ';">' + h.actual + '</span>' +
+                                '</div>' +
+                            '</div>' +
+                            (hasUsefulData ? 
+                                '<div style="display: flex; gap: 12px; font-size: 11px; color: #666;">' +
+                                    (h.forecast !== '-' ? '<span>📊 Esperado: ' + h.forecast + '</span>' : '') +
+                                    (h.previous !== '-' ? '<span>📈 Anterior: ' + h.previous + '</span>' : '') +
+                                '</div>'
+                            :
+                                '<div style="font-size: 10px; color: #555; display: flex; align-items: center; gap: 4px;">' +
+                                    '<i class="fas fa-info-circle"></i>' +
+                                    'Resultado reportado na data' +
+                                '</div>'
+                            ) +
+                        '</div>';
+                    }).join('')}
+                </div>
+            `;
+        } else {
+            historyEl.innerHTML = `
+                <div style="text-align: center; padding: 24px; color: #888; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.1);">
+                    <i class="fas fa-exclamation-circle" style="font-size: 28px; margin-bottom: 10px; opacity: 0.5; color: #f59e0b;"></i>
+                    <p style="margin: 0; font-weight: 600; font-size: 14px; color: #ccc;">Histórico Indisponível</p>
+                    <p style="margin: 6px 0 0; font-size: 11px; color: #666; line-height: 1.5;">Não foi possível obter dados históricos para este indicador.<br>Isso pode ocorrer por limitação da API ou falta de mapeamento.</p>
+                </div>
+            `;
+        }
     }
     
     function getEventInfo(title) {
@@ -3885,6 +3978,20 @@
                 macroLog(`✅ Calendário pré-carregado: ${events.length} eventos`, 'success');
             }
         }).catch(() => {});
+    })();
+
+    // Pre-fetch indicadores de mercado (cache + fetch em background)
+    (function prefetchIndicators() {
+        macroLog('🚀 Pre-fetching indicadores de mercado...', 'info');
+        // Primeiro carregar cache para render instantâneo
+        const hadCache = loadCachedPrices();
+        if (hadCache) {
+            macroLog('📦 Indicadores carregados do cache', 'success');
+        }
+        // Depois buscar dados frescos em background (com delay para não congestionar)
+        setTimeout(() => {
+            loadAllPricesInstant().catch(() => {});
+        }, 2000);
     })();
 
     macroLog('✓ macro-section.js v22.0 carregado! (IDs ÚNICOS)', 'success');
