@@ -235,7 +235,7 @@
                 
                 try {
                     const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(tdSymbol)}&apikey=${apiKey}`;
-                    const response = await fetch(url);
+                    const response = await _fetchWithTimeout(url, {}, 8000);
                     const data = await response.json();
                     
                     // Verificar se tem erro de créditos
@@ -688,7 +688,10 @@
 
         // Desenhar gráfico só quando animação terminar + dados prontos
         const modalContent = document.getElementById('indicator-modal-content');
+        let _onReadyCalled = false;
         const onReady = async () => {
+            if (_onReadyCalled) return; // Prevent double-fire from animationend + fallback
+            _onReadyCalled = true;
             // Guard: if user clicked another indicator, abort
             if (_chartRequestId !== myRequestId) return;
             await prefetchPromise;
@@ -715,7 +718,7 @@
             modalContent.addEventListener('animationend', onReady, { once: true });
             // Fallback se animationend não disparar (ex: browser quirk)
             setTimeout(() => {
-                if (!indicatorCandleData && !prefetchedData) onReady();
+                if (!_onReadyCalled) onReady();
             }, 500);
         } else {
             setTimeout(onReady, 350);
@@ -1651,12 +1654,18 @@
             const loadingEl = document.getElementById('macro-chart-loading');
             if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
             if (container) {
-                container.innerHTML = `
-                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #666;">
-                        <i class="fas fa-chart-line" style="font-size: 40px; margin-bottom: 10px; opacity: 0.3;"></i>
-                        <p style="margin: 0;">Gráfico indisponível</p>
-                        <p style="margin: 4px 0 0; font-size: 11px; color: #555;">${e.message}</p>
-                    </div>
+                // Show error overlay WITHOUT destroying the canvas (so retries work)
+                let errorOverlay = container.querySelector('.chart-error-overlay');
+                if (!errorOverlay) {
+                    errorOverlay = document.createElement('div');
+                    errorOverlay.className = 'chart-error-overlay';
+                    errorOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(13,13,26,0.95);z-index:6;color:#666;';
+                    container.appendChild(errorOverlay);
+                }
+                errorOverlay.innerHTML = `
+                    <i class="fas fa-chart-line" style="font-size: 40px; margin-bottom: 10px; opacity: 0.3;"></i>
+                    <p style="margin: 0;">Gráfico indisponível</p>
+                    <p style="margin: 4px 0 0; font-size: 11px; color: #555;">${e.message}</p>
                 `;
             }
             return;
@@ -1677,6 +1686,10 @@
             macroLog('❌ Canvas/Container não encontrado', 'error');
             return;
         }
+        
+        // Remove any error overlay from previous failed attempt
+        const errOverlay = container.querySelector('.chart-error-overlay');
+        if (errOverlay) errOverlay.remove();
         
         // Esconder loading com fade
         if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
@@ -1798,6 +1811,10 @@
             macroLog('❌ Canvas/Container não encontrado', 'error');
             return;
         }
+        
+        // Remove any error overlay from previous failed attempt
+        const errOverlay = container.querySelector('.chart-error-overlay');
+        if (errOverlay) errOverlay.remove();
         
         // Esconder loading com fade
         if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
@@ -2260,11 +2277,19 @@
     // Proxy CORS para contornar restrições do browser
     const CORS_PROXY = 'https://corsproxy.io/?';
     
+    // Helper: fetch with AbortController timeout (works in all WebViews)
+    function _fetchWithTimeout(url, opts = {}, ms = 10000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), ms);
+        return fetch(url, { ...opts, signal: controller.signal })
+            .finally(() => clearTimeout(timer));
+    }
+    
     // Função para fazer fetch com fallback de proxy CORS
     async function fetchWithCorsProxy(url, useProxy = false) {
         try {
             const fetchUrl = useProxy ? CORS_PROXY + encodeURIComponent(url) : url;
-            const response = await fetch(fetchUrl);
+            const response = await _fetchWithTimeout(fetchUrl, {}, 10000);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return await response.json();
         } catch (e) {
@@ -2625,8 +2650,34 @@
             </div>
         `;
         
+        // Safety timeout: if API calls hang, show error after 20s
+        let _fedWatchDone = false;
+        const _fedWatchSafetyTimer = setTimeout(() => {
+            if (_fedWatchDone) return;
+            _fedWatchDone = true;
+            macroLog('⚠️ Fed Watch timeout - APIs lentas', 'warn');
+            if (currentRateEl) currentRateEl.textContent = '--';
+            const lastDecisionEl = document.getElementById('last-fed-decision');
+            if (lastDecisionEl) lastDecisionEl.innerHTML = '<span style="color: var(--text-muted);">--</span>';
+            container.innerHTML = `
+                <div style="text-align: center; padding: 30px; color: #ef4444;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 32px; margin-bottom: 12px; opacity: 0.7;"></i>
+                    <p style="margin: 0; font-weight: 600;">Tempo esgotado</p>
+                    <p style="margin: 8px 0 0; font-size: 12px; color: #888;">APIs demoraram demais para responder.<br>Verifique sua conexão.</p>
+                    <button onclick="window.updateFedWatch()" style="margin-top: 12px; padding: 8px 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white; cursor: pointer; font-size: 12px;">
+                        <i class="fas fa-sync-alt"></i> Tentar novamente
+                    </button>
+                </div>
+            `;
+        }, 20000);
+        
+        try {
         // Buscar dados atualizados via Alpha Vantage
         const fedData = await fetchFedRateFromAPI();
+        
+        if (_fedWatchDone) return; // Safety timer already fired
+        _fedWatchDone = true;
+        clearTimeout(_fedWatchSafetyTimer);
         
         const today = new Date();
         let nextMeeting = { label: 'A definir', daysUntil: '--', date: null };
@@ -2733,6 +2784,23 @@
                 </div>
             </div>
         `;
+        } catch(e) {
+            if (!_fedWatchDone) {
+                _fedWatchDone = true;
+                clearTimeout(_fedWatchSafetyTimer);
+                if (currentRateEl) currentRateEl.textContent = '--';
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 30px; color: #ef4444;">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 32px; margin-bottom: 12px; opacity: 0.7;"></i>
+                        <p style="margin: 0; font-weight: 600;">Erro ao carregar dados</p>
+                        <p style="margin: 8px 0 0; font-size: 12px; color: #888;">Erro: ${e.message || 'desconhecido'}</p>
+                        <button onclick="window.updateFedWatch()" style="margin-top: 12px; padding: 8px 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white; cursor: pointer; font-size: 12px;">
+                            <i class="fas fa-sync-alt"></i> Tentar novamente
+                        </button>
+                    </div>
+                `;
+            }
+        }
     }
 
     // ============================================
@@ -3065,7 +3133,7 @@
             let data = null;
             for (const url of urls) {
                 try {
-                    const response = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+                    const response = await _fetchWithTimeout(url, {}, 8000);
                     if (!response.ok) continue;
                     const result = await response.json();
                     if (Array.isArray(result) && result.length > 0) {
@@ -3141,7 +3209,7 @@
             if (_backendProxyAvailable !== false) {
                 try {
                     const proxyUrl = `${BACKEND_PROXY}/fmp/calendar?from=${fromDate}&to=${toDate}`;
-                    const response = await fetch(proxyUrl, { signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+                    const response = await _fetchWithTimeout(proxyUrl, {}, 8000);
                     if (response.ok) {
                         const result = await response.json();
                         if (Array.isArray(result) && result.length > 0) {
@@ -3446,21 +3514,8 @@
         return await fetchEconomicHistoryFromAI(eventTitle);
     }
     
-    async function updateEconomicCalendar() {
-        const container = document.getElementById('economic-calendar');
-        if (!container) return;
-        
-        // Mostrar loading
-        container.innerHTML = `
-            <div style="text-align: center; padding: 30px; color: #888;">
-                <i class="fas fa-spinner fa-spin" style="font-size: 20px; margin-bottom: 8px;"></i>
-                <p style="margin: 0;">Carregando eventos...</p>
-            </div>
-        `;
-        
-        // Tentar buscar dados reais
-        let events = await fetchEconomicCalendarFromAPI();
-        
+    // Helper para renderizar eventos no calendário
+    function _renderCalendarEvents(container, events) {
         if (!events || events.length === 0) {
             container.innerHTML = `
                 <div style="text-align: center; padding: 30px; color: #ef4444;">
@@ -3474,19 +3529,14 @@
             `;
             return;
         }
-        
         container.innerHTML = events.slice(0, 10).map((e, idx) => {
-            // Formatar data no estilo brasileiro DD/MM
             const fullDateObj = new Date(e.fullDate + 'T12:00:00');
             const dayStr = String(fullDateObj.getDate()).padStart(2, '0');
             const monthStr = String(fullDateObj.getMonth() + 1).padStart(2, '0');
-            
-            // Informação de resultado anterior
             let prevInfo = '';
             if (e.previous && e.previous !== 'null' && e.previous !== '') {
                 prevInfo = ` • Ant: ${e.previous}`;
             }
-            
             return `
             <div class="calendar-event" data-event-idx="${idx}" data-event-title="${e.title}" style="cursor: pointer; transition: background 0.2s;" onclick="window.MacroAPI.showEventDetails('${e.title}', '${e.fullDate}')">
                 <div class="calendar-date">
@@ -3501,24 +3551,65 @@
                 <i class="fas fa-chevron-right" style="color: var(--text-muted); font-size: 12px; margin-left: 8px;"></i>
             </div>
         `}).join('') || '<p style="color: var(--text-muted); text-align: center;">Nenhum evento</p>';
-        
-        // Adicionar hover effect
         container.querySelectorAll('.calendar-event').forEach(el => {
             el.addEventListener('mouseenter', () => el.style.background = 'rgba(255,255,255,0.05)');
             el.addEventListener('mouseleave', () => el.style.background = '');
         });
-        
-        // Mostrar última atualização
         const updateInfo = document.createElement('div');
         updateInfo.style.cssText = 'font-size: 10px; color: #555; text-align: right; margin-top: 8px; padding-right: 8px;';
         updateInfo.textContent = `Atualizado: ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} • Histórico: FRED API`;
         container.appendChild(updateInfo);
+    }
+
+    async function updateEconomicCalendar() {
+        const container = document.getElementById('economic-calendar');
+        if (!container) return;
+        
+        // Mostrar loading
+        container.innerHTML = `
+            <div style="text-align: center; padding: 30px; color: #888;">
+                <i class="fas fa-spinner fa-spin" style="font-size: 20px; margin-bottom: 8px;"></i>
+                <p style="margin: 0;">Carregando eventos...</p>
+            </div>
+        `;
+        
+        // Safety timeout: show fallback after 20s if APIs hang
+        let _calDone = false;
+        const _calSafetyTimer = setTimeout(() => {
+            if (_calDone) return;
+            _calDone = true;
+            macroLog('⚠️ Calendar timeout - usando fallback', 'warn');
+            const fallbackEvents = calculateFallbackEvents();
+            _renderCalendarEvents(container, fallbackEvents);
+        }, 20000);
+        
+        // Tentar buscar dados reais
+        let events = await fetchEconomicCalendarFromAPI();
+        
+        if (_calDone) return; // Safety timer already fired
+        _calDone = true;
+        clearTimeout(_calSafetyTimer);
+        
+        if (!events || events.length === 0) {
+            _renderCalendarEvents(container, null);
+            return;
+        }
+        
+        _renderCalendarEvents(container, events);
     }
     
     async function showEventDetails(eventTitle, eventDate) {
         // Remover modal antigo
         const oldModal = document.getElementById('event-detail-modal');
         if (oldModal) oldModal.remove();
+
+        // ── PRE-FETCH data BEFORE opening modal to avoid stutter ──
+        let history = ECONOMIC_HISTORY_CACHE[eventTitle] || [];
+        let fetchPromise = null;
+        if (history.length === 0) {
+            // No cache: start fetching immediately (before building DOM)
+            fetchPromise = fetchEventHistoryFromAPI(eventTitle).catch(() => []);
+        }
         
         // Função para formatar data para pt-BR (DD/MM/YYYY)
         function formatDateBR(dateStr) {
@@ -3618,25 +3709,27 @@
             }
         });
         
-        // Fetch history in background (no blocking!)
-        let history = ECONOMIC_HISTORY_CACHE[eventTitle] || [];
-        
-        // If we have cached data, render it immediately
+        // ── Render history: single render, no stutter ──
         if (history.length > 0) {
+            // Cache hit: render immediately, no spinner visible
             renderEventHistory(history, formatDateBR);
-        }
-        
-        // Always try to fetch fresh data
-        try {
-            const freshHistory = await fetchEventHistoryFromAPI(eventTitle);
-            if (freshHistory && freshHistory.length > 0) {
-                history = freshHistory;
-            }
-        } catch(e) {}
-        
-        // Update the history section (whether fresh or from cache)
-        const historyEl = document.getElementById('event-history-content');
-        if (historyEl) {
+        } else if (fetchPromise) {
+            // No cache: wait for the pre-fetch that started before DOM creation
+            try {
+                const freshHistory = await fetchPromise;
+                if (freshHistory && freshHistory.length > 0) {
+                    history = freshHistory;
+                }
+            } catch(e) {}
+            renderEventHistory(history, formatDateBR);
+        } else {
+            // Fallback: fetch now
+            try {
+                const freshHistory = await fetchEventHistoryFromAPI(eventTitle);
+                if (freshHistory && freshHistory.length > 0) {
+                    history = freshHistory;
+                }
+            } catch(e) {}
             renderEventHistory(history, formatDateBR);
         }
     }
@@ -3923,11 +4016,10 @@
         macroLog('=== MACRO v14.0 - FED WATCH DINÂMICO + CALENDÁRIO INTERATIVO ===', 'success');
         macroLoaded = true;
         
-        renderAllIndicators();
-        updateFedWatch();
-        updateEconomicCalendar();
-        
-        loadAllPricesInstant();
+        try { renderAllIndicators(); } catch(e) { macroLog('Erro renderAllIndicators: ' + e.message, 'error'); }
+        try { updateFedWatch(); } catch(e) { macroLog('Erro updateFedWatch: ' + e.message, 'error'); }
+        try { updateEconomicCalendar(); } catch(e) { macroLog('Erro updateEconomicCalendar: ' + e.message, 'error'); }
+        try { loadAllPricesInstant(); } catch(e) { macroLog('Erro loadAllPricesInstant: ' + e.message, 'error'); }
         
         setTimeout(() => connectMacroWebSocket(), 1000);
         
