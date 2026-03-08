@@ -85,7 +85,7 @@ public class ScanForegroundService extends Service {
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "VisorCrypto::ScanWakeLock"
             );
-            wakeLock.acquire(24 * 60 * 60 * 1000L); // 24h max, refreshed on restart
+            wakeLock.acquire(10 * 60 * 1000L); // 10min, renewed each scan cycle
         }
     }
 
@@ -158,12 +158,16 @@ public class ScanForegroundService extends Service {
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
-        // When user swipes app from recents, restart service
-        Intent restartIntent = new Intent(getApplicationContext(), ScanForegroundService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getApplicationContext().startForegroundService(restartIntent);
-        } else {
-            getApplicationContext().startService(restartIntent);
+        // When user swipes app from recents, try to restart service
+        try {
+            Intent restartIntent = new Intent(getApplicationContext(), ScanForegroundService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                getApplicationContext().startForegroundService(restartIntent);
+            } else {
+                getApplicationContext().startService(restartIntent);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to restart service on task removed: " + e.getMessage());
         }
         super.onTaskRemoved(rootIntent);
     }
@@ -176,10 +180,21 @@ public class ScanForegroundService extends Service {
         scanCount++;
         Log.d(TAG, "Starting native scan #" + scanCount);
 
+        // Renew WakeLock each scan cycle (10min lease)
+        if (wakeLock != null) {
+            try {
+                if (wakeLock.isHeld()) wakeLock.release();
+                wakeLock.acquire(10 * 60 * 1000L);
+            } catch (Exception e) {
+                Log.e(TAG, "WakeLock renewal failed: " + e.getMessage());
+            }
+        }
+
         // Update persistent notification with scan count
         updatePersistentNotification("Último scan: " + getCurrentTime() + " (#" + scanCount + ")");
 
         new Thread(() -> {
+            try {
             SharedPreferences prefs = getSharedPreferences("visor_scan", MODE_PRIVATE);
             
             for (String[] sym : SCAN_SYMBOLS) {
@@ -228,6 +243,9 @@ public class ScanForegroundService extends Service {
                 }
             }
             Log.d(TAG, "Scan #" + scanCount + " complete");
+            } catch (Exception e) {
+                Log.e(TAG, "Scan thread error: " + e.getMessage());
+            }
         }).start();
     }
 
@@ -408,6 +426,7 @@ public class ScanForegroundService extends Service {
         try {
             Intent intent = new Intent(this, MainActivity.class);
             intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            intent.putExtra("FROM_SIGNAL_NOTIFICATION", true);
             PendingIntent pendingIntent = PendingIntent.getActivity(
                 this, id, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE

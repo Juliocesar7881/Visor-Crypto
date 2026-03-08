@@ -1,0 +1,12 @@
+name = "visor-crypto-calendar"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+# KV namespace for caching calendar data
+[[kv_namespaces]]
+binding = "CALENDAR_KV"
+id = "YOUR_KV_NAMESPACE_ID"
+
+# Cron trigger - runs every 3 hours
+[triggers]
+crons = ["0 */3 * * *"]

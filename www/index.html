@@ -352,8 +352,17 @@
                         <div class="event-detail-crypto-impact" id="event-detail-crypto-impact"></div>
                     </div>
 
-                    <!-- Histórico de Resultados -->
-                    <div class="event-history-section" id="event-history-section" style="display: none;">
+                    <!-- Histórico de Resultados - sempre visível para evitar saltos de layout -->
+                    <div class="event-history-section" id="event-history-section">
+                        <div class="card-header" style="margin-bottom: 12px;">
+                            <div class="card-title">
+                                <i class="fas fa-history"></i>
+                                Últimos Resultados
+                            </div>
+                        </div>
+                        <div style="text-align: center; padding: 12px; color: var(--text-muted); font-size: 12px;">
+                            <i class="fas fa-clock" style="opacity: 0.5;"></i> Dados ainda não disponíveis
+                        </div>
                     </div>
 
                     <!-- Probabilidades do Evento -->
@@ -508,11 +517,26 @@
             <div id="home" class="section active">
                 <div class="quick-stats">
                     <div class="quick-stat">
-                        <div class="quick-stat-value" id="btc-dominance">--</div>
+                        <div class="quick-stat-visual">
+                            <div class="quick-stat-ring" id="btc-dom-ring">
+                                <svg viewBox="0 0 80 80">
+                                    <circle cx="40" cy="40" r="34" fill="none" stroke="var(--border-subtle)" stroke-width="5"/>
+                                    <circle cx="40" cy="40" r="34" fill="none" stroke="#f7931a" stroke-width="5" stroke-dasharray="213.6" stroke-dashoffset="213.6" stroke-linecap="round" id="btc-dom-arc" style="transition: stroke-dashoffset 1s ease;"/>
+                                </svg>
+                                <div class="quick-stat-ring-value" id="btc-dominance"><i class="fas fa-spinner fa-spin" style="font-size:14px;opacity:0.4;"></i></div>
+                            </div>
+                        </div>
                         <div class="quick-stat-label">BTC Dominância</div>
                     </div>
                     <div class="quick-stat">
-                        <div class="quick-stat-value" id="market-trend">--</div>
+                        <div class="quick-stat-visual">
+                            <div class="quick-stat-trend" id="market-trend-box">
+                                <div class="trend-arrow" id="trend-arrow">
+                                    <i class="fas fa-minus" style="font-size:22px;color:var(--text-muted);"></i>
+                                </div>
+                                <div class="trend-label" id="market-trend">--</div>
+                            </div>
+                        </div>
                         <div class="quick-stat-label">Tendência 24h</div>
                     </div>
                 </div>
@@ -567,12 +591,52 @@
                 </div>
 
                 <div id="news-container">
-                    <div class="loading"><div class="spinner"></div></div>
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
                 </div>
             </div>
 
             <!-- ANALYSIS -->
             <div id="analysis" class="section">
+                <!-- Mapa de Calor - Heatmap -->
+                <div onclick="openExternalLink('https://www.coinglass.com/pro/futures/LiquidationHeatMap', 'Liquidation Heatmap')" style="
+                    cursor: pointer;
+                    margin-bottom: 16px;
+                    padding: 14px 18px;
+                    background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 50%, rgba(168, 85, 247, 0.08) 100%);
+                    border: 1px solid rgba(99, 102, 241, 0.25);
+                    border-radius: 14px;
+                    display: flex;
+                    align-items: center;
+                    gap: 14px;
+                    transition: all 0.25s ease;
+                    position: relative;
+                    overflow: hidden;
+                " onmouseover="this.style.borderColor='rgba(99,102,241,0.5)';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='rgba(99,102,241,0.25)';this.style.transform='none'">
+                    <div style="
+                        width: 42px; height: 42px; flex-shrink: 0;
+                        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+                        border-radius: 12px;
+                        display: flex; align-items: center; justify-content: center;
+                        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);">
+                        <i class="fas fa-fire" style="color: white; font-size: 18px;"></i>
+                    </div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-size: 14px; font-weight: 700; color: var(--text-primary);">Mapa de Calor de Liquidações</div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">CoinGlass — Visualize zonas de liquidação em tempo real</div>
+                    </div>
+                    <div style="
+                        width: 32px; height: 32px; flex-shrink: 0;
+                        background: rgba(99, 102, 241, 0.15);
+                        border-radius: 8px;
+                        display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-external-link-alt" style="color: #818cf8; font-size: 12px;"></i>
+                    </div>
+                </div>
+
                 <!-- Fear & Greed -->
                 <div class="fear-greed-meter">
                     <div class="meter-header">
@@ -580,7 +644,7 @@
                             <i class="fas fa-heart-pulse"></i>
                             Fear & Greed Index
                         </div>
-                        <div class="meter-value" id="fear-greed-value">--</div>
+                        <div class="meter-value" id="fear-greed-value"><i class="fas fa-spinner fa-spin" style="font-size:14px;opacity:0.4;"></i></div>
                     </div>
                     <div class="meter-bar">
                         <div class="meter-indicator" id="fear-greed-indicator" style="left: 50%"></div>
@@ -599,7 +663,7 @@
                             <i class="fas fa-coins"></i>
                             Altseason Index
                         </div>
-                        <div class="meter-value" id="altseason-value">--</div>
+                        <div class="meter-value" id="altseason-value"><i class="fas fa-spinner fa-spin" style="font-size:14px;opacity:0.4;"></i></div>
                     </div>
                     <div class="altseason-bar">
                         <div class="altseason-indicator" id="altseason-indicator" style="left: 50%"></div>
@@ -623,11 +687,13 @@
                     <div class="stat-box">
                         <div class="stat-value" id="live-volume-btc">--</div>
                         <div class="stat-change" id="volume-change-btc"></div>
+                        <div class="mini-perf-bar" id="mini-bar-vol-btc"></div>
                         <div class="stat-label">Volume 24h BTC</div>
                     </div>
                     <div class="stat-box">
-                        <div class="stat-value" id="market-cap-btc">--</div>
+                        <div class="stat-value" id="market-cap-btc"><i class="fas fa-spinner fa-spin" style="font-size:12px;opacity:0.3;"></i></div>
                         <div class="stat-change" id="mcap-change-btc"></div>
+                        <div class="mini-perf-bar" id="mini-bar-mcap-btc"></div>
                         <div class="stat-label">Market Cap BTC (24h)</div>
                     </div>
                 </div>
@@ -641,11 +707,13 @@
                     <div class="stat-box">
                         <div class="stat-value" id="live-volume">--</div>
                         <div class="stat-change" id="volume-change"></div>
+                        <div class="mini-perf-bar" id="mini-bar-vol-eth"></div>
                         <div class="stat-label">Volume 24h ETH</div>
                     </div>
                     <div class="stat-box">
-                        <div class="stat-value" id="market-cap">--</div>
+                        <div class="stat-value" id="market-cap"><i class="fas fa-spinner fa-spin" style="font-size:12px;opacity:0.3;"></i></div>
                         <div class="stat-change" id="mcap-change"></div>
+                        <div class="mini-perf-bar" id="mini-bar-mcap-eth"></div>
                         <div class="stat-label">Market Cap ETH (24h)</div>
                     </div>
                 </div>
@@ -845,7 +913,7 @@
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/tesla', 'Tesla')">
-                        <i class="fas fa-car" style="color: #ef4444; font-size: 20px; width: 32px; text-align: center;"></i>
+                        <img src="Tesla_logo.png" alt="Tesla" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
                             <div class="external-link-title">Tesla</div>
                             <div class="external-link-desc">Arkham - Tesla Inc. (Elon Musk)</div>
@@ -853,7 +921,7 @@
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/kraken', 'Kraken')">
-                        <i class="fas fa-water" style="color: #7b61ff; font-size: 20px; width: 32px; text-align: center;"></i>
+                        <img src="Kraken.png" alt="Kraken" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
                             <div class="external-link-title">Kraken</div>
                             <div class="external-link-desc">Arkham - Exchange americana</div>
@@ -861,23 +929,16 @@
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/bitfinex', 'Bitfinex')">
-                        <i class="fas fa-exchange-alt" style="color: #22c55e; font-size: 20px; width: 32px; text-align: center;"></i>
+                        <img src="Bitfinex.png" alt="Bitfinex" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
                             <div class="external-link-title">Bitfinex</div>
                             <div class="external-link-desc">Arkham - Exchange global</div>
                         </div>
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
-                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/mt-gox', 'Mt. Gox')">
-                        <i class="fas fa-exclamation-triangle" style="color: #f59e0b; font-size: 20px; width: 32px; text-align: center;"></i>
-                        <div class="external-link-text">
-                            <div class="external-link-title">Mt. Gox (Trustee)</div>
-                            <div class="external-link-desc">Arkham - Espólio Mt. Gox</div>
-                        </div>
-                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
-                    </div>
+
                     <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/galaxy-digital', 'Galaxy Digital')">
-                        <i class="fas fa-globe" style="color: #8b5cf6; font-size: 20px; width: 32px; text-align: center;"></i>
+                        <img src="galaxy.png" alt="Galaxy Digital" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
                             <div class="external-link-title">Galaxy Digital</div>
                             <div class="external-link-desc">Arkham - Mike Novogratz</div>
@@ -885,7 +946,7 @@
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/el-salvador', 'El Salvador')">
-                        <i class="fas fa-flag" style="color: #3b82f6; font-size: 20px; width: 32px; text-align: center;"></i>
+                        <img src="El%20Salvador.png" alt="El Salvador" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
                             <div class="external-link-title">El Salvador</div>
                             <div class="external-link-desc">Arkham - Governo de El Salvador</div>
@@ -893,7 +954,7 @@
                         <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
                     </div>
                     <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/robinhood', 'Robinhood')">
-                        <i class="fas fa-leaf" style="color: #22c55e; font-size: 20px; width: 32px; text-align: center;"></i>
+                        <img src="robinhood.png" alt="Robinhood" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
                         <div class="external-link-text">
                             <div class="external-link-title">Robinhood</div>
                             <div class="external-link-desc">Arkham - Plataforma de trading</div>
@@ -902,33 +963,6 @@
                     </div>
                 </div>
 
-                <!-- Mapa de Calor -->
-                <div class="card" style="margin-top: 16px;">
-                    <div class="card-header">
-                        <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
-                            <div style="
-                                width: 32px; height: 32px; 
-                                background: linear-gradient(135deg, #ff6b35, #ef4444);
-                                border-radius: 8px;
-                                display: flex; align-items: center; justify-content: center;
-                                box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);">
-                                <i class="fas fa-fire" style="color: white; font-size: 14px;"></i>
-                            </div>
-                            <div>
-                                <div style="font-size: 15px; font-weight: 700;">Mapa de Calor</div>
-                                <div style="font-size: 10px; color: var(--text-muted); font-weight: 400;">Liquidações em tempo real</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="external-link" onclick="openExternalLink('https://www.coinglass.com/pro/futures/LiquidationHeatMap', 'Liquidation Heatmap')">
-                        <i class="fas fa-fire-alt" style="color: #ff4444;"></i>
-                        <div class="external-link-text">
-                            <div class="external-link-title">Liquidation Heatmap</div>
-                            <div class="external-link-desc">CoinGlass - Mapa de liquidações</div>
-                        </div>
-                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
-                    </div>
-                </div>
             </div>
 
             <!-- MACRO -->
@@ -998,7 +1032,7 @@
                     <div class="card-header" style="margin-bottom: 12px;">
                         <div class="card-title">
                             <i class="fas fa-calendar-week"></i>
-                            Próximos Eventos Econômicos
+                            Calendário EUA • Alta Importância • 30 dias
                         </div>
                     </div>
                     <div id="economic-calendar">
@@ -1125,7 +1159,9 @@
                         </div>
                         Confiança das Análises
                     </div>
-                    <div id="dash-conf-updated" class="dash-pill" style="font-size:9px;">Aguardando scan...</div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <div id="dash-conf-updated" class="dash-pill" style="font-size:9px;">Escaneando...</div>
+                    </div>
                 </div>
                 <div class="card" style="padding:0;overflow:hidden;margin-bottom:4px;">
                     <div id="dash-confidence-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border-subtle);">
@@ -1217,7 +1253,20 @@
     </div>
 
 
+    <!-- Global crash protection -->
+    <script>
+    window.onerror = function(msg, src, line, col, err) {
+        try { console.error('[GlobalError]', msg, src, line, col, err); } catch(e) {}
+        return true;
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+        try { console.error('[UnhandledRejection]', e.reason); } catch(ex) {}
+        e.preventDefault();
+    });
+    </script>
+
     <!-- App Modules (load order matters - core first, init/lifecycle last) -->
+    <script src="js/config.js"></script>
     <script src="js/core.js"></script>
     <script src="js/browser.js"></script>
     <script src="js/translation.js"></script>

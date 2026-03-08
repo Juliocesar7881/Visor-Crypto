@@ -31,9 +31,21 @@
                 recommendation = `Mercado <strong style="color: var(--accent-yellow);">lateral</strong>. Aguarde breakout.`;
             }
             
-            const trendIcon = avgChange > 0.5 ? '<i class="fas fa-arrow-trend-up"></i>' : avgChange < -0.5 ? '<i class="fas fa-arrow-trend-down"></i>' : '<i class="fas fa-minus"></i>';
+            const trendIcon = avgChange > 0.5 ? '<i class="fas fa-arrow-trend-up" style="font-size:22px;color:#22c55e;"></i>' : avgChange < -0.5 ? '<i class="fas fa-arrow-trend-down" style="font-size:22px;color:#ef4444;"></i>' : '<i class="fas fa-minus" style="font-size:22px;color:var(--text-muted);"></i>';
             const trendText = avgChange > 0.5 ? 'Alta' : avgChange < -0.5 ? 'Baixa' : 'Lateral';
-            document.getElementById('market-trend').innerHTML = `${trendIcon} ${trendText}`;
+            const trendColor = avgChange > 0.5 ? '#22c55e' : avgChange < -0.5 ? '#ef4444' : 'var(--text-secondary)';
+            
+            // Update trend arrow visual
+            const trendArrow = document.getElementById('trend-arrow');
+            if (trendArrow) {
+                trendArrow.innerHTML = trendIcon;
+                trendArrow.className = 'trend-arrow' + (avgChange > 0.5 ? ' up' : avgChange < -0.5 ? ' down' : '');
+            }
+            const trendLabel = document.getElementById('market-trend');
+            if (trendLabel) {
+                trendLabel.textContent = trendText;
+                trendLabel.style.color = trendColor;
+            }
             
             // Filtrar apenas criptos com dados de preço carregados e ordenar por mudança
             const cryptosWithData = selectedCryptos
@@ -73,7 +85,7 @@
                         <i class="fas ${sentimentClass === 'bullish' ? 'fa-arrow-trend-up' : sentimentClass === 'bearish' ? 'fa-arrow-trend-down' : 'fa-minus'}"></i>
                     </div>
                     <div>
-                        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Sentimento 24h</div>
+                        <div class="ai-sentiment-label">Sentimento 24h</div>
                         <div class="ai-sentiment-value" style="color: var(--accent-${sentimentClass === 'bullish' ? 'green' : sentimentClass === 'bearish' ? 'red' : 'yellow'});">${sentiment}</div>
                     </div>
                 </div>
@@ -86,13 +98,13 @@
                     <div class="ai-picks">
                         ${picks.map(pick => `
                             <div class="ai-pick ${pick.actionClass}">
-                                <img src="${pick.info.img}" style="width: 40px; height: 40px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);" onerror="this.style.background='${pick.info.color}'; this.style.padding='8px';">
+                                <img src="${pick.info.img}" style="width: 24px; height: 24px; border-radius: 7px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); flex-shrink: 0;" onerror="this.style.background='${pick.info.color}'; this.style.padding='4px';">
                                 <div class="ai-pick-info">
                                     <div class="ai-pick-symbol">${pick.info.name}</div>
                                     <div class="ai-pick-price">$${pick.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                                 </div>
                                 <div class="ai-pick-allocation">
-                                    <div class="ai-pick-change ${pick.change >= 0 ? 'pnl-positive' : 'pnl-negative'}" style="font-size: 18px; font-weight: 800;">
+                                    <div class="ai-pick-change ${pick.change >= 0 ? 'pnl-positive' : 'pnl-negative'}" style="font-size: 13px; font-weight: 700;">
                                         ${pick.change >= 0 ? '+' : ''}${pick.change.toFixed(2)}%
                                     </div>
                                 </div>
@@ -105,7 +117,28 @@
 
 
         // BTC Dominância - APENAS CoinGecko com ajuste +2.1
+        const BTC_DOM_CACHE_KEY = 'btc_dom_cache';
+        const BTC_DOM_CACHE_TTL = 30 * 60 * 1000; // 30 min
+        
         async function fetchGlobalData() {
+            // Restaurar cache imediatamente
+            try {
+                const raw = localStorage.getItem(BTC_DOM_CACHE_KEY);
+                if (raw) {
+                    const c = JSON.parse(raw);
+                    if (c.val && c.ts && (Date.now() - c.ts) < BTC_DOM_CACHE_TTL) {
+                        const domEl = document.getElementById('btc-dominance');
+                        if (domEl) domEl.textContent = `${c.val.toFixed(2)}%`;
+                        const arc = document.getElementById('btc-dom-arc');
+                        if (arc) {
+                            const circumference = 213.6;
+                            const offset = circumference * (1 - c.val / 100);
+                            arc.setAttribute('stroke-dashoffset', Math.max(0, offset));
+                        }
+                    }
+                }
+            } catch(e) {}
+            
             try {
                 const response = await fetchWithTimeout('https://api.coingecko.com/api/v3/global', {}, 10000);
                 if (response.ok) {
@@ -115,15 +148,24 @@
                     if (btcDominance && btcDominance > 0) {
                         // Ajuste +2.1 para alinhar com TradingView/CMC
                         btcDominance = btcDominance + 2.1;
-                        document.getElementById('btc-dominance').textContent = `${btcDominance.toFixed(2)}%`;
-                        /* console.log('📊 BTC Dominância (CoinGecko+2.1):', btcDominance.toFixed(2) + '%'); */
+                        const domEl = document.getElementById('btc-dominance');
+                        if (domEl) domEl.textContent = `${btcDominance.toFixed(2)}%`;
+                        // Preencher arco SVG proporcionalmente à %
+                        const arc = document.getElementById('btc-dom-arc');
+                        if (arc) {
+                            const circumference = 213.6;
+                            const offset = circumference * (1 - btcDominance / 100);
+                            arc.setAttribute('stroke-dashoffset', Math.max(0, offset));
+                        }
+                        // Salvar no cache
+                        try { localStorage.setItem(BTC_DOM_CACHE_KEY, JSON.stringify({ val: btcDominance, ts: Date.now() })); } catch(e) {}
                         return btcDominance;
                     }
                 }
             } catch (e) {
             }
             
-            // Se falhar, manter "--" até próxima tentativa (sem fallback falso)
+            // Se falhar, manter cache anterior ou "--" até próxima tentativa
             return null;
         }
 
@@ -134,7 +176,57 @@
             await fetchETHStats();
         }
 
+        // Utility: update mini performance bar visual
+        function updateMiniPerfBar(barId, pct) {
+            const bar = document.getElementById(barId);
+            if (!bar) return;
+            const clamped = Math.max(-15, Math.min(15, pct));
+            const width = (Math.abs(clamped) / 15) * 50; // max 50% width (one side)
+            bar.innerHTML = `<div class="bar-center"></div><div class="bar-fill ${pct >= 0 ? 'positive' : 'negative'}" style="width:${width}%"></div>`;
+        }
+
+        // Helper: format market cap value
+        function formatMcap(val) {
+            if (val > 1e12) return `$${(val / 1e12).toFixed(2)}T`;
+            if (val > 1e9) return `$${(val / 1e9).toFixed(2)}B`;
+            return `$${(val / 1e6).toFixed(2)}M`;
+        }
+
+        // Cache keys for market cap and volume
+        const MCAP_CACHE_KEY_BTC = 'mcap_btc_cache';
+        const MCAP_CACHE_KEY_ETH = 'mcap_eth_cache';
+        const VOL_CACHE_KEY_BTC = 'vol_btc_cache';
+        const VOL_CACHE_KEY_ETH = 'vol_eth_cache';
+        const MCAP_CACHE_TTL = 30 * 60 * 1000; // 30 min
+
+        function getMcapCache(key) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw) return JSON.parse(raw);
+            } catch(e) {}
+            return null;
+        }
+        function setMcapCache(key, mcap, change) {
+            try { localStorage.setItem(key, JSON.stringify({ mcap, change, ts: Date.now() })); } catch(e) {}
+        }
+        function setVolCache(key, vol, change) {
+            try { localStorage.setItem(key, JSON.stringify({ vol, change, ts: Date.now() })); } catch(e) {}
+        }
+
         async function fetchBTCStats() {
+            // Show cached value immediately while loading
+            const cached = getMcapCache(MCAP_CACHE_KEY_BTC);
+            if (cached && cached.mcap) {
+                const mcEl = document.getElementById('market-cap-btc');
+                if (mcEl) mcEl.textContent = formatMcap(cached.mcap);
+                const ch = cached.change || priceChanges['BTCUSDT'] || 0;
+                const el = document.getElementById('mcap-change-btc');
+                if (el) {
+                    el.textContent = `${ch >= 0 ? '+' : ''}${ch.toFixed(2)}%`;
+                    el.className = `stat-change ${ch >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                }
+                updateMiniPerfBar('mini-bar-mcap-btc', ch);
+            }
             try {
                 const response = await fetch(`https://api.coingecko.com/api/v3/coins/bitcoin?localization=false&tickers=false&community_data=false&developer_data=false`);
                 
@@ -144,28 +236,51 @@
                 
                 // Market Cap BTC
                 const marketCap = data.market_data?.market_cap?.usd || 0;
-                const mcapChange = data.market_data?.market_cap_change_percentage_24h || 0;
+                const mcapChange = data.market_data?.market_cap_change_percentage_24h || priceChanges['BTCUSDT'] || 0;
                 
-                if (marketCap > 1e12) {
-                    document.getElementById('market-cap-btc').textContent = `$${(marketCap / 1e12).toFixed(2)}T`;
-                } else if (marketCap > 1e9) {
-                    document.getElementById('market-cap-btc').textContent = `$${(marketCap / 1e9).toFixed(2)}B`;
-                } else {
-                    document.getElementById('market-cap-btc').textContent = `$${(marketCap / 1e6).toFixed(2)}M`;
+                if (marketCap > 0) {
+                    const mcEl = document.getElementById('market-cap-btc');
+                    if (mcEl) mcEl.textContent = formatMcap(marketCap);
+                    // Only cache non-zero change to avoid overwriting good data
+                    const changeToCache = mcapChange !== 0 ? mcapChange : (cached?.change || 0);
+                    setMcapCache(MCAP_CACHE_KEY_BTC, marketCap, changeToCache);
                 }
                 
                 const mcapChangeEl = document.getElementById('mcap-change-btc');
-                mcapChangeEl.textContent = `${mcapChange >= 0 ? '+' : ''}${mcapChange.toFixed(2)}%`;
-                mcapChangeEl.className = `stat-change ${mcapChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                if (mcapChangeEl) {
+                    mcapChangeEl.textContent = `${mcapChange >= 0 ? '+' : ''}${mcapChange.toFixed(2)}%`;
+                    mcapChangeEl.className = `stat-change ${mcapChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                }
+                updateMiniPerfBar('mini-bar-mcap-btc', mcapChange);
                 
             } catch (e) {
-                const change = priceChanges['BTCUSDT'] || 0;
-                document.getElementById('mcap-change-btc').textContent = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
-                document.getElementById('mcap-change-btc').className = `stat-change ${change >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                // Use cached change or Binance priceChange as fallback
+                const fallbackChange = (cached?.change) || priceChanges['BTCUSDT'] || 0;
+                if (fallbackChange !== 0) {
+                    const el = document.getElementById('mcap-change-btc');
+                    if (el) {
+                        el.textContent = `${fallbackChange >= 0 ? '+' : ''}${fallbackChange.toFixed(2)}%`;
+                        el.className = `stat-change ${fallbackChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                    }
+                    updateMiniPerfBar('mini-bar-mcap-btc', fallbackChange);
+                }
             }
         }
 
         async function fetchETHStats() {
+            // Show cached value immediately while loading
+            const cached = getMcapCache(MCAP_CACHE_KEY_ETH);
+            if (cached && cached.mcap) {
+                const mcEl = document.getElementById('market-cap');
+                if (mcEl) mcEl.textContent = formatMcap(cached.mcap);
+                const ch = cached.change || priceChanges['ETHUSDT'] || 0;
+                const el = document.getElementById('mcap-change');
+                if (el) {
+                    el.textContent = `${ch >= 0 ? '+' : ''}${ch.toFixed(2)}%`;
+                    el.className = `stat-change ${ch >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                }
+                updateMiniPerfBar('mini-bar-mcap-eth', ch);
+            }
             try {
                 const response = await fetch(`https://api.coingecko.com/api/v3/coins/ethereum?localization=false&tickers=false&community_data=false&developer_data=false`);
                 
@@ -175,64 +290,103 @@
                 
                 // Market Cap ETH
                 const marketCap = data.market_data?.market_cap?.usd || 0;
-                const mcapChange = data.market_data?.market_cap_change_percentage_24h || 0;
+                const mcapChange = data.market_data?.market_cap_change_percentage_24h || priceChanges['ETHUSDT'] || 0;
                 
-                if (marketCap > 1e12) {
-                    document.getElementById('market-cap').textContent = `$${(marketCap / 1e12).toFixed(2)}T`;
-                } else if (marketCap > 1e9) {
-                    document.getElementById('market-cap').textContent = `$${(marketCap / 1e9).toFixed(2)}B`;
-                } else {
-                    document.getElementById('market-cap').textContent = `$${(marketCap / 1e6).toFixed(2)}M`;
+                if (marketCap > 0) {
+                    const mcEl = document.getElementById('market-cap');
+                    if (mcEl) mcEl.textContent = formatMcap(marketCap);
+                    const changeToCache = mcapChange !== 0 ? mcapChange : (cached?.change || 0);
+                    setMcapCache(MCAP_CACHE_KEY_ETH, marketCap, changeToCache);
                 }
                 
                 const mcapChangeEl = document.getElementById('mcap-change');
-                mcapChangeEl.textContent = `${mcapChange >= 0 ? '+' : ''}${mcapChange.toFixed(2)}%`;
-                mcapChangeEl.className = `stat-change ${mcapChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                if (mcapChangeEl) {
+                    mcapChangeEl.textContent = `${mcapChange >= 0 ? '+' : ''}${mcapChange.toFixed(2)}%`;
+                    mcapChangeEl.className = `stat-change ${mcapChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                }
+                updateMiniPerfBar('mini-bar-mcap-eth', mcapChange);
                 
             } catch (e) {
-                const change = priceChanges['ETHUSDT'] || 0;
-                document.getElementById('mcap-change').textContent = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
-                document.getElementById('mcap-change').className = `stat-change ${change >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                // Use cached change or Binance priceChange as fallback
+                const fallbackChange = (cached?.change) || priceChanges['ETHUSDT'] || 0;
+                if (fallbackChange !== 0) {
+                    const el = document.getElementById('mcap-change');
+                    if (el) {
+                        el.textContent = `${fallbackChange >= 0 ? '+' : ''}${fallbackChange.toFixed(2)}%`;
+                        el.className = `stat-change ${fallbackChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                    }
+                    updateMiniPerfBar('mini-bar-mcap-eth', fallbackChange);
+                }
             }
         }
 
         async function fetchVolume() {
             // Volume BTC
+            const cachedVolBtc = getMcapCache(VOL_CACHE_KEY_BTC);
+            if (cachedVolBtc && cachedVolBtc.vol) {
+                const fv = cachedVolBtc.vol;
+                const vbEl = document.getElementById('live-volume-btc');
+                if (vbEl) vbEl.textContent = fv > 1e9 ? `$${(fv / 1e9).toFixed(2)}B` : `$${(fv / 1e6).toFixed(2)}M`;
+                const ch = cachedVolBtc.change || 0;
+                const el = document.getElementById('volume-change-btc');
+                if (el) {
+                    el.textContent = `${ch >= 0 ? '+' : ''}${ch.toFixed(2)}%`;
+                    el.className = `stat-change ${ch >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                }
+                updateMiniPerfBar('mini-bar-vol-btc', ch);
+            }
             try {
-                const response = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT`);
+                const response = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT`, {}, 8000);
                 const data = await response.json();
                 const vol = parseFloat(data.quoteVolume);
                 const priceChange = parseFloat(data.priceChangePercent);
                 
-                if (vol > 1e9) {
-                    document.getElementById('live-volume-btc').textContent = `$${(vol / 1e9).toFixed(2)}B`;
-                } else {
-                    document.getElementById('live-volume-btc').textContent = `$${(vol / 1e6).toFixed(2)}M`;
-                }
+                const vbEl = document.getElementById('live-volume-btc');
+                if (vbEl) vbEl.textContent = vol > 1e9 ? `$${(vol / 1e9).toFixed(2)}B` : `$${(vol / 1e6).toFixed(2)}M`;
+                
+                setVolCache(VOL_CACHE_KEY_BTC, vol, priceChange);
                 
                 const volChangeEl = document.getElementById('volume-change-btc');
-                volChangeEl.textContent = `${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}%`;
-                volChangeEl.className = `stat-change ${priceChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                if (volChangeEl) {
+                    volChangeEl.textContent = `${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}%`;
+                    volChangeEl.className = `stat-change ${priceChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                }
+                updateMiniPerfBar('mini-bar-vol-btc', priceChange);
                 
             } catch (e) {
             }
 
             // Volume ETH
+            const cachedVolEth = getMcapCache(VOL_CACHE_KEY_ETH);
+            if (cachedVolEth && cachedVolEth.vol) {
+                const fv = cachedVolEth.vol;
+                const veEl = document.getElementById('live-volume');
+                if (veEl) veEl.textContent = fv > 1e9 ? `$${(fv / 1e9).toFixed(2)}B` : `$${(fv / 1e6).toFixed(2)}M`;
+                const ch = cachedVolEth.change || 0;
+                const el = document.getElementById('volume-change');
+                if (el) {
+                    el.textContent = `${ch >= 0 ? '+' : ''}${ch.toFixed(2)}%`;
+                    el.className = `stat-change ${ch >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                }
+                updateMiniPerfBar('mini-bar-vol-eth', ch);
+            }
             try {
-                const response = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT`);
+                const response = await fetchWithTimeout(`https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT`, {}, 8000);
                 const data = await response.json();
                 const vol = parseFloat(data.quoteVolume);
                 const priceChange = parseFloat(data.priceChangePercent);
                 
-                if (vol > 1e9) {
-                    document.getElementById('live-volume').textContent = `$${(vol / 1e9).toFixed(2)}B`;
-                } else {
-                    document.getElementById('live-volume').textContent = `$${(vol / 1e6).toFixed(2)}M`;
-                }
+                const veEl = document.getElementById('live-volume');
+                if (veEl) veEl.textContent = vol > 1e9 ? `$${(vol / 1e9).toFixed(2)}B` : `$${(vol / 1e6).toFixed(2)}M`;
+                
+                setVolCache(VOL_CACHE_KEY_ETH, vol, priceChange);
                 
                 const volChangeEl = document.getElementById('volume-change');
-                volChangeEl.textContent = `${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}%`;
-                volChangeEl.className = `stat-change ${priceChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                if (volChangeEl) {
+                    volChangeEl.textContent = `${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}%`;
+                    volChangeEl.className = `stat-change ${priceChange >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                }
+                updateMiniPerfBar('mini-bar-vol-eth', priceChange);
                 
             } catch (e) {
             }
@@ -314,13 +468,16 @@
                     return { class: 'neutral', text: '→ AGUARDE' };
                 };
                 
+                // Helper seguro para setar DOM
+                const _s = (id, prop, val) => { const el = document.getElementById(id); if (el) el[prop] = val; };
+                
                 // Atualizar UI - MAs
-                document.getElementById('ema-9').textContent = formatMAPrice(ema9);
-                document.getElementById('ema-20').textContent = formatMAPrice(ema20);
-                document.getElementById('ema-50').textContent = formatMAPrice(ema50);
-                document.getElementById('ma-50').textContent = formatMAPrice(ma50);
-                document.getElementById('ma-99').textContent = formatMAPrice(ma99);
-                document.getElementById('ma-200').textContent = formatMAPrice(ma200);
+                _s('ema-9', 'textContent', formatMAPrice(ema9));
+                _s('ema-20', 'textContent', formatMAPrice(ema20));
+                _s('ema-50', 'textContent', formatMAPrice(ema50));
+                _s('ma-50', 'textContent', formatMAPrice(ma50));
+                _s('ma-99', 'textContent', formatMAPrice(ma99));
+                _s('ma-200', 'textContent', formatMAPrice(ma200));
                 
                 const signalEma9 = getSignal(ema9);
                 const signalEma20 = getSignal(ema20);
@@ -329,22 +486,17 @@
                 const signal99 = getSignal(ma99);
                 const signal200 = getSignal(ma200);
                 
-                document.getElementById('ema-9-signal').className = `ma-signal ${signalEma9.class}`;
-                document.getElementById('ema-9-signal').textContent = signalEma9.text;
-                document.getElementById('ema-20-signal').className = `ma-signal ${signalEma20.class}`;
-                document.getElementById('ema-20-signal').textContent = signalEma20.text;
-                document.getElementById('ema-50-signal').className = `ma-signal ${signalEma50.class}`;
-                document.getElementById('ema-50-signal').textContent = signalEma50.text;
-                document.getElementById('ma-50-signal').className = `ma-signal ${signal50.class}`;
-                document.getElementById('ma-50-signal').textContent = signal50.text;
-                document.getElementById('ma-99-signal').className = `ma-signal ${signal99.class}`;
-                document.getElementById('ma-99-signal').textContent = signal99.text;
-                document.getElementById('ma-200-signal').className = `ma-signal ${signal200.class}`;
-                document.getElementById('ma-200-signal').textContent = signal200.text;
+                const _ss = (id, sig) => { const el = document.getElementById(id); if (el) { el.className = `ma-signal ${sig.class}`; el.textContent = sig.text; } };
+                _ss('ema-9-signal', signalEma9);
+                _ss('ema-20-signal', signalEma20);
+                _ss('ema-50-signal', signalEma50);
+                _ss('ma-50-signal', signal50);
+                _ss('ma-99-signal', signal99);
+                _ss('ma-200-signal', signal200);
                 
                 // Atualizar UI - Suporte e Resistência
-                document.getElementById('sr-support').textContent = formatMAPrice(support);
-                document.getElementById('sr-resistance').textContent = formatMAPrice(resistance);
+                _s('sr-support', 'textContent', formatMAPrice(support));
+                _s('sr-resistance', 'textContent', formatMAPrice(resistance));
                 
                 // Resumo geral
                 const signals = [signalEma9, signalEma20, signalEma50, signal50, signal99, signal200].filter(s => s.text !== '--');
@@ -352,6 +504,7 @@
                 const sellCount = signals.filter(s => s.class === 'sell').length;
                 
                 const summaryEl = document.getElementById('ma-summary');
+                if (!summaryEl) return;
                 if (buyCount > sellCount) {
                     summaryEl.innerHTML = `<span style="color: var(--accent-green);"><i class="fas fa-arrow-trend-up"></i> TENDÊNCIA DE ALTA</span> - Preço acima de ${buyCount} de ${signals.length} MAs/EMAs`;
                 } else if (sellCount > buyCount) {
@@ -361,7 +514,8 @@
                 }
                 
             } catch (e) {
-                document.getElementById('ma-summary').innerHTML = '<span style="color: var(--text-muted);">Não foi possível calcular</span>';
+                const summaryEl = document.getElementById('ma-summary');
+                if (summaryEl) summaryEl.innerHTML = '<span style="color: var(--text-muted);">Não foi possível calcular</span>';
             }
         }
-
+

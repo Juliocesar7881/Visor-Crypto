@@ -13,7 +13,8 @@
                     t.classList.add('active');
                 }
             });
-            document.getElementById(`panel-${tab}`).classList.add('active');
+            const panelEl = document.getElementById(`panel-${tab}`);
+            if (panelEl) panelEl.classList.add('active');
         }
 
         // FOMC Meeting Dates 2025-2026 com horários de anúncio (16:00 horário de Brasília)
@@ -108,32 +109,52 @@
                 let lastDecisions = [];
                 let dataSource = 'estimated';
                 
-                // 1. Tentar buscar da Polymarket via Gamma API
+                // 1. Buscar probabilidades Fed da Polymarket (Gamma API - top mercados ativos)
                 try {
-                    const polymarketUrl = 'https://gamma-api.polymarket.com/markets?closed=false&tag=fed-interest-rate&limit=10';
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(polymarketUrl)}`;
+                    const polymarketUrl = 'https://gamma-api.polymarket.com/markets?limit=30&active=true&order=volume24hr&ascending=false';
                     
-                    const polyRes = await fetchWithTimeout(proxyUrl, {}, 8000);
+                    const polyRes = await fetchWithTimeout(polymarketUrl, {}, 8000);
                     if (polyRes.ok) {
                         const polyData = await polyRes.json();
                         
-                        // Procurar mercados relevantes
                         if (polyData && Array.isArray(polyData) && polyData.length > 0) {
-                            for (const market of polyData) {
-                                const question = (market.question || market.title || '').toLowerCase();
+                            // Filtrar mercados Fed por texto da question
+                            const fedMarkets = polyData.filter(m => {
+                                const q = (m.question || '').toLowerCase();
+                                return q.includes('fed') && (q.includes('interest') || q.includes('rate'));
+                            });
+                            
+                            for (const market of fedMarkets) {
+                                const question = (market.question || '').toLowerCase();
+                                // outcomePrices vem como JSON string: '["0.98", "0.02"]'
+                                let yesPrice = 0;
+                                try {
+                                    const prices = typeof market.outcomePrices === 'string' 
+                                        ? JSON.parse(market.outcomePrices) 
+                                        : market.outcomePrices;
+                                    if (Array.isArray(prices) && prices.length > 0) yesPrice = parseFloat(prices[0]);
+                                } catch(e) {}
+                                if (!yesPrice || isNaN(yesPrice)) yesPrice = parseFloat(market.lastTradePrice || 0);
+                                if (!yesPrice || isNaN(yesPrice) || yesPrice <= 0) continue;
+                                const pct = Math.round(yesPrice * 100);
                                 
-                                if (question.includes('cut') || question.includes('lower')) {
-                                    const price = parseFloat(market.outcomePrices?.[0] || market.lastTradePrice || 0);
-                                    if (price > 0) cutProb = Math.round(price * 100);
-                                } else if (question.includes('raise') || question.includes('hike') || question.includes('higher')) {
-                                    const price = parseFloat(market.outcomePrices?.[0] || market.lastTradePrice || 0);
-                                    if (price > 0) hikeProb = Math.round(price * 100);
+                                if (question.includes('no change') || question.includes('unchanged')) {
+                                    holdProb = pct;
+                                } else if (question.includes('decrease') || question.includes('cut') || question.includes('lower')) {
+                                    cutProb += pct;
+                                } else if (question.includes('increase') || question.includes('hike') || question.includes('raise') || question.includes('higher')) {
+                                    hikeProb += pct;
                                 }
                             }
                             
-                            if (cutProb > 0 || hikeProb > 0) {
-                                holdProb = 100 - cutProb - hikeProb;
-                                holdProb = Math.max(0, holdProb);
+                            if (fedMarkets.length > 0) {
+                                // Normalizar para 100%
+                                const total = cutProb + holdProb + hikeProb;
+                                if (total > 0 && total !== 100) {
+                                    cutProb = Math.round(cutProb / total * 100);
+                                    hikeProb = Math.round(hikeProb / total * 100);
+                                    holdProb = 100 - cutProb - hikeProb;
+                                }
                                 dataSource = 'polymarket';
                             }
                         }
@@ -141,21 +162,11 @@
                 } catch (e) {
                 }
                 
-                // 2. Tentar buscar taxa atual do FRED
+                // 2. Buscar taxa atual do FRED (direto, sem proxy)
                 try {
-                    // API key - tentar proxy primeiro, fallback direto
-                    const proxyUrl = `https://visor-crypto-api.onrender.com/api/proxy/fred?series_id=FEDFUNDS&limit=3&sort_order=desc`;
                     const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=FEDFUNDS&sort_order=desc&limit=3&api_key=289c022214958a3eb611142e8dc34f6b&file_type=json`;
                     
-                    let fredRes = null;
-                    try {
-                        fredRes = await fetchWithTimeout(proxyUrl, {}, 5000);
-                        if (!fredRes.ok) fredRes = null;
-                    } catch(e) { fredRes = null; }
-                    
-                    if (!fredRes) {
-                        fredRes = await fetchWithTimeout(directUrl, {}, 8000);
-                    }
+                    const fredRes = await fetchWithTimeout(directUrl, {}, 10000);
                     if (fredRes.ok) {
                         const fredData = await fredRes.json();
                         if (fredData.observations && fredData.observations.length > 0) {
@@ -173,7 +184,15 @@
                     // Não usar dados estáticos - manter currentRate como padrão se não conseguir
                 }
                 
-                // Se não conseguiu dados de Polymarket, mostrar erro
+                // Se não conseguiu Polymarket, estimar a partir da taxa FRED
+                if (dataSource === 'estimated' && currentRate !== '--') {
+                    // Sem mercados de previsão, usar lógica conservadora baseada na taxa atual
+                    holdProb = 85;
+                    cutProb = 12;
+                    hikeProb = 3;
+                    dataSource = 'fred-estimated';
+                }
+                
                 if (dataSource === 'estimated') {
                     container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;"><i class="fas fa-chart-line"></i> Não foi possível carregar probabilidades do Fed. Tente novamente mais tarde.</p>';
                     return;
@@ -247,7 +266,7 @@
                 </div>
                 
                 <p style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 12px;">
-                    <i class="fas fa-info-circle"></i> Fonte: ${dataSource === 'polymarket' ? 'Polymarket (Gamma API)' : 'FRED API (Federal Reserve)'}
+                    <i class="fas fa-info-circle"></i> Fonte: ${dataSource === 'polymarket' ? 'Polymarket (Gamma API)' : dataSource === 'fred-estimated' ? 'Estimativa baseada em FRED API' : 'FRED API (Federal Reserve)'}
                 </p>
             `;
             
@@ -261,32 +280,19 @@
             const lastDecisionEl = document.getElementById('last-fed-decision');
             
             // FRED API key - fallback direto quando proxy indisponível
-            const FRED_KEY = '289c022214958a3eb611142e8dc34f6b';
+            const FRED_KEY = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
             const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             
             try {
                 // Buscar últimas 400 observações do DFEDTARU para encontrar mudanças
-                const proxyUrl = `https://visor-crypto-api.onrender.com/api/proxy/fred?series_id=DFEDTARU&sort_order=desc&limit=400`;
-                const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&sort_order=desc&limit=400&api_key=${FRED_KEY}&file_type=json`;
+                const FRED_KEY_HIST = '289c022214958a3eb611142e8dc34f6b';
+                const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&sort_order=desc&limit=400&api_key=${FRED_KEY_HIST}&file_type=json`;
                 
                 let response = null;
-                const proxies = [
-                    proxyUrl,
-                    directUrl,
-                    `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`,
-                    `https://corsproxy.io/?${encodeURIComponent(directUrl)}`
-                ];
-                
-                for (const proxyUrl of proxies) {
-                    try {
-                        response = await fetchWithTimeout(proxyUrl, {}, 10000);
-                        if (response.ok) break;
-                        response = null;
-                    } catch(e) {
-                        response = null;
-                        continue;
-                    }
-                }
+                try {
+                    response = await fetchWithTimeout(directUrl, {}, 12000);
+                    if (!response.ok) response = null;
+                } catch(e) { response = null; }
                 
                 if (!response || !response.ok) throw new Error('Todas as tentativas FRED falharam');
                 const fredData = await response.json();
@@ -423,6 +429,82 @@
             }
         };
 
+        // Buscar histórico FRED estendido para um evento específico
+        async function fetchFREDHistoryForEvent(seriesId, eventTitle) {
+            const container = document.getElementById('fred-extended-history');
+            if (!container) return;
+            
+            try {
+                let historyData = null;
+                
+                // Tentar Worker primeiro (se configurado)
+                if (CALENDAR_WORKER_URL) {
+                    try {
+                        const workerRes = await fetchWithTimeout(CALENDAR_WORKER_URL + '/history?series=' + encodeURIComponent(seriesId), {}, 4000);
+                        if (workerRes.ok) {
+                            const result = await workerRes.json();
+                            if (result.success && Array.isArray(result.data) && result.data.length > 0) {
+                                historyData = result.data;
+                            }
+                        }
+                    } catch(e) {}
+                }
+                
+                // Fallback: FRED direto
+                if (!historyData) {
+                    try {
+                        const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=12&api_key=${FRED_API_KEY_CALENDAR}&file_type=json`;
+                        const fredRes = await fetchWithTimeout(fredUrl, {}, 8000);
+                        if (fredRes.ok) {
+                            const fredData = await fredRes.json();
+                            if (fredData.observations) {
+                                historyData = fredData.observations
+                                    .filter(o => o.value && o.value !== '.')
+                                    .map(o => ({ date: o.date, value: parseFloat(o.value) }))
+                                    .reverse();
+                            }
+                        }
+                    } catch(e) {}
+                }
+                
+                if (!historyData || historyData.length === 0) {
+                    container.innerHTML = '';
+                    return;
+                }
+                
+                // Renderizar mini-gráfico de histórico
+                const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                const lastItems = historyData.slice(-8);
+                
+                container.innerHTML = `
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);">
+                        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                            <i class="fas fa-chart-line"></i> Histórico FRED (${seriesId})
+                        </div>
+                        <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
+                            ${lastItems.map((item, i) => {
+                                const d = new Date(item.date + 'T00:00:00');
+                                const label = months[d.getMonth()] + '/' + d.getFullYear().toString().slice(-2);
+                                const prev = i > 0 ? lastItems[i - 1].value : item.value;
+                                const color = item.value > prev ? 'var(--accent-green)' : item.value < prev ? 'var(--accent-red)' : 'var(--text-muted)';
+                                return `
+                                    <div style="flex: 1; min-width: 55px; background: var(--bg-secondary); border-radius: 8px; padding: 8px 4px; text-align: center;">
+                                        <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 3px;">${label}</div>
+                                        <div style="font-size: 13px; font-weight: 700; color: ${color};">${item.value.toFixed(1)}</div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                        <p style="font-size: 9px; color: var(--text-muted); text-align: center; margin-top: 6px;">
+                            <i class="fas fa-database"></i> Fonte: Federal Reserve Economic Data (FRED)
+                        </p>
+                    </div>
+                `;
+            } catch(e) {
+                container.innerHTML = '';
+            }
+        }
+
         function openEventDetailModal(event) {
             const modal = document.getElementById('event-detail-modal');
             const details = eventDetailsDatabase[event.title] || {
@@ -432,44 +514,74 @@
             };
             
             // Preencher dados
-            document.querySelector('#event-detail-date .event-detail-day').textContent = event.day;
-            document.querySelector('#event-detail-date .event-detail-month').textContent = event.month;
-            document.getElementById('event-detail-title').textContent = event.title;
+            const dayEl = document.querySelector('#event-detail-date .event-detail-day');
+            const monthEl = document.querySelector('#event-detail-date .event-detail-month');
+            if (dayEl) dayEl.textContent = event.day;
+            if (monthEl) monthEl.textContent = event.month;
+            const titleEl2 = document.getElementById('event-detail-title');
+            if (titleEl2) titleEl2.textContent = event.title;
             
             // Incluir horário no país/descrição
             const timeInfo = event.time ? ` • <strong style="color: var(--accent-blue);"><i class="fas fa-clock"></i> ${event.time}h</strong>` : '';
-            document.getElementById('event-detail-country').innerHTML = `${event.country} • ${event.description}${timeInfo}`;
+            const countryEl = document.getElementById('event-detail-country');
+            if (countryEl) countryEl.innerHTML = `${event.country} • ${event.description}${timeInfo}`;
             
             const impactEl = document.getElementById('event-detail-impact');
-            impactEl.textContent = event.impact === 'high' ? 'IMPACTO ALTO' : event.impact === 'medium' ? 'IMPACTO MÉDIO' : 'IMPACTO BAIXO';
-            impactEl.className = `event-detail-impact ${event.impact}`;
+            if (impactEl) {
+                impactEl.style.display = 'none';
+            }
             
-            document.getElementById('event-detail-description').textContent = details.fullDescription;
-            document.getElementById('event-detail-market-impact').textContent = details.marketImpact;
-            document.getElementById('event-detail-crypto-impact').textContent = details.cryptoImpact;
+            const descEl = document.getElementById('event-detail-description');
+            const mktEl = document.getElementById('event-detail-market-impact');
+            const crypEl = document.getElementById('event-detail-crypto-impact');
+            if (descEl) descEl.textContent = details.fullDescription;
+            if (mktEl) mktEl.textContent = details.marketImpact;
+            if (crypEl) crypEl.textContent = details.cryptoImpact;
             
-            // Mostrar histórico de dados se disponível
-            const historySection = document.getElementById('event-history-section') || createHistorySection();
-            if (event.history && event.history.length > 0) {
+            // Mostrar histórico de dados - sempre visível com placeholder para evitar saltos de layout
+            const historySection = document.getElementById('event-history-section');
+            if (historySection) {
                 historySection.style.display = 'block';
-                historySection.innerHTML = `
-                    <div class="card-header" style="margin-bottom: 12px;">
-                        <div class="card-title">
-                            <i class="fas fa-history"></i>
-                            Últimos 3 Resultados
-                        </div>
-                    </div>
-                    <div class="event-history-grid">
-                        ${event.history.map(h => `
-                            <div class="event-history-item ${h.type}">
-                                <div class="event-history-date">${h.date}</div>
-                                <div class="event-history-value">${h.value}</div>
+                
+                // Mostrar dados inline primeiro
+                if (event.history && event.history.length > 0 && event.history[0].value !== '-') {
+                    historySection.innerHTML = `
+                        <div class="card-header" style="margin-bottom: 12px;">
+                            <div class="card-title">
+                                <i class="fas fa-history"></i>
+                                Últimos Resultados
                             </div>
-                        `).join('')}
-                    </div>
-                `;
-            } else if (historySection) {
-                historySection.style.display = 'none';
+                        </div>
+                        <div class="event-history-grid">
+                            ${event.history.map(h => `
+                                <div class="event-history-item ${h.type}">
+                                    <div class="event-history-date">${h.date}</div>
+                                    <div class="event-history-value">${h.value}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div id="fred-extended-history" style="margin-top: 12px;"></div>
+                    `;
+                } else {
+                    historySection.innerHTML = `
+                        <div class="card-header" style="margin-bottom: 12px;">
+                            <div class="card-title">
+                                <i class="fas fa-history"></i>
+                                Últimos Resultados
+                            </div>
+                        </div>
+                        <div id="fred-extended-history">
+                            <div style="text-align: center; padding: 12px; color: var(--text-muted); font-size: 12px;">
+                                <i class="fas fa-spinner fa-spin" style="opacity: 0.5;"></i> Carregando histórico FRED...
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Buscar histórico estendido do FRED via Worker (se tem fredSeriesId)
+                if (event.fredSeriesId) {
+                    fetchFREDHistoryForEvent(event.fredSeriesId, event.title);
+                }
             }
             
             // Mostrar probabilidades para eventos específicos
@@ -551,13 +663,82 @@
         }
 
         // ============================================
-        // CALENDÁRIO ECONÔMICO - FMP API
+        // CALENDÁRIO ECONÔMICO - Multi-Source Pipeline
         // ============================================
-        // FMP API key moved to backend proxy
-        const FMP_API_KEY = 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
-        window._FMP_API_KEY = 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
-        const CALENDAR_CACHE_KEY = 'economic_calendar_cache';
-        const CALENDAR_CACHE_DURATION = 10 * 60 * 1000; // 10 minutos
+        // Worker URL - quando disponível, é a fonte primária (deploy worker/ para ativar)
+        const CALENDAR_WORKER_URL = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
+        
+        // FRED API key - hardcoded como fallback (mesma do macro-section.js)
+        const FRED_API_KEY_CALENDAR = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '289c022214958a3eb611142e8dc34f6b';
+        
+        // FRED series IDs para dados históricos dos eventos
+        const FRED_SERIES_MAP = {
+            'nonfarm payroll': 'PAYEMS',
+            'unemployment': 'UNRATE',
+            'cpi': 'CPIAUCSL',
+            'core cpi': 'CPILFESL',
+            'ppi': 'PPIACO',
+            'pce': 'PCEPI',
+            'core pce': 'PCEPILFE',
+            'gdp': 'GDP',
+            'retail sales': 'RSAFS',
+            'industrial production': 'INDPRO',
+            'ism manufacturing': 'NAPM',
+            'ism services': 'NMFCI',
+            'consumer confidence': 'UMCSENT',
+            'michigan': 'UMCSENT',
+            'housing starts': 'HOUST',
+            'building permits': 'PERMIT',
+            'durable goods': 'DGORDER',
+            'initial jobless': 'ICSA',
+            'jolts': 'JTSJOL',
+            'personal income': 'PI',
+            'personal spending': 'PCE',
+            'trade balance': 'BOPGSTB',
+            'interest rate': 'FEDFUNDS',
+            'fomc': 'FEDFUNDS',
+            'adp': 'ADPWNUSNERSA',
+        };
+        
+        function getFredSeriesForEvent(eventName) {
+            const lower = (eventName || '').toLowerCase();
+            for (const [keyword, seriesId] of Object.entries(FRED_SERIES_MAP)) {
+                if (lower.includes(keyword)) return seriesId;
+            }
+            return null;
+        }
+        
+        // Mapa de releases FRED → eventos do calendário (fonte autoritativa)
+        const FRED_RELEASE_MAP = [
+            { match: /^consumer price index$/i, title: 'CPI (Inflação)', time: '10:30', impact: 'high', series: 'CPIAUCSL' },
+            { match: /^producer price index$/i, title: 'PPI (Preços ao Produtor)', time: '10:30', impact: 'high', series: 'PPIACO' },
+            { match: /^employment situation$/i, title: 'Emprego Não-Agrícola (NFP)', time: '10:30', impact: 'high', series: 'PAYEMS' },
+            { match: /^job openings and labor turnover/i, title: 'JOLTS Vagas de Emprego', time: '12:00', impact: 'high', series: 'JTSJOL' },
+            { match: /^advance monthly sales/i, title: 'Vendas no Varejo', time: '10:30', impact: 'high', series: 'RSAFS' },
+            { match: /^gross domestic product/i, title: 'PIB dos EUA', time: '10:30', impact: 'high', series: 'GDP' },
+            { match: /^personal income and outlays/i, title: 'PCE / Renda Pessoal', time: '10:30', impact: 'high', series: 'PCEPI' },
+            { match: /^ISM manufacturing/i, title: 'PMI Manufatura (ISM)', time: '12:00', impact: 'high', series: 'NAPM' },
+            { match: /^ISM.*(?:services|non.?manufacturing)/i, title: 'PMI Serviços (ISM)', time: '12:00', impact: 'high', series: 'NMFCI' },
+            { match: /^(University of Michigan|Surveys of Consumers)/i, title: 'Sentimento Michigan', time: '12:00', impact: 'high', series: 'UMCSENT' },
+            { match: /^consumer confidence/i, title: 'Confiança do Consumidor', time: '12:00', impact: 'high', series: 'UMCSENT' },
+            { match: /^unemployment insurance weekly/i, title: 'Pedidos Seguro-Desemprego', time: '10:30', impact: 'medium', series: 'ICSA' },
+            { match: /^existing home sales/i, title: 'Vendas de Imóveis Usados', time: '12:00', impact: 'medium', series: null },
+            { match: /^new residential sales/i, title: 'Vendas de Imóveis Novos', time: '12:00', impact: 'medium', series: null },
+            { match: /^housing units.*building permits/i, title: 'Alvarás de Construção', time: '10:30', impact: 'medium', series: 'PERMIT' },
+        ];
+
+        const CALENDAR_CACHE_KEY = 'economic_calendar_cache_v9';
+        const CALENDAR_CACHE_DURATION = 30 * 60 * 1000; // 30 minutos
+        
+        // Clear old cache keys on upgrade
+        try { localStorage.removeItem('economic_calendar_cache'); } catch(e) {}
+        try { localStorage.removeItem('economic_calendar_cache_v2'); } catch(e) {}
+        try { localStorage.removeItem('economic_calendar_cache_v3'); } catch(e) {}
+        try { localStorage.removeItem('economic_calendar_cache_v4'); } catch(e) {}
+        try { localStorage.removeItem('economic_calendar_cache_v5'); } catch(e) {}
+        try { localStorage.removeItem('economic_calendar_cache_v6'); } catch(e) {}
+        try { localStorage.removeItem('economic_calendar_cache_v7'); } catch(e) {}
+        try { localStorage.removeItem('economic_calendar_cache_v8'); } catch(e) {}
         
         function getCalendarCache() {
             try {
@@ -572,18 +753,66 @@
             return null;
         }
         
-        function setCalendarCache(events) {
+        function setCalendarCache(events, lastUpdate) {
             try {
                 localStorage.setItem(CALENDAR_CACHE_KEY, JSON.stringify({
                     events,
+                    lastUpdate,
                     timestamp: Date.now()
                 }));
             } catch (e) {}
         }
         
+        // Buscar JSON do ForexFactory com múltiplas tentativas
+        // CapacitorHttp (habilitado) roteia fetch() pelo HTTP nativo → sem CORS
+        async function fetchFFCalendarJSON(url) {
+            // Tentativa 1: fetch direto (funciona com CapacitorHttp nativo)
+            try {
+                const res = await fetchWithTimeout(url, {}, 8000);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        return data.filter(e => 
+                            (e.country || '').toUpperCase() === 'USD' && 
+                            e.impact === 'High'
+                        );
+                    }
+                }
+            } catch(e) {}
+            
+            // Tentativa 2: proxy allorigins (fallback para PWA/browser)
+            try {
+                const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, {}, 6000);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        return data.filter(e => 
+                            (e.country || '').toUpperCase() === 'USD' && 
+                            e.impact === 'High'
+                        );
+                    }
+                }
+            } catch(e) {}
+            
+            // Tentativa 3: proxy corsproxy.io (fallback)
+            try {
+                const res = await fetchWithTimeout(`https://corsproxy.io/?${encodeURIComponent(url)}`, {}, 6000);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        return data.filter(e => 
+                            (e.country || '').toUpperCase() === 'USD' && 
+                            e.impact === 'High'
+                        );
+                    }
+                }
+            } catch(e) {}
+            
+            return [];
+        }
+        
         async function fetchEconomicCalendar() {
             const container = document.getElementById('economic-calendar');
-            const today = new Date();
             
             // Verificar cache primeiro
             const cachedEvents = getCalendarCache();
@@ -596,179 +825,131 @@
             container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
             
             try {
-                // Calcular datas: hoje até 3 meses à frente
-                const fromDate = today.toISOString().split('T')[0];
-                const toDate = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-                
-                // FMP Economic Calendar API - proxy com fallback direto
-                let fmpResponse = null;
-                const fmpProxyUrl = `https://visor-crypto-api.onrender.com/api/proxy/fmp/calendar?from=${fromDate}&to=${toDate}`;
-                const fmpDirectUrl = `https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`;
-                
-                try {
-                    fmpResponse = await fetchWithTimeout(fmpProxyUrl, {}, 8000);
-                    if (!fmpResponse.ok) fmpResponse = null;
-                } catch(e) { fmpResponse = null; }
-                
-                if (!fmpResponse) {
-                    fmpResponse = await fetchWithTimeout(fmpDirectUrl, {}, 10000);
-                }
-                
-                const response = fmpResponse;
                 let events = [];
                 
-                if (response.ok) {
-                    const fmpData = await response.json();
-                    
-                    if (Array.isArray(fmpData) && fmpData.length > 0) {
-                        // Eventos importantes a filtrar
-                        const importantEvents = [
-                            'nonfarm payroll', 'cpi', 'ppi', 'gdp', 'fomc', 'interest rate', 
-                            'unemployment', 'retail sales', 'ism manufacturing', 'ism services',
-                            'consumer confidence', 'housing', 'initial jobless', 'core cpi',
-                            'ecb', 'fed chair', 'treasury', 'pce'
-                        ];
-                        
-                        // Filtrar e mapear eventos
-                        const filteredData = fmpData
-                            .filter(e => {
-                                const eventName = (e.event || '').toLowerCase();
-                                const country = (e.country || '').toLowerCase();
-                                // Filtrar apenas EUA e Europa/Reino Unido
-                                const isRelevantCountry = country.includes('us') || country.includes('eu') || country.includes('united states') || country.includes('eurozone');
-                                const isImportant = importantEvents.some(ie => eventName.includes(ie));
-                                return isRelevantCountry && (e.impact === 'High' || e.impact === 'Medium' || isImportant);
-                            });
-                        
-                        // Remover duplicatas (mesmo evento no mesmo dia)
-                        const seenEvents = new Set();
-                        const deduplicatedData = filteredData.filter(e => {
-                            const eventName = (e.event || '').toLowerCase();
-                            const eventDate = new Date(e.date).toDateString();
-                            const key = `${eventName}-${eventDate}`;
-                            if (seenEvents.has(key)) return false;
-                            seenEvents.add(key);
-                            return true;
-                        });
-                        
-                        events = deduplicatedData
-                            .slice(0, 12) // Limitar a 12 eventos
-                            .map(e => {
-                                const eventDate = new Date(e.date);
-                                const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-                                const time = eventDate.toTimeString().substring(0, 5);
+                // ===== FRED Releases/Dates API: fonte AUTORITATIVA (Federal Reserve) =====
+                const today = new Date();
+                const startDate = new Date(today);
+                startDate.setDate(startDate.getDate() - 7);
+                const endDate = new Date(today);
+                endDate.setDate(endDate.getDate() + 30);
+                
+                const pad = (n) => String(n).padStart(2, '0');
+                const startStr = `${startDate.getFullYear()}-${pad(startDate.getMonth()+1)}-${pad(startDate.getDate())}`;
+                const endStr = `${endDate.getFullYear()}-${pad(endDate.getMonth()+1)}-${pad(endDate.getDate())}`;
+                
+                const fredUrl = `https://api.stlouisfed.org/fred/releases/dates?realtime_start=${startStr}&realtime_end=${endStr}&api_key=${FRED_API_KEY_CALENDAR}&file_type=json&include_release_dates_with_no_data=true&sort_order=asc`;
+                
+                try {
+                    const res = await fetchWithTimeout(fredUrl, {}, 12000);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.release_dates && data.release_dates.length > 0) {
+                            const seen = new Set();
+                            const months = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+                            
+                            for (const rel of data.release_dates) {
+                                const name = rel.release_name || '';
                                 
-                                // Determinar país
-                                let country = '🇺🇸 EUA';
-                                if (e.country?.toLowerCase().includes('eu') || e.country?.toLowerCase().includes('eurozone')) {
-                                    country = '🇪🇺 Europa';
-                                }
-                                
-                                // Traduzir nome do evento
-                                let title = e.event || 'Evento';
-                                const translations = {
-                                    'nonfarm payrolls': 'Non-Farm Payrolls',
-                                    'cpi': 'CPI (Inflação)',
-                                    'core cpi': 'Core CPI',
-                                    'ppi': 'PPI (Produtor)',
-                                    'gdp': 'PIB',
-                                    'fomc': 'Decisão FOMC',
-                                    'interest rate': 'Taxa de Juros',
-                                    'retail sales': 'Vendas no Varejo',
-                                    'unemployment': 'Desemprego',
-                                    'ism manufacturing': 'ISM Manufatura',
-                                    'ism services': 'ISM Serviços',
-                                    'consumer confidence': 'Confiança do Consumidor',
-                                    'initial jobless': 'Pedidos de Seguro Desemprego',
-                                    'pce': 'PCE (Inflação Fed)'
-                                };
-                                
-                                for (const [key, val] of Object.entries(translations)) {
-                                    if (title.toLowerCase().includes(key)) {
-                                        title = val;
+                                for (const mapping of FRED_RELEASE_MAP) {
+                                    if (mapping.match.test(name)) {
+                                        if (mapping.impact !== 'high') break;
+                                        
+                                        const key = `${mapping.title}_${rel.date}`;
+                                        if (seen.has(key)) break;
+                                        seen.add(key);
+                                        
+                                        const parts = rel.date.split('-');
+                                        const year = parseInt(parts[0]);
+                                        const month = parseInt(parts[1]);
+                                        const day = parseInt(parts[2]);
+                                        
+                                        events.push({
+                                            day: day,
+                                            month: months[month - 1],
+                                            year: year,
+                                            time: mapping.time,
+                                            title: mapping.title,
+                                            country: '\uD83C\uDDFA\uD83C\uDDF8 EUA',
+                                            description: name,
+                                            isoDate: rel.date,
+                                            source: 'fred',
+                                            fredSeriesId: mapping.series,
+                                            history: []
+                                        });
                                         break;
                                     }
                                 }
-                                
-                                // Função para formatar valor econômico
-                                const formatEconomicValue = (val, eventTitle) => {
-                                    if (val === undefined || val === null || val === '') return '-';
-                                    const num = parseFloat(val);
-                                    if (isNaN(num)) return String(val);
-                                    
-                                    // Para dados de emprego (Non-Farm Payrolls), valores são em milhares
-                                    // API FMP retorna em milhares, então 130 = 130K empregos
-                                    if (eventTitle.toLowerCase().includes('payroll') || 
-                                        eventTitle.toLowerCase().includes('employment') ||
-                                        eventTitle.toLowerCase().includes('job')) {
-                                        // Formato para dados de emprego
-                                        return num >= 0 ? `+${num.toFixed(0)}K` : `${num.toFixed(0)}K`;
-                                    }
-                                    
-                                    // Para inflação (CPI, PPI, PCE) - valores são percentuais
-                                    if (eventTitle.toLowerCase().includes('cpi') || 
-                                        eventTitle.toLowerCase().includes('ppi') ||
-                                        eventTitle.toLowerCase().includes('pce') ||
-                                        eventTitle.toLowerCase().includes('inflação')) {
-                                        return `${num.toFixed(1)}%`;
-                                    }
-                                    
-                                    // Para taxas de juros
-                                    if (eventTitle.toLowerCase().includes('rate') || 
-                                        eventTitle.toLowerCase().includes('juros') ||
-                                        eventTitle.toLowerCase().includes('fomc')) {
-                                        return `${num.toFixed(2)}%`;
-                                    }
-                                    
-                                    // Para PIB
-                                    if (eventTitle.toLowerCase().includes('gdp') || 
-                                        eventTitle.toLowerCase().includes('pib')) {
-                                        return `${num.toFixed(1)}%`;
-                                    }
-                                    
-                                    // Formato genérico
-                                    if (Math.abs(num) >= 1000) {
-                                        return num >= 0 ? `+${(num/1000).toFixed(1)}K` : `${(num/1000).toFixed(1)}K`;
-                                    }
-                                    return num >= 0 ? `+${num.toFixed(1)}` : `${num.toFixed(1)}`;
-                                };
-                                
-                                // Histórico (se disponível)
-                                const history = [];
-                                if (e.previous !== undefined && e.previous !== null) {
-                                    const formattedPrev = formatEconomicValue(e.previous, title);
-                                    history.push({ date: 'Anterior', value: formattedPrev, type: 'neutral' });
-                                }
-                                if (e.actual !== undefined && e.actual !== null) {
-                                    const formattedActual = formatEconomicValue(e.actual, title);
-                                    const type = parseFloat(e.actual) > parseFloat(e.previous) ? 'positive' : parseFloat(e.actual) < parseFloat(e.previous) ? 'negative' : 'neutral';
-                                    history.push({ date: 'Atual', value: formattedActual, type });
-                                }
-                                
-                                return {
-                                    day: eventDate.getDate(),
-                                    month: months[eventDate.getMonth()],
-                                    time: time,
-                                    title: title,
-                                    country: country,
-                                    impact: e.impact?.toLowerCase() || 'medium',
-                                    description: e.event || '',
-                                    history: history.length > 0 ? history : [
-                                        { date: 'Aguardando', value: '-', type: 'neutral' }
-                                    ]
-                                };
-                            });
+                            }
+                        }
+                    }
+                } catch(e) {}
+                
+                // Adicionar reuniões FOMC do array hardcoded
+                const startMs = startDate.getTime();
+                const endMs = endDate.getTime();
+                const months = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+                for (const meeting of FOMC_MEETINGS) {
+                    const md = new Date(meeting.date + 'T12:00:00');
+                    if (md.getTime() >= startMs && md.getTime() <= endMs) {
+                        events.push({
+                            day: md.getDate(),
+                            month: months[md.getMonth()],
+                            year: md.getFullYear(),
+                            time: '16:00',
+                            title: 'Decisão de Juros (FOMC)',
+                            country: '\uD83C\uDDFA\uD83C\uDDF8 EUA',
+                            description: `Reunião FOMC ${meeting.label}`,
+                            isoDate: meeting.date,
+                            source: 'fomc',
+                            fredSeriesId: 'FEDFUNDS',
+                            history: []
+                        });
                     }
                 }
                 
-                // Se não conseguiu dados da API, mostrar mensagem de erro
+                // ===== ForexFactory: fonte SUPLEMENTAR (ISM, Preliminares, etc.) =====
+                try {
+                    const ffUrlThisWeek = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
+                    const ffUrlNextWeek = 'https://nfs.faireconomy.media/ff_calendar_nextweek.json';
+                    let ffData = [];
+                    const [thisWeekData, nextWeekData] = await Promise.all([
+                        fetchFFCalendarJSON(ffUrlThisWeek),
+                        fetchFFCalendarJSON(ffUrlNextWeek).catch(() => [])
+                    ]);
+                    if (thisWeekData.length > 0) ffData = ffData.concat(thisWeekData);
+                    if (nextWeekData.length > 0) ffData = ffData.concat(nextWeekData);
+                    
+                    if (ffData.length > 0) {
+                        const ffEvents = processFFEvents(ffData);
+                        // Criar set de chaves FRED existentes para dedup (título_data)
+                        const fredKeys = new Set();
+                        for (const ev of events) {
+                            // Normalizar: usar só a parte YYYY-MM-DD do isoDate
+                            const dateKey = (ev.isoDate || '').slice(0, 10);
+                            fredKeys.add(`${ev.title}_${dateKey}`);
+                        }
+                        // Adicionar eventos FF que não existem no FRED
+                        for (const ffEv of ffEvents) {
+                            const dateKey = (ffEv.isoDate || '').slice(0, 10);
+                            const key = `${ffEv.title}_${dateKey}`;
+                            if (!fredKeys.has(key)) {
+                                events.push(ffEv);
+                            }
+                        }
+                    }
+                } catch(e) {}
+                
+                // Ordenar por data
+                events.sort((a, b) => (a.isoDate || '').localeCompare(b.isoDate || ''));
+                
                 if (events.length === 0) {
                     container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;"><i class="fas fa-calendar-times"></i> Não foi possível carregar o calendário econômico. Tente novamente mais tarde.</p>';
                     return;
                 }
                 
                 // Salvar no cache
-                setCalendarCache(events);
+                setCalendarCache(events, new Date().toISOString());
                 window.economicEvents = events;
                 
                 // Renderizar
@@ -779,7 +960,195 @@
             }
         }
         
-        function renderCalendarEvents(container, events) {
+        // Processar eventos ForexFactory (fonte única para datas e eventos)
+        function processFFEvents(ffData) {
+            const translations = {
+                'nonfarm payrolls': 'Emprego Não-Agrícola (NFP)',
+                'nonfarm payroll': 'Emprego Não-Agrícola (NFP)',
+                'change in nonfarm payrolls': 'Variação Emprego Não-Agrícola',
+                'adp nonfarm employment change': 'Emprego Privado ADP',
+                'adp employment change': 'Emprego Privado ADP',
+                'cpi': 'CPI (Inflação)',
+                'core cpi': 'CPI Núcleo (ex-Alimentos e Energia)',
+                'cpi yoy': 'CPI (Inflação)',
+                'cpi mom': 'CPI (Inflação)',
+                'ppi': 'PPI (Preços ao Produtor)',
+                'core ppi': 'PPI Núcleo',
+                'advance gdp': 'PIB dos EUA (Preliminar)',
+                'prelim gdp': 'PIB dos EUA (2ª Estimativa)',
+                'final gdp': 'PIB dos EUA (Final)',
+                'gdp': 'PIB dos EUA',
+                'gdp growth rate': 'Crescimento do PIB',
+                'fomc': 'Decisão de Juros (FOMC)',
+                'fomc meeting minutes': 'Ata do FOMC',
+                'fomc press conference': 'Coletiva do Fed',
+                'interest rate decision': 'Decisão de Taxa de Juros',
+                'interest rate': 'Taxa de Juros do Fed',
+                'retail sales': 'Vendas no Varejo',
+                'core retail sales': 'Vendas no Varejo (Núcleo)',
+                'unemployment rate': 'Taxa de Desemprego',
+                'initial jobless claims': 'Pedidos Seguro-Desemprego',
+                'unemployment claims': 'Pedidos Seguro-Desemprego',
+                'continuing jobless claims': 'Seguro-Desemprego Contínuo',
+                'ism manufacturing pmi': 'PMI Manufatura (ISM)',
+                'ism manufacturing': 'ISM Manufatura',
+                'ism services pmi': 'PMI Serviços (ISM)',
+                'ism services': 'ISM Serviços',
+                'ism non-manufacturing pmi': 'PMI Serviços (ISM)',
+                'flash manufacturing pmi': 'PMI Manufatura Flash (S&P)',
+                'flash services pmi': 'PMI Serviços Flash (S&P)',
+                'consumer confidence': 'Confiança do Consumidor',
+                'cb consumer confidence': 'Confiança do Consumidor (CB)',
+                'prelim uom consumer sentiment': 'Sentimento Michigan (Preliminar)',
+                'revised uom consumer sentiment': 'Sentimento Michigan (Final)',
+                'uom consumer sentiment': 'Sentimento Michigan',
+                'michigan consumer sentiment': 'Sentimento Michigan',
+                'university of michigan': 'Sentimento Michigan',
+                'housing starts': 'Início de Construções',
+                'building permits': 'Alvarás de Construção',
+                'existing home sales': 'Vendas de Imóveis Usados',
+                'new home sales': 'Vendas de Imóveis Novos',
+                'pce price index': 'PCE (Inflação preferida do Fed)',
+                'core pce price index': 'PCE Núcleo',
+                'personal spending': 'Gastos Pessoais',
+                'personal income': 'Renda Pessoal',
+                'fed chair powell': 'Discurso Powell (Fed)',
+                'fed chair': 'Discurso Presidente do Fed',
+                'jolts job openings': 'JOLTS Vagas de Emprego',
+                'job openings': 'JOLTS Vagas de Emprego',
+                'trade balance': 'Balança Comercial',
+                'industrial production': 'Produção Industrial',
+                'capacity utilization': 'Utilização da Capacidade',
+                'durable goods orders': 'Pedidos de Bens Duráveis',
+                'empire state manufacturing': 'Índice Empire State',
+                'philadelphia fed manufacturing': 'Índice Philly Fed',
+            };
+            
+            // Extrair componentes diretamente do ISO 8601 e converter para Brasília (UTC-3)
+            function parseFFDate(dateStr) {
+                if (!dateStr) return null;
+                // Formato: "2026-03-06T08:30:00-05:00"
+                const m = dateStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})([+-]\d{2}:\d{2})/);
+                if (!m) {
+                    const d = new Date(dateStr);
+                    return isNaN(d.getTime()) ? null : d;
+                }
+                // Converter para UTC timestamp
+                const utc = Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]);
+                // Offset do source (ex: -05:00 → -300 min)
+                const offsetMatch = m[7].match(/([+-])(\d{2}):(\d{2})/);
+                const srcOffsetMs = (offsetMatch[1] === '-' ? 1 : -1) * (+offsetMatch[2]*60 + +offsetMatch[3]) * 60000;
+                const utcMs = utc + srcOffsetMs;
+                // Converter para Brasília (UTC-3)
+                const brasiliaMs = utcMs - 3 * 3600000;
+                const bd = new Date(brasiliaMs);
+                // Retornar objeto Date-like com componentes em horário de Brasília
+                // Usamos UTC methods para evitar conversão dupla
+                return {
+                    getDate: () => bd.getUTCDate(),
+                    getMonth: () => bd.getUTCMonth(),
+                    getFullYear: () => bd.getUTCFullYear(),
+                    getHours: () => bd.getUTCHours(),
+                    getMinutes: () => bd.getUTCMinutes(),
+                    getTime: () => utcMs,
+                    toISOString: () => new Date(utcMs).toISOString()
+                };
+            }
+            
+            function translateTitle(rawTitle) {
+                const lower = rawTitle.toLowerCase();
+                const sortedKeys = Object.keys(translations).sort((a, b) => b.length - a.length);
+                for (const key of sortedKeys) {
+                    if (lower.includes(key)) return translations[key];
+                }
+                return rawTitle;
+            }
+            
+            function formatEconomicVal(val, title) {
+                if (val === undefined || val === null || val === '') return null;
+                const num = parseFloat(val);
+                if (isNaN(num)) return String(val);
+                const lower = title.toLowerCase();
+                if (lower.includes('payroll') || lower.includes('employment') || lower.includes('job')) {
+                    return num >= 0 ? `+${num.toFixed(0)}K` : `${num.toFixed(0)}K`;
+                }
+                if (lower.includes('cpi') || lower.includes('ppi') || lower.includes('pce') || lower.includes('inflação')) {
+                    return `${num.toFixed(1)}%`;
+                }
+                if (lower.includes('rate') || lower.includes('juros') || lower.includes('fomc')) {
+                    return `${num.toFixed(2)}%`;
+                }
+                if (lower.includes('gdp') || lower.includes('pib')) {
+                    return `${num.toFixed(1)}%`;
+                }
+                if (Math.abs(num) >= 1000) {
+                    return num >= 0 ? `+${(num/1000).toFixed(1)}K` : `${(num/1000).toFixed(1)}K`;
+                }
+                return num >= 0 ? `+${num.toFixed(1)}` : `${num.toFixed(1)}`;
+            }
+            
+            const months = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+            
+            // Deduplicar por título traduzido (manter primeiro de cada)
+            const seen = new Map();
+            const deduped = [];
+            for (const e of ffData) {
+                const title = translateTitle(e.title || '');
+                const eventDate = parseFFDate(e.date);
+                if (!eventDate || isNaN(eventDate.getTime())) continue;
+                const isoStr = eventDate.toISOString();
+                const dayKey = `${title}_${isoStr ? isoStr.split('T')[0] : 'unknown'}`;
+                if (!seen.has(dayKey)) {
+                    seen.set(dayKey, true);
+                    deduped.push(e);
+                }
+            }
+            
+            // Ordenar por data
+            deduped.sort((a, b) => {
+                const da = parseFFDate(a.date);
+                const db = parseFFDate(b.date);
+                return (da ? da.getTime() : 0) - (db ? db.getTime() : 0);
+            });
+            
+            return deduped.slice(0, 30).map(e => {
+                const eventDate = parseFFDate(e.date);
+                if (!eventDate) return null;
+                const title = translateTitle(e.title || 'Evento');
+                const time = `${String(eventDate.getHours()).padStart(2,'0')}:${String(eventDate.getMinutes()).padStart(2,'0')}`;
+                
+                const history = [];
+                if (e.previous !== undefined && e.previous !== null && e.previous !== '') {
+                    const fmtPrev = formatEconomicVal(e.previous, title);
+                    history.push({ date: 'Anterior', value: fmtPrev || String(e.previous), type: 'neutral' });
+                }
+                if (e.actual !== undefined && e.actual !== null && e.actual !== '') {
+                    const fmtActual = formatEconomicVal(e.actual, title);
+                    const type = parseFloat(e.actual) > parseFloat(e.previous) ? 'positive' : parseFloat(e.actual) < parseFloat(e.previous) ? 'negative' : 'neutral';
+                    history.push({ date: 'Atual', value: fmtActual || String(e.actual), type });
+                }
+                if (e.forecast !== undefined && e.forecast !== null && e.forecast !== '') {
+                    const fmtForecast = formatEconomicVal(e.forecast, title);
+                    history.push({ date: 'Previsão', value: fmtForecast || String(e.forecast), type: 'neutral' });
+                }
+                
+                return {
+                    day: eventDate.getDate(),
+                    month: months[eventDate.getMonth()],
+                    year: eventDate.getFullYear(),
+                    time,
+                    title,
+                    country: '🇺🇸 EUA',
+                    description: e.title || '',
+                    isoDate: `${eventDate.getFullYear()}-${String(eventDate.getMonth()+1).padStart(2,'0')}-${String(eventDate.getDate()).padStart(2,'0')}`,
+                    source: 'forexfactory',
+                    fredSeriesId: getFredSeriesForEvent(e.title),
+                    history: history.length > 0 ? history : [{ date: 'Aguardando', value: '-', type: 'neutral' }]
+                };
+            }).filter(Boolean);
+        }
+        
+        function renderCalendarEvents(container, events, lastUpdate) {
             // Salvar eventos globalmente para uso no onclick
             window.economicEvents = events;
             
@@ -813,12 +1182,14 @@
                         <div class="calendar-country">${event.country} • ${event.description}</div>
                         ${renderHistory(event.history)}
                     </div>
-                    <div class="calendar-impact ${event.impact}">${event.impact === 'high' ? 'ALTO' : event.impact === 'medium' ? 'MÉDIO' : 'BAIXO'}</div>
                 </div>
             `).join('');
             
-            // Indicar fonte
-            container.insertAdjacentHTML('beforeend', '<p style="font-size: 10px; color: var(--text-muted); text-align: center; margin-top: 12px;"><i class="fas fa-sync-alt"></i> Atualizado via Financial Modeling Prep API</p>');
+            // Indicar fonte e última atualização
+            const hasFred = events.some(e => e.source === 'fred');
+            const hasFF = events.some(e => e.source === 'forexfactory');
+            const sourceLabel = hasFred && hasFF ? 'FRED + ForexFactory' : hasFred ? 'FRED (Federal Reserve)' : 'ForexFactory';
+            container.insertAdjacentHTML('beforeend', `<p style="font-size: 10px; color: var(--text-muted); text-align: center; margin-top: 12px;"><i class="fas fa-sync-alt"></i> Eventos de alta importância EUA • ${sourceLabel}</p>`);
         }
 
         async function fetchMarketIndicators() {
@@ -1406,9 +1777,11 @@
             
             const modal = document.getElementById('ta-modal');
             const body = document.getElementById('ta-modal-body');
+            if (!modal || !body) return;
             
             // Atualizar título
-            document.querySelector('.ta-modal-header-title').textContent = `Análise Técnica - ${indicator.name}`;
+            const titleEl = document.querySelector('.ta-modal-header-title');
+            if (titleEl) titleEl.textContent = `Análise Técnica - ${indicator.name}`;
             
             // Mostrar loading
             body.innerHTML = `
@@ -1934,4 +2307,4 @@
             document.getElementById('fs-timeframe-dropdown').classList.remove('open');
             selectIndicatorFullscreenPeriod(period);
         }
-
+

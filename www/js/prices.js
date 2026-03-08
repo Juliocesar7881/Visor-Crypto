@@ -4,6 +4,7 @@
         // ============================================
         function renderDropdownMenu() {
             const menu = document.getElementById('crypto-dropdown-menu');
+            if (!menu) return;
             menu.innerHTML = Object.keys(CRYPTO_DATABASE).map(symbol => {
                 const crypto = CRYPTO_DATABASE[symbol];
                 const isSelected = symbol === currentOrderbookSymbol;
@@ -21,14 +22,16 @@
 
         function toggleDropdown() {
             const menu = document.getElementById('crypto-dropdown-menu');
-            menu.classList.toggle('active');
+            if (menu) menu.classList.toggle('active');
         }
 
         function selectOrderbookCrypto(symbol) {
             currentOrderbookSymbol = symbol;
             const crypto = CRYPTO_DATABASE[symbol];
-            document.getElementById('dropdown-icon').innerHTML = `<img src="${crypto.img}" style="width: 20px; height: 20px; border-radius: 50%;">`;
-            document.getElementById('dropdown-label').textContent = crypto.short;
+            const iconEl = document.getElementById('dropdown-icon');
+            const labelEl = document.getElementById('dropdown-label');
+            if (iconEl) iconEl.innerHTML = `<img src="${crypto.img}" style="width: 20px; height: 20px; border-radius: 50%;">`;
+            if (labelEl) labelEl.textContent = crypto.short;
             toggleDropdown();
             renderDropdownMenu();
             fetchOrderBook();
@@ -41,7 +44,8 @@
         document.addEventListener('click', (e) => {
             const dropdown = document.querySelector('.crypto-dropdown');
             if (dropdown && !dropdown.contains(e.target)) {
-                document.getElementById('crypto-dropdown-menu').classList.remove('active');
+                const ddMenu = document.getElementById('crypto-dropdown-menu');
+                if (ddMenu) ddMenu.classList.remove('active');
             }
         });
 
@@ -51,6 +55,7 @@
         let wsRetryCount = 0;
         const MAX_WS_RETRIES = 3;
         const CORS_PROXY = 'https://corsproxy.io/?';
+        let _wsFallbackIntervalId = null;
         
         // Verificar se WebSocket está disponível e funcionando
         function isWebSocketSupported() {
@@ -90,10 +95,10 @@
                     wsRetryCount++;
                     if (wsRetryCount <= MAX_WS_RETRIES) {
                         setTimeout(connectPriceStream, 2000);
-                    } else {
-                        // Usar REST API como fallback
+                    } else if (!_wsFallbackIntervalId) {
+                        // Usar REST API como fallback (apenas uma vez)
                         fetchPricesViaREST();
-                        setInterval(fetchPricesViaREST, 5000);
+                        _wsFallbackIntervalId = setInterval(fetchPricesViaREST, 5000);
                     }
                 };
             } catch (e) {
@@ -187,7 +192,7 @@
         // ============================================
         async function fetchOrderBook() {
             try {
-                const response = await fetch(`https://api.binance.com/api/v3/depth?symbol=${currentOrderbookSymbol}&limit=10`);
+                const response = await fetchWithTimeout(`https://api.binance.com/api/v3/depth?symbol=${currentOrderbookSymbol}&limit=10`, {}, 5000);
                 const data = await response.json();
                 updateOrderbookDisplay(data);
             } catch (e) {
@@ -196,18 +201,19 @@
 
         function updateOrderbookDisplay(data) {
             const container = document.getElementById('orderbook-container');
+            if (!container) return;
             const symbolInfo = CRYPTO_DATABASE[currentOrderbookSymbol];
             
             const bids = data.bids || [];
             const asks = data.asks || [];
             
-            container.innerHTML = `
+            const html = `
                 <div class="orderbook-side orderbook-bids">
                     <div class="orderbook-title">Bids (Compra)</div>
                     ${bids.slice(0, 8).map(bid => `
                         <div class="orderbook-row">
-                            <span>${parseFloat(bid[1]).toFixed(4)}</span>
                             <span>$${parseFloat(bid[0]).toLocaleString()}</span>
+                            <span>${parseFloat(bid[1]).toFixed(4)}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -221,6 +227,7 @@
                     `).join('')}
                 </div>
             `;
+            requestAnimationFrame(() => { container.innerHTML = html; });
         }
 
         // ============================================
@@ -249,11 +256,13 @@
             const formatted = formatPrice(price);
             
             const currentEl = item.querySelector('.ticker-current');
-            currentEl.innerHTML = formatted.display;
+            if (currentEl) currentEl.innerHTML = formatted.display;
             
             const changeEl = item.querySelector('.ticker-change');
-            changeEl.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
-            changeEl.className = `ticker-change ${change >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+            if (changeEl) {
+                changeEl.textContent = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
+                changeEl.className = `ticker-change ${change >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+            }
             
             if (price > prevPrice) {
                 item.classList.add('flash-green');
@@ -265,8 +274,13 @@
         }
 
         function renderAllPrices() {
+            // Guard: se não está na home, marcar dirty e pular DOM update
+            if (typeof currentSection !== 'undefined' && currentSection !== 'home') {
+                _dirtyFlags.home = true;
+                return;
+            }
             const container = document.getElementById('live-prices');
-            container.innerHTML = selectedCryptos.map(symbol => {
+            const html = selectedCryptos.map(symbol => {
                 const info = CRYPTO_DATABASE[symbol];
                 const price = prices[symbol] || 0;
                 const change = priceChanges[symbol] || 0;
@@ -290,6 +304,7 @@
                     </div>
                 `;
             }).join('');
+            requestAnimationFrame(() => { if (container) container.innerHTML = html; });
         }
 
         // ============================================
@@ -303,8 +318,9 @@
             if (!card || !content) return;
 
             // Build opportunities from cached analysis data (localStorage)
-            const scoreHistory = JSON.parse(localStorage.getItem('vc4_score_history') || '{}');
-            const signalDirs = JSON.parse(localStorage.getItem('vc4_signal_directions') || '{}');
+            let scoreHistory = {}, signalDirs = {};
+            try { scoreHistory = JSON.parse(localStorage.getItem('vc4_score_history') || '{}'); } catch(e) {}
+            try { signalDirs = JSON.parse(localStorage.getItem('vc4_signal_directions') || '{}'); } catch(e) {}
             const now = Date.now();
             const maxAge = 15 * 60 * 1000; // 15 min
 
@@ -368,6 +384,6 @@
 
         function startTopOpportunitiesRefresh() {
             loadTopOpportunities();
-            _topOpportunitiesTimer = setInterval(loadTopOpportunities, 30000); // refresh every 30s
+            _topOpportunitiesTimer = setInterval(() => { try { loadTopOpportunities(); } catch(e) {} }, 30000);
         }
-
+

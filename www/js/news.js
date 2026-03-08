@@ -2,6 +2,26 @@
         // NEWS MODAL FUNCTIONS
         // ============================================
         
+        // Shorten verbose source names to just the domain/brand
+        function shortenSource(source) {
+            if (!source) return '';
+            // Try to extract domain-like name (e.g. "investing.com Crypto opinion and analysis" → "investing.com")
+            const domainMatch = source.match(/^([\w.-]+\.(?:com|io|co|org|net|news|xyz))/i);
+            if (domainMatch) return domainMatch[1];
+            // For multi-word names, keep first 2-3 words max
+            const words = source.split(/\s+/);
+            if (words.length > 3) return words.slice(0, 2).join(' ');
+            return source;
+        }
+
+        // fetchSingleNewsImage — generate a fallback image based on title keywords
+        async function fetchSingleNewsImage(news) {
+            if (!news || news.image) return;
+            // Use getNewsImageFallback to create an icon-based thumbnail
+            // We store a marker so renderHotNewsList can use it
+            news._fallbackImage = true;
+        }
+        
         // Mapa de criptomoedas para imagens
         const cryptoImages = {
             'bitcoin': { img: 'https://assets.coingecko.com/coins/images/1/large/bitcoin.png', name: 'Bitcoin', color: '#F7931A' },
@@ -138,6 +158,7 @@
         async function openNewsModal(newsUrl) {
             // Decode URL encoded in onclick handler
             try { newsUrl = decodeURIComponent(newsUrl); } catch(e) {}
+            newsUrl = newsUrl.replace(/%27/g, "'");
             let news = allNews.find(n => n.url === newsUrl);
             // Fallback: buscar por URL normalizada
             if (!news) {
@@ -275,9 +296,79 @@
             
             // Filtrar apenas notícias novas
             const uniqueNew = newItems.filter(item => !existingUrls.has(item.url));
+
+            // Filtrar propagandas de corretoras e plataformas de investimento
+            const _adPatterns = [
+                /investimento.{0,10}inteligente/i,
+                /investimento.{0,10}come[cç]a/i,
+                /abra\s+sua\s+conta/i,
+                /open\s+your\s+account/i,
+                /cadastre[- ]se/i,
+                /sign\s+up\s+(now|today|free)/i,
+                /comece\s+a\s+investir/i,
+                /start\s+trading/i,
+                /start\s+investing/i,
+                /promo(tion|\u00e7[aã]o|\b)/i,
+                /b[oô]nus\s+(de\s+)?\$?\d/i,
+                /bonus.*deposit/i,
+                /deposit.*bonus/i,
+                /ganhe\s+(at[eé]|r\$|\$)/i,
+                /earn\s+up\s+to/i,
+                /zero\s+(taxa|fee)/i,
+                /taxa\s+zero/i,
+                /patrocinado/i,
+                /sponsored/i,
+                /parceiro|partner(ship)?/i,
+                /cupom|coupon|voucher/i,
+                /desconto.*%/i,
+                /\d+%.*off/i,
+                /refer(ral|ência|\s+a\s+friend)/i,
+                /convide.*ganhe/i,
+                /invite.*earn/i,
+                /baixe\s+o\s+app/i,
+                /download.*(app|now)/i,
+                /best\s+(crypto\s+)?exchange/i,
+                /melhor\s+(corretora|exchange)/i,
+                /ganhar\s+(juros|renda|rendimento)/i,
+                /earn\s+(interest|yield|passive)/i,
+                /put\s+your\s+(crypto|money)\s+to\s+work/i,
+                /colocar\s+(sua\s+)?(cripto|criptografia)\s+para\s+funcionar/i,
+                /passive\s+income/i,
+                /renda\s+passiva/i,
+                /staking.*reward/i,
+                /reward.*stak/i,
+                /lending.*platform/i,
+                /plataforma.*(empr[eé]stimo|lending)/i,
+                /how\s+to\s+(buy|invest|earn|stake|start)/i,
+                /como\s+(comprar|investir|ganhar|come[cç]ar)/i,
+                /melhores.{0,15}(plataforma|corretora|app|carteira)/i,
+                /best.{0,15}(platform|broker|wallet|app)/i,
+                /top\s+\d+.{0,10}(exchange|platform|broker|wallet)/i,
+                /apy|apr.*%/i,
+                /\d+\.?\d*%\s*(apy|apr|yield|juros|interest)/i,
+                /high.{0,5}yield/i,
+                /alto.{0,5}rendimento/i,
+                /free\s+(crypto|bitcoin|token|coin)/i,
+                /cripto\s+gr[aá]tis/i,
+                /bitcoin\s+gr[aá]tis/i,
+                /copy\s*trad/i,
+                /rob[oô]\s*(trader|trad)/i,
+                /auto.*trad/i,
+                /social\s+trading/i,
+                /margin.*trad/i,
+                /alavancagem.*\dx/i,
+                /leverage.*\dx/i,
+                /taxa.{0,5}(mais\s+)?baix/i,
+                /low(est)?\s+fee/i
+            ];
+            function _isAdNews(title) {
+                if (!title) return false;
+                return _adPatterns.some(p => p.test(title));
+            }
+            const cleanNew = uniqueNew.filter(item => !_isAdNews(item.title) && !_isAdNews(item.translatedTitle));
             
             // MARCAR NOTÍCIAS IMPORTANTES IMEDIATAMENTE ao adicionar
-            uniqueNew.forEach(news => {
+            cleanNew.forEach(news => {
                 const hotCheck = isHotNews(news.title);
                 if (hotCheck.isHot) {
                     news.isHotNews = true;
@@ -286,10 +377,27 @@
                 }
             });
             
+            // Filtro Bitcoin World: remover notícias de baixa relevância desta fonte
+            const _bwHighRelevanceKW = [
+                'SEC', 'ETF', 'Fed', 'FOMC', 'regulation', 'regulação', 'ban', 'approval',
+                'aprovação', 'institutional', 'hack', 'exploit', 'exchange', 'bankruptcy',
+                'falência', 'lawsuit', 'processo', 'treasury', 'legislation', 'lei', 'CBDC',
+                'stablecoin', 'BlackRock', 'Fidelity', 'Grayscale', 'MicroStrategy',
+                'government', 'governo', 'sanction', 'sanção'
+            ];
+            const _filteredClean = cleanNew.filter(news => {
+                const src = (news.source || '').toLowerCase();
+                if (!src.includes('bitcoin world')) return true; // outras fontes passam
+                if (news.isHotNews) return true; // relevantes sempre passam
+                if (news.sentiment === 'neutral') return true; // neutras passam
+                // Positivas/negativas da Bitcoin World: exigir keyword de alta relevância
+                const title = (news.title || '') + ' ' + (news.translatedTitle || '');
+                return _bwHighRelevanceKW.some(kw => title.toLowerCase().includes(kw.toLowerCase()));
+            });
+            
             // Adicionar novas notícias ao início
-            if (uniqueNew.length > 0) {
-                allNews = [...uniqueNew, ...allNews];
-                /* console.log(`${uniqueNew.length} nova(s) notícia(s) adicionada(s)`); */
+            if (_filteredClean.length > 0) {
+                allNews = [..._filteredClean, ...allNews];
             }
             
             // Limpar notícias com mais de 15 dias
@@ -438,6 +546,7 @@
         ];
         
         function isTrashNews(title) {
+            if (!title) return false;
             const titleLower = title.toLowerCase();
             return GLOBAL_TRASH_KEYWORDS.some(keyword => titleLower.includes(keyword.toLowerCase()));
         }
@@ -482,8 +591,17 @@
             if (newsLoaded && allNews.length > 0) {
                 // Não mostrar loading, manter conteúdo atual enquanto atualiza em background
             } else if (!isHotFilter) {
-                // Primeira vez e não está em hot - mostrar loading
-                container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+                // Primeira vez - mostrar skeleton loading bonito
+                container.innerHTML = Array.from({length: 6}, () => `
+                    <div class="news-skeleton">
+                        <div class="news-skeleton-thumb"></div>
+                        <div class="news-skeleton-content">
+                            <div class="news-skeleton-line"></div>
+                            <div class="news-skeleton-line"></div>
+                            <div class="news-skeleton-line"></div>
+                        </div>
+                    </div>
+                `).join('');
             }
             
             let totalFetched = 0;
@@ -512,9 +630,9 @@
                 if (ccResponse.ok) {
                     const ccData = await ccResponse.json();
                     if (ccData.Data && ccData.Data.length > 0) {
-                        // Usar filtro global de notícias irrelevantes
+                        // Usar filtro global de notícias irrelevantes (só título, body é muito agressivo)
                         const filteredData = ccData.Data.filter(item => {
-                            return !isTrashNews(item.title) && !isTrashNews((item.body || '').substring(0, 150));
+                            return !isTrashNews(item.title);
                         });
                         const newItems = filteredData.slice(0, 100).map(item => {
                             // MARCAR HOT IMEDIATAMENTE ao criar a notícia
@@ -600,7 +718,16 @@
                 // TRADUZIR PRIMEIRO as notícias antes de renderizar
                 // Isso evita que apareçam em inglês e depois mudem
                 if (newsFilter !== 'hot') {
-                    container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px;">Traduzindo notícias...</p></div>';
+                    container.innerHTML = Array.from({length: 6}, () => `
+                        <div class="news-skeleton">
+                            <div class="news-skeleton-thumb"></div>
+                            <div class="news-skeleton-content">
+                                <div class="news-skeleton-line"></div>
+                                <div class="news-skeleton-line"></div>
+                                <div class="news-skeleton-line"></div>
+                            </div>
+                        </div>
+                    `).join('');
                     
                     // Traduzir as primeiras 30 notícias ANTES de renderizar
                     await translateNewsBeforeRender(30);
@@ -726,6 +853,7 @@
         }
 
         function analyzeSentiment(title) {
+            if (!title) return 'neutral';
             const lower = title.toLowerCase();
             // Lista focada em EVENTOS reais, não movimentos de preço
             // === POSITIVO: Adoção, regulação favorável, institucional, segurança OK ===
@@ -759,7 +887,17 @@
                 'collapse', 'collapses', 'collapsing',
                 'outflows', 'outflow',
                 'layoff', 'layoffs', 'failure',
-                'fund outflows', 'rate hike', 'interest rate increase'
+                'fund outflows', 'rate hike', 'interest rate increase',
+                // Movimentos negativos
+                'drop', 'drops', 'dropping', 'decline', 'declines', 'declining',
+                'plunge', 'plunges', 'plunging', 'tumble', 'tumbles',
+                'slump', 'slumps', 'slide', 'slides', 'sliding',
+                'crash', 'crashes', 'crashing', 'dump', 'dumps', 'dumping',
+                'loss', 'losses', 'sell-off', 'selloff', 'selling',
+                'fear', 'fears', 'panic', 'warning', 'warns', 'warned',
+                'risk', 'risks', 'threat', 'threatens', 'concern', 'concerns',
+                'bearish', 'downturn', 'recession', 'crisis', 'uncertainty',
+                'volatile', 'volatility', 'pressure', 'weak', 'weakens'
             ];
             
             let positiveScore = 0;
@@ -773,20 +911,17 @@
                 if (lower.includes(word)) negativeScore++;
             }
             
-            // Se tem qualquer indicador, classificar (evita neutros)
+            // Classificar por diferença de score
             if (positiveScore > negativeScore) return 'positive';
             if (negativeScore > positiveScore) return 'negative';
-            // Se empate mas tem algum indicador, decidir pelo contexto crypto (geralmente positivo = adoção)
-            if (positiveScore > 0 && negativeScore > 0) return 'positive';
-            // Se não tem indicadores, tentar classificar por contexto
-            if (lower.includes('bitcoin') || lower.includes('btc') || lower.includes('ethereum') || lower.includes('eth') || lower.includes('crypto')) {
-                // Notícias de crypto sem indicador claro são geralmente neutras-positivas (adoção)
-                return 'positive';
-            }
-            return 'negative'; // Padrão: se não consegue classificar, assume negativa para evitar neutras
+            // Empate com indicadores dos dois lados = neutro (ambíguo)
+            if (positiveScore > 0 && negativeScore > 0) return 'neutral';
+            // Sem indicadores = neutro
+            return 'neutral';
         }
 
         function categorizeRelevance(title) {
+            if (!title) return 'curious';
             const lower = title.toLowerCase();
             const high = ['bitcoin', 'btc', 'ethereum', 'eth', 'sec', 'etf', 'blackrock', 'regulation', 'fed', 'institutional', 'government', 'us', 'china'];
             const medium = ['solana', 'bnb', 'altcoin', 'defi', 'nft', 'exchange', 'binance', 'coinbase', 'trading'];
@@ -950,7 +1085,19 @@
             'litecoin', 'ltc', 'shib', 'pepe', 'crypto market', 'altcoin'
         ];
 
+        // Keywords de alto impacto — um match basta
+        const HOT_CRITICAL_KEYWORDS = new Set([
+            'war', 'invasion', 'airstrike', 'missile', 'ceasefire', 'military action',
+            'coup', 'martial law', 'state of emergency', 'government shutdown', 'impeachment',
+            'bank collapse', 'bank collapses', 'liquidity crisis', 'debt default', 'sovereign default',
+            'emergency bailout', 'capital controls', 'bank run', 'systemic risk',
+            'depression', 'hyperinflation', 'emergency rate cut', 'emergency rate hike',
+            'oil shock', 'energy crisis',
+            'trade war', 'embargo', 'export ban'
+        ]);
+
         function isHotNews(title) {
+            if (!title) return { isHot: false };
             const lowerTitle = title.toLowerCase();
             
             // 1. Rejeitar se contém padrão de opinião/clickbait
@@ -965,13 +1112,23 @@
                 return { isHot: false };
             }
             
-            // 3. Verificar keywords quentes
+            // 3. Verificar keywords — acumular matches
+            let matchCount = 0;
+            let firstCategory = null;
+            let firstKeyword = null;
+            let hasCritical = false;
             for (const [category, keywords] of Object.entries(HOT_KEYWORDS)) {
                 for (const keyword of keywords) {
                     if (lowerTitle.includes(keyword)) {
-                        return { isHot: true, category, keyword };
+                        matchCount++;
+                        if (!firstCategory) { firstCategory = category; firstKeyword = keyword; }
+                        if (HOT_CRITICAL_KEYWORDS.has(keyword)) hasCritical = true;
                     }
                 }
+            }
+            // Um keyword crítico basta; keywords normais precisam de 2+ matches
+            if (hasCritical || matchCount >= 2) {
+                return { isHot: true, category: firstCategory, keyword: firstKeyword };
             }
             return { isHot: false };
         }
@@ -1226,18 +1383,35 @@
                     const pubDateMatch = itemXml.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i);
                     const descMatch = itemXml.match(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i);
                     
+                    // Extrair imagem do RSS: <media:content>, <media:thumbnail>, <enclosure>, ou <img> no description
+                    let imageUrl = '';
+                    const mediaContentMatch = itemXml.match(/<media:content[^>]+url=["']([^"']+)["']/i);
+                    const mediaThumbnailMatch = itemXml.match(/<media:thumbnail[^>]+url=["']([^"']+)["']/i);
+                    const enclosureMatch = itemXml.match(/<enclosure[^>]+url=["']([^"']+)["'][^>]*type=["']image/i) ||
+                                           itemXml.match(/<enclosure[^>]+type=["']image[^"']*["'][^>]+url=["']([^"']+)["']/i);
+                    if (mediaContentMatch) imageUrl = mediaContentMatch[1];
+                    else if (mediaThumbnailMatch) imageUrl = mediaThumbnailMatch[1];
+                    else if (enclosureMatch) imageUrl = enclosureMatch[1] || enclosureMatch[2] || '';
+                    // Fallback: buscar <img src="..."> dentro do description CDATA
+                    if (!imageUrl && descMatch && descMatch[1]) {
+                        const imgInDesc = descMatch[1].match(/<img[^>]+src=["']([^"']+)["']/i);
+                        if (imgInDesc) imageUrl = imgInDesc[1];
+                    }
+                    
                     if (titleMatch && titleMatch[1]) {
                         const title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
                         const link = linkMatch ? linkMatch[1].trim() : '';
                         const pubDate = pubDateMatch ? pubDateMatch[1].trim() : new Date().toISOString();
                         
-                        items.push({
+                        const item = {
                             title: title,
                             url: link,
                             source: source,
                             published: pubDate,
                             sentiment: 'neutral'
-                        });
+                        };
+                        if (imageUrl) item.image = imageUrl;
+                        items.push(item);
                     }
                 }
             } catch (e) {
@@ -1247,6 +1421,7 @@
         }
         
         function analyzeSentimentForHot(title, category) {
+            if (!title) return 'neutral';
             const lower = title.toLowerCase();
             
             // Palavras positivas - notícias importantes
@@ -1292,21 +1467,28 @@
                 return;
             }
             
-            // Traduzir todos os títulos ANTES de renderizar (em paralelo para velocidade)
-            const translationPromises = hotNews.map(async (news) => {
-                if (!news.translatedTitle) {
-                    news.translatedTitle = await translateText(news.title);
+            // Traduzir títulos em bulk (muito mais rápido — 1 request por ~10 títulos)
+            const untranslatedHot = hotNews.filter(n => !n.translatedTitle);
+            if (untranslatedHot.length > 0) {
+                const CHUNK = 10;
+                const chunks = [];
+                for (let i = 0; i < untranslatedHot.length; i += CHUNK) {
+                    chunks.push(untranslatedHot.slice(i, i + CHUNK));
                 }
-                return news;
-            });
-            
-            // Aguardar todas as traduções (com timeout de 3s por segurança)
-            try {
-                await Promise.race([
-                    Promise.all(translationPromises),
-                    new Promise(resolve => setTimeout(resolve, 3000))
-                ]);
-            } catch(e) {}
+                try {
+                    await Promise.race([
+                        Promise.all(chunks.map(async (chunk) => {
+                            const titles = chunk.map(n => n.title);
+                            const translated = await translateBulk(titles);
+                            for (let j = 0; j < chunk.length; j++) {
+                                chunk[j].translatedTitle = translated[j] || chunk[j].title;
+                            }
+                        })),
+                        new Promise(resolve => setTimeout(resolve, 12000))
+                    ]);
+                    persistTranslationCache();
+                } catch(e) {}
+            }
             
             // Filtrar notícias que não foram traduzidas (não mostrar em inglês)
             hotNews = hotNews.filter(n => !!n.translatedTitle);
@@ -1338,24 +1520,48 @@
                 const timeAgo = getTimeAgo(news.published);
                 const twitterBadge = news.isTwitter ? '<span style="background: #1DA1F2; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; margin-left: 6px;"><i class="fab fa-twitter"></i></span>' : '';
                 
-                // v7.1: Usar URL como identificador (estável e único)
-                const safeUrl = encodeURIComponent(news.url || '');
+                const encodedUrl = encodeURIComponent(news.url || '').replace(/'/g, '%27');
+                const shortSource = shortenSource(news.source);
+                
+                // Thumbnail image
+                let thumbHtml;
+                if (news.image) {
+                    thumbHtml = `<div class="news-item-thumb"><img src="${news.image}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-newspaper\\' style=\\'color:var(--accent-blue)\\'></i>'"></div>`;
+                } else {
+                    // Generate icon-based thumbnail from title keywords
+                    const lowerTitle = (news.title || '').toLowerCase();
+                    let thumbIcon = 'fa-fire';
+                    let thumbColor = '#f97316';
+                    if (/bitcoin|btc/i.test(lowerTitle)) { thumbIcon = 'fa-bitcoin-sign'; thumbColor = '#F7931A'; }
+                    else if (/ethereum|eth\b/i.test(lowerTitle)) { thumbIcon = 'fa-ethereum'; thumbColor = '#627EEA'; }
+                    else if (/etf|sec|regulation|government|federal|law|congress/i.test(lowerTitle)) { thumbIcon = 'fa-landmark'; thumbColor = '#63b3ed'; }
+                    else if (/market|trading|price|rally|crash|bull|bear/i.test(lowerTitle)) { thumbIcon = 'fa-chart-line'; thumbColor = 'var(--accent-blue)'; }
+                    else if (/exchange|coinbase|binance|kraken/i.test(lowerTitle)) { thumbIcon = 'fa-exchange-alt'; thumbColor = 'var(--accent-purple)'; }
+                    else if (/war|conflict|tariff|sanctions|missile|invasion/i.test(lowerTitle)) { thumbIcon = 'fa-globe'; thumbColor = '#ef4444'; }
+                    else if (/trump|biden|president|election/i.test(lowerTitle)) { thumbIcon = 'fa-landmark-dome'; thumbColor = '#eab308'; }
+                    else if (/inflation|cpi|rate|fed|interest/i.test(lowerTitle)) { thumbIcon = 'fa-percent'; thumbColor = '#f59e0b'; }
+                    thumbHtml = `<div class="news-item-thumb" style="background: linear-gradient(135deg, ${thumbColor}15, ${thumbColor}25);"><i class="fas ${thumbIcon}" style="color:${thumbColor}; font-size: 18px;"></i></div>`;
+                }
                 
                 return `
-                    <div class="news-item hot" onclick="openHotNewsModal('${safeUrl}')" style="border-left: 3px solid #f97316;">
-                        <div class="news-header">
-                            <div class="news-title">
-                                <span style="font-size: 16px; margin-right: 6px;">${icon}</span>
-                                ${sanitizeHTML(news.translatedTitle)}
+                    <div class="news-item hot" onclick="openHotNewsModal('${encodedUrl}')" style="border-left: 3px solid #f97316;">
+                        ${thumbHtml}
+                        <div class="news-item-content">
+                            <div class="news-header">
+                                <div class="news-title">
+                                    <span style="font-size: 14px; margin-right: 4px;">${icon}</span>
+                                    ${sanitizeHTML(news.translatedTitle)}
+                                </div>
+                                <span class="news-sentiment hot" style="background: linear-gradient(135deg, #f97316, #ea580c); color: white; pointer-events: none;"><i class="fas fa-fire"></i> Relevante</span>
                             </div>
-                            <span class="news-sentiment hot" style="background: linear-gradient(135deg, #f97316, #ea580c); color: white; pointer-events: none;"><i class="fas fa-fire"></i> Relevante</span>
-                        </div>
-                        <div class="news-meta">
-                            <span class="news-source">
-                                <span style="background: rgba(249, 115, 22, 0.2); color: #f97316; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-right: 6px;">${categoryName}</span>
-                                ${sanitizeHTML(news.source)}${twitterBadge}
-                            </span>
-                            <span class="news-time"><i class="far fa-clock"></i> ${timeAgo}</span>
+                            <div class="news-meta">
+                                <span class="news-source">
+                                    <span style="background: rgba(249, 115, 22, 0.2); color: #f97316; padding: 2px 5px; border-radius: 4px; font-size: 9px; margin-right: 4px;">${categoryName}</span>
+                                    ${sanitizeHTML(shortSource)}${twitterBadge}
+                                </span>
+                                <span class="news-meta-dot"></span>
+                                <span class="news-time"><i class="far fa-clock"></i> ${timeAgo}</span>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -1368,19 +1574,19 @@
             try {
                 // Decode URL encoded in onclick handler
                 try { newsUrl = decodeURIComponent(newsUrl); } catch(e) {}
+                // Also handle double-encoded %27 → '
+                newsUrl = newsUrl.replace(/%27/g, "'");
                 let news;
                 
                 // V7: Sempre buscar por URL (identificador estável)
-                news = allNews?.find(n => n.url === newsUrl) ||
-                       window.hotNewsData?.find(n => n.url === newsUrl) ||
-                       hotNewsCache?.find(n => n.url === newsUrl);
+                const _findByUrl = (arr, url) => arr?.find(n => n.url === url);
+                const _findByBase = (arr, base) => arr?.find(n => n.url?.split('?')[0].split('#')[0].toLowerCase() === base);
+                news = _findByUrl(allNews, newsUrl) || _findByUrl(window.hotNewsData, newsUrl) || _findByUrl(hotNewsCache, newsUrl);
                 
                 // Fallback: buscar por URL normalizada (sem query params/fragment)
                 if (!news) {
                     const baseUrl = newsUrl.split('?')[0].split('#')[0].toLowerCase();
-                    news = allNews?.find(n => n.url?.split('?')[0].split('#')[0].toLowerCase() === baseUrl) ||
-                           window.hotNewsData?.find(n => n.url?.split('?')[0].split('#')[0].toLowerCase() === baseUrl) ||
-                           hotNewsCache?.find(n => n.url?.split('?')[0].split('#')[0].toLowerCase() === baseUrl);
+                    news = _findByBase(allNews, baseUrl) || _findByBase(window.hotNewsData, baseUrl) || _findByBase(hotNewsCache, baseUrl);
                 }
                 
                 // Fallback final: tentar openNewsModal (que usa a mesma lógica)
@@ -1582,8 +1788,7 @@
                 sorted = sorted.filter(n => {
                     // Hot/Relevant tab: show only hot news
                     if (newsFilter === 'hot') return n.isHotNews === true;
-                    // Positive/Negative: exclude hot items so they only show in Todas and Relevantes
-                    if (n.isHotNews === true) return false;
+                    // Positive/Negative: include all matching sentiment (including hot)
                     return n.sentiment === newsFilter;
                 });
             }
@@ -1603,9 +1808,9 @@
                 'MACRO': {icon: '📊', label: 'Macro', color: '#f59e0b'},
                 'RUIDO': {icon: '📰', label: 'News', color: '#6b7280'},
             };
-            container.innerHTML = sorted.map((news, index) => {
+            const _newsHtml = sorted.map((news, index) => {
+              try {
                 // Verificar se é notícia importante - REVALIDAR aqui para garantir
-                // Ignorar qualquer flag anterior e verificar novamente
                 const recheck = isHotNews(news.title);
                 const isHot = recheck.isHot === true;
                 
@@ -1629,49 +1834,63 @@
                 }
                 
                 const timeAgo = getTimeAgo(news.published);
-                
-                // Usar título traduzido (notícias sem tradução já foram filtradas acima)
                 const displayTitle = sanitizeHTML(news.translatedTitle);
-                const safeSource = sanitizeHTML(news.source);
+                const shortSource = shortenSource(news.source);
+                const safeSource = sanitizeHTML(shortSource);
                 
-                // V7: Usar URL como ID estável — nunca mais click errado
-                const safeUrl = encodeURIComponent(news.url);
+                const safeUrl = encodeURIComponent(news.url || '').replace(/'/g, '%27');
                 let onclickHandler;
-                if (isHot) {
+                if (!news.url) {
+                    onclickHandler = '';
+                } else if (isHot) {
                     onclickHandler = `openHotNewsModal('${safeUrl}')`;
                 } else {
                     onclickHandler = `openNewsModal('${safeUrl}')`;
                 }
                 
-                // V7: AI category badge
                 const catDisplay = news.aiCategory ? CATEGORY_DISPLAY[news.aiCategory] : null;
                 let catBadge = '';
                 if (catDisplay && news.aiScore) {
-                    catBadge = `<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:${catDisplay.color}22;color:${catDisplay.color};font-weight:600;">${catDisplay.icon} ${catDisplay.label} ${news.aiScore}</span>`;
+                    catBadge = `<span style="font-size:9px;padding:2px 5px;border-radius:6px;background:${catDisplay.color}22;color:${catDisplay.color};font-weight:600;">${catDisplay.icon} ${catDisplay.label}</span>`;
                 }
+                
+                // Thumbnail image
+                const thumbHtml = news.image 
+                    ? `<div class="news-item-thumb"><img src="${news.image}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-newspaper\\'></i>'"></div>`
+                    : `<div class="news-item-thumb"><i class="fas fa-newspaper"></i></div>`;
                 
                 return `
                     <div class="news-item ${sentimentClass}" onclick="${onclickHandler}" style="${isHot ? 'border-left: 3px solid #f97316;' : news.aiScore >= 70 ? 'border-left: 3px solid ' + (catDisplay ? catDisplay.color : '#10b981') + ';' : ''}">
-                        <div class="news-header">
-                            <div class="news-title">${isHot ? '<span style="color: #f97316;">🔥</span> ' : ''}${displayTitle}</div>
-                            <span class="news-sentiment ${sentimentClass}" style="${isHot ? 'background: linear-gradient(135deg, #f97316, #ea580c); color: white;' : ''}">${sentimentIcon} ${sentimentText}</span>
-                        </div>
-                        <div class="news-meta">
-                            <span class="news-source">${safeSource}</span>
-                            ${catBadge}
-                            <span class="news-time"><i class="far fa-clock"></i> ${timeAgo}</span>
+                        ${thumbHtml}
+                        <div class="news-item-content">
+                            <div class="news-header">
+                                <div class="news-title">${isHot ? '<span style="color: #f97316;">🔥</span> ' : ''}${displayTitle}</div>
+                                <span class="news-sentiment ${sentimentClass}" style="${isHot ? 'background: linear-gradient(135deg, #f97316, #ea580c); color: white;' : ''}">${sentimentIcon} ${sentimentText}</span>
+                            </div>
+                            <div class="news-meta">
+                                <span class="news-source">${safeSource}</span>
+                                ${catBadge}
+                                <span class="news-meta-dot"></span>
+                                <span class="news-time"><i class="far fa-clock"></i> ${timeAgo}</span>
+                            </div>
                         </div>
                     </div>
                 `;
+              } catch(e) { return ''; }
             }).join('');
+            requestAnimationFrame(() => { container.innerHTML = _newsHtml; });
             
             // Traduzir restante em background APÓS renderizar (não bloqueia)
-            // Re-renderizar quando traduções ficarem prontas para mostrar mais notícias
-            setTimeout(() => {
-                preTranslateNews().then(() => {
-                    renderNews(); // Atualizar lista com notícias recém-traduzidas
-                }).catch(() => {});
-            }, 2000);
+            // Re-renderizar UMA VEZ quando traduções ficarem prontas
+            if (!window._newsTranslationScheduled) {
+                window._newsTranslationScheduled = true;
+                setTimeout(() => {
+                    preTranslateNews().then(() => {
+                        window._newsTranslationScheduled = false;
+                        renderNews();
+                    }).catch(() => { window._newsTranslationScheduled = false; });
+                }, 5000);
+            }
             } finally {
                 isRenderingNews = false;
             }
@@ -1687,15 +1906,70 @@
                     renderNews();
                 });
             });
+            
+            // On resume: retry translation for any untranslated news
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && allNews.length > 0) {
+                    const untranslated = allNews.filter(n => !n.translatedTitle);
+                    if (untranslated.length > 0) {
+                        translateNewsBeforeRender(20).then(() => renderNews()).catch(() => {});
+                    }
+                }
+            });
         });
 
         // ============================================
         // FEAR & GREED INDEX - API Alternative.me (gratuita, sem limite)
         // ============================================
+        let lastFearGreedValue = null;
+        let lastFearGreedTime = 0;
+        const FEAR_GREED_CACHE_WINDOW = 30 * 60 * 1000; // 30 minutos
+        const FEAR_GREED_CACHE_KEY = 'fear_greed_cache';
+        
+        function getFearGreedCache() {
+            try {
+                const cached = localStorage.getItem(FEAR_GREED_CACHE_KEY);
+                if (cached) {
+                    const data = JSON.parse(cached);
+                    // Accept any cached data for initial display (will be refreshed)
+                    return data.value;
+                }
+            } catch (e) {}
+            return null;
+        }
+        
+        function setFearGreedCache(value) {
+            try {
+                localStorage.setItem(FEAR_GREED_CACHE_KEY, JSON.stringify({
+                    value: value,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {}
+        }
+        
+        function updateFearGreedUI(value) {
+            const valEl = document.getElementById('fear-greed-value');
+            const indEl = document.getElementById('fear-greed-indicator');
+            if (!valEl || !indEl) return;
+            valEl.textContent = value;
+            valEl.className = `meter-value ${value > 50 ? 'pnl-positive' : 'pnl-negative'}`;
+            indEl.style.left = `${value}%`;
+        }
+        
         async function fetchFearGreed() {
             try {
-                // Mostrar loading
-                document.getElementById('fear-greed-value').textContent = '--';
+                // Show cached value immediately (from memory or localStorage)
+                if (lastFearGreedValue === null) {
+                    const cached = getFearGreedCache();
+                    if (cached !== null) {
+                        lastFearGreedValue = cached;
+                        lastFearGreedTime = Date.now();
+                        updateFearGreedUI(cached);
+                    } else {
+                        const fgInit = document.getElementById('fear-greed-value');
+                        if (fgInit) fgInit.textContent = '--';
+                    }
+                }
                 
                 // API Alternative.me - gratuita e confiável
                 const response = await fetchWithTimeout('https://api.alternative.me/fng/', {}, 10000);
@@ -1705,20 +1979,36 @@
                     if (data && data.data && data.data[0]) {
                         const value = parseInt(data.data[0].value);
                         
-                        document.getElementById('fear-greed-value').textContent = value;
-                        document.getElementById('fear-greed-value').className = `meter-value ${value > 50 ? 'pnl-positive' : 'pnl-negative'}`;
-                        document.getElementById('fear-greed-indicator').style.left = `${value}%`;
+                        // Save to memory + localStorage
+                        lastFearGreedValue = value;
+                        lastFearGreedTime = Date.now();
+                        setFearGreedCache(value);
+                        
+                        updateFearGreedUI(value);
                         return;
                     }
                 }
                 
-                // Se falhar, mostrar indisponível
-                document.getElementById('fear-greed-value').textContent = '--';
-                document.getElementById('fear-greed-indicator').style.left = '50%';
+                // API failed - use cached value if available
+                if (lastFearGreedValue !== null) {
+                    updateFearGreedUI(lastFearGreedValue);
+                    return;
+                }
+                
+                const fgVal = document.getElementById('fear-greed-value');
+                const fgInd = document.getElementById('fear-greed-indicator');
+                if (fgVal) fgVal.textContent = '--';
+                if (fgInd) fgInd.style.left = '50%';
                 
             } catch (e) {
-                document.getElementById('fear-greed-value').textContent = '--';
-                document.getElementById('fear-greed-indicator').style.left = '50%';
+                if (lastFearGreedValue !== null) {
+                    updateFearGreedUI(lastFearGreedValue);
+                    return;
+                }
+                const fgVal2 = document.getElementById('fear-greed-value');
+                const fgInd2 = document.getElementById('fear-greed-indicator');
+                if (fgVal2) fgVal2.textContent = '--';
+                if (fgInd2) fgInd2.style.left = '50%';
             }
         }
 
@@ -1727,13 +2017,16 @@
         // ============================================
         const ALTSEASON_CACHE_KEY = 'altseason_cache_v2';
         const ALTSEASON_CACHE_DURATION = 10 * 60 * 1000; // 10 minutos
+        const ALTSEASON_ERROR_CACHE_WINDOW = 30 * 60 * 1000; // 30 minutos - manter cache em caso de erro de API
         
-        function getAltseasonCache() {
+        function getAltseasonCache(forDisplay) {
             try {
                 const cached = localStorage.getItem(ALTSEASON_CACHE_KEY);
                 if (cached) {
                     const data = JSON.parse(cached);
-                    if (Date.now() - data.timestamp < ALTSEASON_CACHE_DURATION) {
+                    // For display on load, accept any cached data (will be refreshed)
+                    // For normal use, respect the cache duration
+                    if (forDisplay || Date.now() - data.timestamp < ALTSEASON_CACHE_DURATION) {
                         return data;
                     }
                 }
@@ -1754,15 +2047,24 @@
         // Cache em memória do Altseason (para não mostrar -- ao falhar após já ter carregado)
         let lastAltseasonValue = null;
         let lastAltseasonBtcDom = null;
+        let lastAltseasonTime = 0;
         
         async function fetchAltseasonIndex() {
             const valueEl = document.getElementById('altseason-value');
             const statusEl = document.getElementById('altseason-status');
             
-            // Só mostrar loading se ainda não tiver valor
+            // Show cached value immediately (from memory or localStorage)
             if (!lastAltseasonValue) {
-                if (valueEl) valueEl.textContent = '--';
-                if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Carregando...</span>';
+                const cached = getAltseasonCache(true);
+                if (cached) {
+                    lastAltseasonValue = cached.value;
+                    lastAltseasonBtcDom = cached.btcDom || 58;
+                    lastAltseasonTime = cached.timestamp;
+                    updateAltseasonUI(cached.value, cached.btcDom || 58);
+                } else {
+                    if (valueEl) valueEl.textContent = '--';
+                    if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Carregando...</span>';
+                }
             }
             try {
                 // Buscar dados do CoinGecko
@@ -1847,58 +2149,64 @@
                     /* console.log(`📊 Altseason v7.1.1: ${outperform30d}/${valid30d} alts outperform BTC (30d) = ${Math.round(pctOutperforming)}%, domScore=${domScore}, BTC Dom=${btcDom.toFixed(1)}%, Final: ${altValue}`); */
                 }
                 
-                // Se não conseguiu calcular, usar último valor se existir
+                // Se não conseguiu calcular, usar último valor se existir (dentro de 30 min)
                 if (altValue === null) {
-                    if (lastAltseasonValue) {
+                    if (lastAltseasonValue && (Date.now() - lastAltseasonTime) < ALTSEASON_ERROR_CACHE_WINDOW) {
                         updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 58);
                     } else {
-                        document.getElementById('altseason-value').textContent = '--';
-                        document.getElementById('altseason-status').innerHTML = '<span style="color: var(--text-muted);">Erro na API</span>';
+                        if (valueEl) valueEl.textContent = '--';
+                        if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);">Erro na API</span>';
                     }
                     return;
                 }
                 
-                // Salvar em cache de memória
+                // Salvar em cache de memória + localStorage
                 lastAltseasonValue = altValue;
                 lastAltseasonBtcDom = btcDom;
+                lastAltseasonTime = Date.now();
+                setAltseasonCache(altValue, btcDom);
                 
                 // Atualizar UI
                 updateAltseasonUI(altValue, btcDom);
                 
             } catch (e) {
-                // Usar último valor se existir
-                if (lastAltseasonValue) {
+                // Usar último valor se existir (dentro de 30 min)
+                if (lastAltseasonValue && (Date.now() - lastAltseasonTime) < ALTSEASON_ERROR_CACHE_WINDOW) {
                     updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 58);
                 } else {
-                    document.getElementById('altseason-value').textContent = '--';
-                    document.getElementById('altseason-status').innerHTML = '<span style="color: var(--text-muted);">Indisponível</span>';
+                    if (valueEl) valueEl.textContent = '--';
+                    if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);">Indisponível</span>';
                 }
             }
         }
         
         // Função auxiliar para atualizar UI do Altseason
         function updateAltseasonUI(altValue, btcDom) {
-            document.getElementById('altseason-value').textContent = altValue;
-            document.getElementById('altseason-indicator').style.left = `${altValue}%`;
+            const valEl = document.getElementById('altseason-value');
+            const indEl = document.getElementById('altseason-indicator');
+            const statEl = document.getElementById('altseason-status');
+            if (!valEl || !indEl || !statEl) return;
+            valEl.textContent = altValue;
+            indEl.style.left = `${altValue}%`;
             
             let status = '';
             if (altValue < 25) {
                 status = '<span style="color: #6366f1;"><i class="fas fa-bitcoin"></i> Bitcoin Season</span> - BTC dominando (' + btcDom.toFixed(1) + '%)';
-                document.getElementById('altseason-value').style.color = '#6366f1';
+                valEl.style.color = '#6366f1';
             } else if (altValue < 45) {
                 status = '<span style="color: #a855f7;">BTC Favorecido</span> - Leve vantagem BTC';
-                document.getElementById('altseason-value').style.color = '#a855f7';
+                valEl.style.color = '#a855f7';
             } else if (altValue < 55) {
                 status = '<span style="color: #f97316;">Mercado Neutro</span> - Equilíbrio';
-                document.getElementById('altseason-value').style.color = '#f97316';
+                valEl.style.color = '#f97316';
             } else if (altValue < 75) {
                 status = '<span style="color: #84cc16;">Altcoins Favorecidas</span> - Leve vantagem alts';
-                document.getElementById('altseason-value').style.color = '#84cc16';
+                valEl.style.color = '#84cc16';
             } else {
                 status = '<span style="color: #22c55e;"><i class="fas fa-rocket"></i> ALTSEASON!</span> - Altcoins disparando';
-                document.getElementById('altseason-value').style.color = '#22c55e';
+                valEl.style.color = '#22c55e';
             }
-            document.getElementById('altseason-status').innerHTML = status;
+            statEl.innerHTML = status;
         }
 
         // ============================================

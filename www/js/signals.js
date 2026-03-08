@@ -255,9 +255,11 @@
             const modal = document.getElementById('ta-modal');
             const body = document.getElementById('ta-modal-body');
             const crypto = CRYPTO_DATABASE[currentChartSymbol];
+            if (!crypto || !modal || !body) return;
             
             // Atualizar título
-            document.querySelector('.ta-modal-header-title').textContent = `Análise Técnica - ${crypto.short}`;
+            const titleEl = document.querySelector('.ta-modal-header-title');
+            if (titleEl) titleEl.textContent = `Análise Técnica - ${crypto.short}`;
             
             // Mostrar loading
             body.innerHTML = `
@@ -598,7 +600,7 @@
             const slider = document.getElementById('ss-global-slider');
 
             if (masterToggle) masterToggle.checked = prefs.masterEnabled;
-            if (masterTrack) { masterTrack.style.background = prefs.masterEnabled ? '#6366f1' : '#3a3a4a'; masterTrack.style.border = '1px solid ' + (prefs.masterEnabled ? '#6366f1' : '#555'); }
+            if (masterTrack) { masterTrack.style.background = prefs.masterEnabled ? '#6366f1' : '#2a2a3a'; masterTrack.style.border = '1px solid ' + (prefs.masterEnabled ? '#6366f1' : '#666'); }
             if (masterThumb) masterThumb.style.transform = prefs.masterEnabled ? 'translateX(22px)' : 'translateX(0)';
             if (globalConf) globalConf.style.display = prefs.masterEnabled ? 'block' : 'none';
             if (cryptoList) cryptoList.style.display = prefs.masterEnabled ? 'block' : 'none';
@@ -638,7 +640,7 @@
             const globalConf = document.getElementById('ss-global-conf');
             const cryptoList = document.getElementById('ss-crypto-list');
 
-            if (masterTrack) { masterTrack.style.background = checked ? '#6366f1' : '#3a3a4a'; masterTrack.style.border = '1px solid ' + (checked ? '#6366f1' : '#555'); }
+            if (masterTrack) { masterTrack.style.background = checked ? '#6366f1' : '#2a2a3a'; masterTrack.style.border = '1px solid ' + (checked ? '#6366f1' : '#666'); }
             if (masterThumb) masterThumb.style.transform = checked ? 'translateX(22px)' : 'translateX(0)';
             if (globalConf) globalConf.style.display = checked ? 'block' : 'none';
             if (cryptoList) cryptoList.style.display = checked ? 'block' : 'none';
@@ -694,8 +696,8 @@
                             <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">${data.short}</div>
                             <label style="position: relative; width: 40px; height: 22px; cursor: pointer; flex-shrink: 0;">
                                 <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleCryptoSignal('${symbol}', this.checked)" style="display: none;">
-                                <div style="width: 40px; height: 22px; background: ${enabled ? '#6366f1' : '#3a3a4a'}; border-radius: 11px; transition: background 0.3s; border: 1px solid ${enabled ? '#6366f1' : '#555'};"></div>
-                                <div style="position: absolute; top: 2px; left: ${enabled ? '20px' : '2px'}; width: 18px; height: 18px; background: #fff; border-radius: 50%; transition: left 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>
+                                <div style="width: 40px; height: 22px; background: ${enabled ? '#6366f1' : '#2a2a3e'}; border-radius: 11px; transition: background 0.3s; border: 1px solid ${enabled ? '#6366f1' : '#666688'};"></div>
+                                <div style="position: absolute; top: 2px; left: ${enabled ? '20px' : '2px'}; width: 18px; height: 18px; background: ${enabled ? '#fff' : '#888'}; border-radius: 50%; transition: left 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>
                             </label>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; ${enabled ? '' : 'opacity: 0.4; pointer-events: none;'}">
@@ -1112,6 +1114,7 @@
             dashUpdateStats();
             dashRenderCryptoSettings();
             dashUpdateHomeSummary();
+            dashStartConfAutoRefresh();
         }
 
         function dashSyncMasterToggle() {
@@ -1123,7 +1126,7 @@
             const detail = document.getElementById('dash-monitor-detail');
 
             if (toggle) toggle.checked = prefs.masterEnabled;
-            if (track) { track.style.background = prefs.masterEnabled ? '#6366f1' : 'rgba(255,255,255,0.15)'; track.style.borderColor = prefs.masterEnabled ? '#6366f1' : 'rgba(255,255,255,0.2)'; }
+            if (track) { track.style.background = prefs.masterEnabled ? '#6366f1' : '#2a2a3a'; track.style.borderColor = prefs.masterEnabled ? '#6366f1' : '#666'; }
             if (thumb) thumb.style.transform = prefs.masterEnabled ? 'translateX(22px)' : 'translateX(0)';
             if (status) status.textContent = prefs.masterEnabled ? 'Monitoramento Ativo' : 'Monitoramento Inativo';
             if (detail) {
@@ -1198,68 +1201,296 @@
             if (countEl) countEl.textContent = count + (count === 1 ? ' sinal' : ' sinais');
         }
 
+        // ── Progressive TA scan state ──
+        let _dashScanAbort = false;
+        let _dashScanRunning = false;
+        const DASH_SCAN_CACHE_KEY = 'vc_dash_ta_results';
+        const DASH_SCAN_CACHE_TTL = 5 * 60 * 1000; // 5 min stale threshold for auto-rescan
+
+        function _getDashTAResults() {
+            try { return JSON.parse(localStorage.getItem(DASH_SCAN_CACHE_KEY)) || {}; } catch { return {}; }
+        }
+        function _saveDashTAResults(data) {
+            try { localStorage.setItem(DASH_SCAN_CACHE_KEY, JSON.stringify(data)); } catch {}
+        }
+
+        // Render a single cell's HTML
+        function _confCellHtml(symbol, data, r) {
+            const conf = r.confidence || 0;
+            const signal = r.signal || '';
+            const direction = r.direction || '';
+            const isLong = direction === 'LONG' || signal.includes('LONG');
+            const isShort = direction === 'SHORT' || signal.includes('SHORT');
+            const hasData = conf > 0;
+            const loading = r._loading;
+
+            let confColor = 'var(--text-muted)';
+            if (conf >= 80) confColor = '#22c55e';
+            else if (conf >= 65) confColor = '#f59e0b';
+            else if (conf >= 40) confColor = '#6366f1';
+
+            let signalText, signalColor;
+            if (loading) {
+                signalText = '<i class="fas fa-circle-notch fa-spin" style="font-size:8px;margin-right:3px;"></i>Analisando...';
+                signalColor = '#6366f1';
+            } else if (hasData && (isLong || isShort)) {
+                signalText = isLong ? '▲ LONG' : '▼ SHORT';
+                signalColor = isLong ? '#22c55e' : '#ef4444';
+            } else if (hasData) {
+                signalText = '● NEUTRO';
+                signalColor = '#f59e0b';
+            } else {
+                signalText = 'Aguardando...';
+                signalColor = 'var(--text-muted)';
+            }
+
+            return `
+            <div class="dash-conf-cell" id="dash-conf-${symbol}">
+                <img src="${data.img}" style="width:26px;height:26px;border-radius:50%;flex-shrink:0;" onerror="this.style.display='none'">
+                <div style="flex:1;min-width:0;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
+                        <span style="font-size:11px;font-weight:700;color:var(--text-primary);">${data.short}</span>
+                        <span style="font-size:11px;font-weight:800;color:${confColor};">${hasData ? conf + '%' : '--'}</span>
+                    </div>
+                    <div class="conf-bar-track"><div class="conf-bar-fill" style="width:${conf}%;background:${confColor};transition:width 0.6s ease;"></div></div>
+                    <div style="font-size:9px;color:${signalColor};font-weight:700;margin-top:3px;">${signalText}</div>
+                </div>
+            </div>`;
+        }
+
         function dashRenderConfidenceGrid() {
             const grid = document.getElementById('dash-confidence-grid');
             if (!grid || typeof CRYPTO_DATABASE === 'undefined') return;
 
-            const results = getScanLastResults();
+            // Merge: prefer dash TA results, fall back to scan results
+            const dashResults = _getDashTAResults();
+            const scanResults = getScanLastResults();
             let html = '';
             let latestScan = 0;
+            let hasMissing = false;
 
             Object.entries(CRYPTO_DATABASE).forEach(([symbol, data]) => {
-                const r = results[symbol] || {};
-                const conf = r.confidence || 0;
-                const signal = r.signal || '';
-                const isLong = signal.includes('LONG');
-                const isShort = signal.includes('SHORT');
-                const isConfirmed = signal.includes('CONFIRMED');
-                const hasData = conf > 0;
-
-                if (r.lastScanAt && r.lastScanAt > latestScan) latestScan = r.lastScanAt;
-
-                let confColor = 'var(--text-muted)';
-                if (conf >= 80) confColor = '#22c55e';
-                else if (conf >= 60) confColor = '#f59e0b';
-                else if (conf >= 40) confColor = '#6366f1';
-
-                let signalText = 'Aguardando...';
-                let signalColor = 'var(--text-muted)';
-                if (isConfirmed) {
-                    signalText = isLong ? 'LONG' : 'SHORT';
-                    signalColor = isLong ? '#22c55e' : '#ef4444';
-                } else if (hasData) {
-                    signalText = 'NEUTRO';
-                }
-
-                html += `
-                <div class="dash-conf-cell">
-                    <img src="${data.img}" style="width:26px;height:26px;border-radius:50%;flex-shrink:0;" onerror="this.style.display='none'">
-                    <div style="flex:1;min-width:0;">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
-                            <span style="font-size:11px;font-weight:700;color:var(--text-primary);">${data.short}</span>
-                            <span style="font-size:11px;font-weight:800;color:${confColor};">${conf > 0 ? conf + '%' : '--'}</span>
-                        </div>
-                        <div class="conf-bar-track"><div class="conf-bar-fill" style="width:${conf}%;background:${confColor};"></div></div>
-                        <div style="font-size:9px;color:${signalColor};font-weight:700;margin-top:3px;">${signalText}</div>
-                    </div>
-                </div>`;
+                const dr = dashResults[symbol] || {};
+                const sr = scanResults[symbol] || {};
+                // Use dash TA results (has exact same pipeline data) if available, else scan
+                const r = dr.confidence ? dr : sr;
+                const ts = r.lastScanAt || 0;
+                if (ts > latestScan) latestScan = ts;
+                if (!r.confidence) hasMissing = true;
+                html += _confCellHtml(symbol, data, r);
             });
 
             grid.innerHTML = html;
 
-            // Update last-scan pill
             const updatedEl = document.getElementById('dash-conf-updated');
             if (updatedEl) {
-                updatedEl.textContent = latestScan > 0 ? 'Atualizado ' + dashGetTimeAgo(latestScan) : 'Aguardando 1º scan...';
+                updatedEl.textContent = latestScan > 0 ? 'Atualizado ' + dashGetTimeAgo(latestScan) : 'Escaneando...';
+            }
+
+            // Auto-launch progressive scan if data is missing or stale
+            const oldest = latestScan || 0;
+            if (hasMissing || (Date.now() - oldest > DASH_SCAN_CACHE_TTL)) {
+                dashProgressiveScan();
             }
         }
 
-        function dashRefreshConfidence() {
-            dashRenderConfidenceGrid();
-            dashRenderActiveSignals();
+        /**
+         * Progressive TA scan — runs the EXACT same analysis pipeline as the HOME technical analysis.
+         * Processes one crypto at a time, updating each grid cell as results arrive.
+         * Uses TA cache to avoid re-fetching if the user already opened that crypto recently.
+         */
+        async function dashProgressiveScan() {
+            if (_dashScanRunning) return;
+            _dashScanRunning = true;
+            _dashScanAbort = false;
+
+            const cryptos = Object.entries(typeof CRYPTO_DATABASE !== 'undefined' ? CRYPTO_DATABASE : {});
+            const dashResults = _getDashTAResults();
+            const scanResults = getScanLastResults();
+            const now = Date.now();
+            let scanned = 0;
+
+            const updatedEl = document.getElementById('dash-conf-updated');
+
+            // Helper to process a single crypto
+            async function _scanOneCrypto(symbol, data) {
+                let analysis = null;
+
+                // 1. Check TA cache first
+                const cached = typeof getTACache === 'function' ? getTACache(symbol) : null;
+                if (cached && cached.analysis) {
+                    analysis = cached.analysis;
+                } else {
+                    // 2. Run TA pipeline (skip expensive V2 macro layer for speed)
+                    const analysisData = await fetchTechnicalAnalysisData(symbol);
+                    if (!analysisData) throw new Error('no data');
+
+                    analysis = generateTechnicalAnalysis(analysisData, symbol);
+
+                    // V3 Enhancement
+                    if (window.TAEngineV3 && window.TAEngineV3.enhanceAnalysis) {
+                        try {
+                            const enhanced = await window.TAEngineV3.enhanceAnalysis(analysis, analysisData, symbol);
+                            Object.assign(analysis, enhanced);
+                        } catch {}
+                    }
+
+                    // V4 Enhancement
+                    if (window.TAEngineV4 && window.TAEngineV4.enhanceWithReactive) {
+                        try {
+                            const v4Enhanced = await window.TAEngineV4.enhanceWithReactive(analysis, analysisData, symbol);
+                            Object.assign(analysis, v4Enhanced);
+                        } catch {}
+                    }
+
+                    // Cache for future use
+                    if (typeof setTACache === 'function') setTACache(symbol, { analysis });
+                }
+
+                // Extract results
+                const _v4Sig = analysis.v4Signal;
+                const _v4Conf = analysis.v4Confidence;
+                const _v3Sig = analysis.v3Signal;
+                const _v3Conf = analysis.v3Confidence;
+                const _origSig = analysis.signal || '';
+                const _origConf = analysis.confidence || 0;
+
+                let signal, confidence;
+                if (_v4Sig) {
+                    signal = _v4Sig;
+                    confidence = (_v4Sig.includes('CONFIRMED') || _v4Sig.includes('AGUARDAR'))
+                        ? (_v4Conf || 0)
+                        : (_v4Conf || _v3Conf || _origConf);
+                } else {
+                    signal = _v3Sig || _origSig;
+                    confidence = _v3Conf || _origConf;
+                }
+
+                if (confidence < 50) signal = 'NEUTRO';
+
+                if (analysis.marketRegime && analysis.marketRegime.regimeStrength != null) {
+                    const regimeConf = Math.round((analysis.marketRegime.regimeStrength || 0) * 100);
+                    confidence = Math.round(confidence * 0.7 + regimeConf * 0.3);
+                    confidence = Math.max(10, Math.min(100, confidence));
+                }
+
+                if (confidence < 50) signal = 'NEUTRO';
+
+                return {
+                    signal,
+                    confidence,
+                    direction: signal.includes('LONG') ? 'LONG' : signal.includes('SHORT') ? 'SHORT' : 'NEUTRO',
+                    lastScanAt: Date.now(),
+                    price: analysis.indicators?.movingAverages?.currentPrice || 0,
+                    gates: analysis.v4GatesPassed ? `${analysis.v4GatesPassed}/${analysis.v4GatesTotal || 9}` : null
+                };
+            }
+
+            // Filter cryptos that need scanning
+            const toScan = cryptos.filter(([symbol]) => {
+                const existing = dashResults[symbol];
+                return !(existing && existing.lastScanAt && (now - existing.lastScanAt < DASH_SCAN_CACHE_TTL) && existing.confidence);
+            });
+
+            // Mark all cells as loading
+            toScan.forEach(([symbol, data]) => {
+                const cell = document.getElementById(`dash-conf-${symbol}`);
+                if (cell) cell.outerHTML = _confCellHtml(symbol, data, { _loading: true });
+            });
+
+            // Process in batches of 3 for speed
+            const BATCH_SIZE = 3;
+            for (let i = 0; i < toScan.length; i += BATCH_SIZE) {
+                if (_dashScanAbort) break;
+                const dashSection = document.getElementById('dashboard');
+                if (!dashSection || !dashSection.classList.contains('active')) { _dashScanAbort = true; break; }
+
+                const batch = toScan.slice(i, i + BATCH_SIZE);
+                if (updatedEl) {
+                    const names = batch.map(([,d]) => d.short).join(', ');
+                    updatedEl.innerHTML = `<i class="fas fa-circle-notch fa-spin" style="font-size:8px;margin-right:3px;"></i> ${names}... (${Math.min(i + BATCH_SIZE, toScan.length)}/${toScan.length})`;
+                }
+
+                const results = await Promise.allSettled(
+                    batch.map(async ([symbol, data]) => {
+                        try {
+                            const result = await _scanOneCrypto(symbol, data);
+                            dashResults[symbol] = result;
+
+                            if (!scanResults[symbol]) scanResults[symbol] = {};
+                            scanResults[symbol].signal = result.signal;
+                            scanResults[symbol].confidence = result.confidence;
+                            scanResults[symbol].price = result.price;
+                            scanResults[symbol].lastScanAt = result.lastScanAt;
+
+                            const updatedCell = document.getElementById(`dash-conf-${symbol}`);
+                            if (updatedCell) updatedCell.outerHTML = _confCellHtml(symbol, data, result);
+                        } catch (err) {
+                            const errCell = document.getElementById(`dash-conf-${symbol}`);
+                            if (errCell) errCell.outerHTML = _confCellHtml(symbol, data, {});
+                        }
+                    })
+                );
+
+                scanned += batch.length;
+                _saveDashTAResults(dashResults);
+                saveScanLastResults(scanResults);
+
+                // Short delay between batches
+                if (!_dashScanAbort && i + BATCH_SIZE < toScan.length) {
+                    await new Promise(r => setTimeout(r, 800));
+                }
+            }
+
+            _dashScanRunning = false;
+
+            // Final update
+            if (updatedEl) {
+                updatedEl.textContent = 'Atualizado agora';
+            }
+
+            // Update active signals with new data
+            try { dashRenderActiveSignals(); dashUpdateStats(); } catch {}
         }
 
-        // dashAutoRefreshConfidence removed — runAutoScan handles all data.
+        function dashRefreshConfidence() {
+            // Force rescan: clear cached timestamps so all cryptos are re-scanned
+            const dashResults = _getDashTAResults();
+            Object.keys(dashResults).forEach(sym => { if (dashResults[sym]) dashResults[sym].lastScanAt = 0; });
+            _saveDashTAResults(dashResults);
+            _dashScanAbort = true; // abort current if running
+            setTimeout(() => {
+                _dashScanRunning = false;
+                dashRenderConfidenceGrid();
+                dashRenderActiveSignals();
+            }, 200);
+        }
+
+        // Auto-refresh confidence every 5 min while dashboard is visible
+        let _dashConfAutoRefreshId = null;
+        function dashStartConfAutoRefresh() {
+            dashStopConfAutoRefresh();
+            _dashConfAutoRefreshId = setInterval(() => {
+                const dashSection = document.getElementById('dashboard');
+                if (dashSection && dashSection.classList.contains('active')) {
+                    dashRefreshConfidence();
+                } else {
+                    dashStopConfAutoRefresh();
+                }
+            }, 5 * 60 * 1000); // 5 min
+        }
+        function dashStopConfAutoRefresh() {
+            if (_dashConfAutoRefreshId) {
+                clearInterval(_dashConfAutoRefreshId);
+                _dashConfAutoRefreshId = null;
+            }
+        }
+
+        // Abort scan when leaving dashboard section
+        function dashAbortScan() {
+            _dashScanAbort = true;
+            dashStopConfAutoRefresh();
+        }
 
         function dashRenderHistory() {
             const container = document.getElementById('dash-history-list');
@@ -1440,8 +1671,8 @@
                             <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">${data.short}</div>
                             <label style="position: relative; width: 40px; height: 22px; cursor: pointer; flex-shrink: 0;">
                                 <input type="checkbox" ${enabled ? 'checked' : ''} onchange="dashToggleCrypto('${symbol}', this.checked)" style="display: none;">
-                                <div style="width: 40px; height: 22px; background: ${enabled ? '#6366f1' : 'var(--bg-card)'}; border-radius: 11px; transition: background 0.3s;"></div>
-                                <div style="position: absolute; top: 2px; left: ${enabled ? '20px' : '2px'}; width: 18px; height: 18px; background: #fff; border-radius: 50%; transition: left 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>
+                                <div style="width: 40px; height: 22px; background: ${enabled ? '#6366f1' : '#2a2a3e'}; border-radius: 11px; transition: background 0.3s; border: 1px solid ${enabled ? '#6366f1' : '#666688'};"></div>
+                                <div style="position: absolute; top: 2px; left: ${enabled ? '20px' : '2px'}; width: 18px; height: 18px; background: ${enabled ? '#fff' : '#888'}; border-radius: 50%; transition: left 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>
                             </label>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; ${enabled ? '' : 'opacity: 0.4; pointer-events: none;'}">

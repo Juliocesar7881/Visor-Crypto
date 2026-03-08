@@ -9,19 +9,25 @@
         let chartRefreshInterval = null; // Intervalo para atualização em tempo real
 
         async function openChartModal(symbol) {
+            try {
             currentChartSymbol = symbol;
             const crypto = CRYPTO_DATABASE[symbol];
+            if (!crypto) return;
             
             // Atualizar header do modal
-            document.getElementById('chart-crypto-icon').src = crypto.img;
-            document.getElementById('chart-crypto-name').textContent = crypto.name;
+            const iconEl = document.getElementById('chart-crypto-icon');
+            const nameEl = document.getElementById('chart-crypto-name');
+            const priceEl = document.getElementById('chart-crypto-price');
+            const modalEl = document.getElementById('chart-modal');
+            if (iconEl) iconEl.src = crypto.img;
+            if (nameEl) nameEl.textContent = crypto.name;
             
             const price = prices[symbol] || 0;
             const change = priceChanges[symbol] || 0;
-            document.getElementById('chart-crypto-price').innerHTML = `$${price.toLocaleString(undefined, {minimumFractionDigits: 2})} <span class="${change >= 0 ? 'pnl-positive' : 'pnl-negative'}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span>`;
+            if (priceEl) priceEl.innerHTML = `$${price.toLocaleString(undefined, {minimumFractionDigits: 2})} <span class="${change >= 0 ? 'pnl-positive' : 'pnl-negative'}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span>`;
             
             // Mostrar modal
-            document.getElementById('chart-modal').classList.add('active');
+            if (modalEl) modalEl.classList.add('active');
             document.body.style.overflow = 'hidden';
             
             // Reset filtro para 15m (padrão)
@@ -30,7 +36,8 @@
             candleData = null; // Limpar dados anteriores
             
             // Reset dropdown para 15 minutos
-            document.getElementById('selected-timeframe').textContent = '15 minutos';
+            const tfEl = document.getElementById('selected-timeframe');
+            if (tfEl) tfEl.textContent = '15 minutos';
             document.querySelectorAll('.timeframe-option').forEach(opt => opt.classList.remove('active'));
             const firstOption = document.querySelector('.timeframe-option[data-period="15m"]');
             if (firstOption) firstOption.classList.add('active');
@@ -45,10 +52,12 @@
             
             // Iniciar atualização em tempo real
             startChartRealTimeUpdate();
+            } catch(e) { console.warn('[openChartModal]', e); }
         }
 
         function closeChartModal() {
-            document.getElementById('chart-modal').classList.remove('active');
+            const el = document.getElementById('chart-modal');
+            if (el) el.classList.remove('active');
             document.body.style.overflow = '';
             currentChartSymbol = null;
             candleData = null;
@@ -80,9 +89,12 @@
             const priceFormatted = price > 0 ? `$${price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: price < 1 ? 6 : 2})}` : 'Carregando...';
             
             // Atualizar header do fullscreen
-            document.getElementById('fullscreen-crypto-icon').src = crypto.img;
-            document.getElementById('fullscreen-crypto-name').textContent = crypto.short || crypto.name;
-            document.getElementById('fullscreen-crypto-price').textContent = priceFormatted;
+            const fsIcon = document.getElementById('fullscreen-crypto-icon');
+            const fsName = document.getElementById('fullscreen-crypto-name');
+            const fsPrice = document.getElementById('fullscreen-crypto-price');
+            if (fsIcon) fsIcon.src = crypto.img;
+            if (fsName) fsName.textContent = crypto.short || crypto.name;
+            if (fsPrice) fsPrice.textContent = priceFormatted;
             
             // Copiar configurações atuais
             fullscreenChartType = currentChartType || 'line';
@@ -135,7 +147,8 @@
             document.body.classList.add('fullscreen-active');
             
             // Mostrar modal fullscreen
-            document.getElementById('chart-fullscreen-modal').classList.add('active');
+            const fsModal = document.getElementById('chart-fullscreen-modal');
+            if (fsModal) fsModal.classList.add('active');
             
             // Adicionar ao histórico para suportar botão voltar
             if (window.history && window.history.pushState) {
@@ -164,7 +177,8 @@
             window.fullscreenIndicatorPeriod = null;
             
             // Restaurar visibilidade do ícone
-            document.getElementById('fullscreen-crypto-icon').style.display = '';
+            const fsIconEl = document.getElementById('fullscreen-crypto-icon');
+            if (fsIconEl) fsIconEl.style.display = '';
             
             // Restaurar dropdown de período original (para cryptos)
             const periodContainer = document.getElementById('fs-timeframe-dropdown');
@@ -213,7 +227,8 @@
             // Pequeno delay para a rotação completar antes de esconder o modal
             await new Promise(resolve => setTimeout(resolve, 150));
             
-            document.getElementById('chart-fullscreen-modal').classList.remove('active');
+            const cfm = document.getElementById('chart-fullscreen-modal');
+            if (cfm) cfm.classList.remove('active');
             document.body.classList.remove('fullscreen-active');
             
             if (fullscreenChartInstance) {
@@ -230,7 +245,9 @@
             
             // Atualizar a cada 3 segundos
             fullscreenRefreshInterval = setInterval(async () => {
-                if (document.getElementById('chart-fullscreen-modal').classList.contains('active')) {
+                try {
+                const el = document.getElementById('chart-fullscreen-modal');
+                if (el && el.classList.contains('active')) {
                     await loadFullscreenChartDataSilent();
                     
                     // Atualizar preço no header
@@ -238,10 +255,14 @@
                     const change = priceChanges[currentChartSymbol] || 0;
                     if (price > 0) {
                         const priceFormatted = `$${price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: price < 1 ? 6 : 2})}`;
-                        document.getElementById('fullscreen-crypto-price').textContent = priceFormatted;
-                        document.getElementById('fullscreen-crypto-price').className = `chart-fullscreen-price ${change >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                        const priceEl = document.getElementById('fullscreen-crypto-price');
+                        if (priceEl) {
+                            priceEl.textContent = priceFormatted;
+                            priceEl.className = `chart-fullscreen-price ${change >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+                        }
                     }
                 }
+                } catch(e) {}
             }, 3000);
         }
 
@@ -717,28 +738,34 @@
             const refreshRate = 2000; // 2 segundos para todos
             
             chartRefreshInterval = setInterval(async () => {
-                if (currentChartSymbol && document.getElementById('chart-modal').classList.contains('active')) {
+                try {
+                const el = document.getElementById('chart-modal');
+                if (currentChartSymbol && el && el.classList.contains('active')) {
                     await loadChartDataSilent(); // Atualização silenciosa sem loading
                 }
+                } catch(e) {}
             }, refreshRate);
         }
         
         // Funções do dropdown de timeframes
         function toggleTimeframeDropdown() {
             const dropdown = document.getElementById('timeframe-dropdown');
-            dropdown.classList.toggle('open');
+            if (dropdown) dropdown.classList.toggle('open');
         }
         
         function selectTimeframe(period, label) {
             // Atualizar texto selecionado
-            document.getElementById('selected-timeframe').textContent = label;
+            const stEl = document.getElementById('selected-timeframe');
+            if (stEl) stEl.textContent = label;
             
             // Atualizar classe active nas opções
             document.querySelectorAll('.timeframe-option').forEach(opt => opt.classList.remove('active'));
-            document.querySelector(`.timeframe-option[data-period="${period}"]`).classList.add('active');
+            const target = document.querySelector(`.timeframe-option[data-period="${period}"]`);
+            if (target) target.classList.add('active');
             
             // Fechar dropdown
-            document.getElementById('timeframe-dropdown').classList.remove('open');
+            const dd = document.getElementById('timeframe-dropdown');
+            if (dd) dd.classList.remove('open');
             
             // Mudar período
             changeChartPeriod(period);
@@ -763,30 +790,33 @@
         // Fullscreen timeframe dropdown
         function toggleFsTimeframeDropdown() {
             const dropdown = document.getElementById('fs-timeframe-dropdown');
-            dropdown.classList.toggle('open');
+            if (dropdown) dropdown.classList.toggle('open');
         }
 
         function selectFsTimeframe(period, label) {
-            document.getElementById('fs-selected-timeframe').textContent = label;
+            const fsSel = document.getElementById('fs-selected-timeframe');
+            if (fsSel) fsSel.textContent = label;
             document.querySelectorAll('.fs-timeframe-option').forEach(opt => opt.classList.remove('active'));
             const target = document.querySelector(`.fs-timeframe-option[data-period="${period}"]`);
             if (target) target.classList.add('active');
-            document.getElementById('fs-timeframe-dropdown').classList.remove('open');
+            const fsDd = document.getElementById('fs-timeframe-dropdown');
+            if (fsDd) fsDd.classList.remove('open');
             selectFullscreenPeriod(period);
         }
 
         // Indicator timeframe dropdown
         function toggleIndTimeframeDropdown() {
             const dropdown = document.getElementById('ind-timeframe-dropdown');
-            dropdown.classList.toggle('open');
+            if (dropdown) dropdown.classList.toggle('open');
         }
 
         function selectIndTimeframe(period, label) {
-            document.getElementById('ind-selected-timeframe').textContent = label;
+            const indSel = document.getElementById('ind-selected-timeframe');
+            if (indSel) indSel.textContent = label;
             document.querySelectorAll('.ind-timeframe-option').forEach(opt => opt.classList.remove('active'));
             const target = document.querySelector(`.ind-timeframe-option[data-period="${period}"]`);
             if (target) target.classList.add('active');
-            document.getElementById('ind-timeframe-dropdown').classList.remove('open');
+            document.getElementById('ind-timeframe-dropdown')?.classList.remove('open');
             selectIndicatorPeriod(period);
         }
 
@@ -813,7 +843,8 @@
             
             // Atualizar botões
             document.querySelectorAll('.chart-type-btn').forEach(btn => btn.classList.remove('active'));
-            document.querySelector(`.chart-type-btn[data-type="${type}"]`).classList.add('active');
+            const activeBtn = document.querySelector(`.chart-type-btn[data-type="${type}"]`);
+            if (activeBtn) activeBtn.classList.add('active');
             
             // Redesenhar com dados existentes
             if (candleData) {
@@ -871,12 +902,13 @@
             
             const loadingEl = document.getElementById('chart-loading');
             const canvas = document.getElementById('price-chart');
+            if (!loadingEl || !canvas) return;
             
             // SEMPRE mostrar loading ao trocar timeframe - limpar gráfico anterior
             loadingEl.style.display = 'flex';
             canvas.style.opacity = '0.3';
             const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
             
             try {
                 // Mapear período para intervalo Binance
@@ -1153,19 +1185,24 @@
         }
 
         function updateChartStats(priceData) {
+            if (!priceData || priceData.length === 0) return;
             const prices = priceData.map(p => p[1]);
             const firstPrice = prices[0];
             const lastPrice = prices[prices.length - 1];
             const highPrice = Math.max(...prices);
             const lowPrice = Math.min(...prices);
-            const changePercent = ((lastPrice - firstPrice) / firstPrice) * 100;
+            const changePercent = firstPrice ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
             
-            document.getElementById('chart-high').textContent = formatChartPrice(highPrice);
-            document.getElementById('chart-low').textContent = formatChartPrice(lowPrice);
+            const highEl = document.getElementById('chart-high');
+            const lowEl = document.getElementById('chart-low');
+            if (highEl) highEl.textContent = formatChartPrice(highPrice);
+            if (lowEl) lowEl.textContent = formatChartPrice(lowPrice);
             
             const changeEl = document.getElementById('chart-change');
-            changeEl.textContent = `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`;
-            changeEl.className = `chart-stat-value ${changePercent >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+            if (changeEl) {
+                changeEl.textContent = `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`;
+                changeEl.className = `chart-stat-value ${changePercent >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+            }
             
             // Volume — somar volume das klines visíveis (usa candleData global)
             if (candleData && candleData.length > 0) {
@@ -1174,10 +1211,12 @@
                     let totalVol = 0;
                     candleData.forEach(k => totalVol += k[5]); // k[5] = volume
                     const volUSD = totalVol * lastClose;
-                    document.getElementById('chart-volume').textContent = volUSD > 1e9 ? `$${(volUSD/1e9).toFixed(2)}B` : volUSD > 1e6 ? `$${(volUSD/1e6).toFixed(2)}M` : `$${(volUSD/1e3).toFixed(1)}K`;
+                    const volEl = document.getElementById('chart-volume');
+                    if (volEl) volEl.textContent = volUSD > 1e9 ? `$${(volUSD/1e9).toFixed(2)}B` : volUSD > 1e6 ? `$${(volUSD/1e6).toFixed(2)}M` : `$${(volUSD/1e3).toFixed(1)}K`;
                 } catch(e) {
-                    document.getElementById('chart-volume').textContent = '--';
+                    const volEl = document.getElementById('chart-volume');
+                    if (volEl) volEl.textContent = '--';
                 }
             }
         }
-
+

@@ -1,104 +1,71 @@
 // Service Worker para Visor Crypto PWA
-const CACHE_NAME = 'visor-crypto-v1';
-const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 horas
+const CACHE_NAME = 'visor-crypto-v4';
 
-// Recursos para cache inicial
+// Recursos estáticos para cache (somente assets locais)
 const STATIC_ASSETS = [
     './index.html',
     './manifest.json',
-    './ta-engine-v2.js',
-    './ta-engine-v3.js',
-    './ta-engine-v4.js',
-    './realtime-cvd.js',
-    './macro-section.js'
-];
-
-// URLs de CDN para cache
-const CDN_ASSETS = [
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
+    './css/styles.css'
 ];
 
 // Instalação do Service Worker
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then(cache => {
-                return cache.addAll([...STATIC_ASSETS]);
-            })
+            .then(cache => cache.addAll(STATIC_ASSETS))
             .then(() => self.skipWaiting())
     );
 });
 
-// Ativação - limpa caches antigos
+// Ativação - limpa TODOS os caches antigos
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
                 cacheNames
                     .filter(name => name !== CACHE_NAME)
-                    .map(name => {
-                        return caches.delete(name);
-                    })
+                    .map(name => caches.delete(name))
             );
         }).then(() => self.clients.claim())
     );
 });
 
-// Estratégia de fetch: Network First para APIs, Cache First para assets
+// Estratégia de fetch: Network First para tudo, Cache First somente para assets estáticos locais
 self.addEventListener('fetch', event => {
+    // Não interceptar WebSockets
+    if (event.request.url.startsWith('wss://')) return;
+    
+    // Não interceptar URLs reescritas pelo CapacitorHttp (/_capacitor_http_interceptor_)
+    if (event.request.url.includes('_capacitor_http_interceptor_')) return;
+    
+    // Não interceptar requests que NÃO são GET
+    if (event.request.method !== 'GET') return;
+    
     const url = new URL(event.request.url);
     
-    // APIs de tempo real - sempre buscar da rede
-    if (url.hostname.includes('binance.com') ||
-        url.hostname.includes('coingecko.com') ||
-        url.hostname.includes('cryptopanic.com') ||
-        url.hostname.includes('alternative.me') ||
-        url.hostname.includes('microlink.io') ||
-        url.hostname.includes('translate.googleapis.com')) {
-        
+    // APIs externas e dados dinâmicos - SEMPRE rede, NUNCA cache
+    if (url.hostname !== 'localhost' && !url.hostname.startsWith('192.168')) {
         event.respondWith(
-            fetch(event.request)
-                .catch(() => {
-                    return new Response(JSON.stringify({ error: 'Offline' }), {
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-                })
+            fetch(event.request).catch(() => {
+                return new Response(JSON.stringify({ error: 'Offline' }), {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            })
         );
         return;
     }
     
-    // WebSocket - não interceptar
-    if (event.request.url.startsWith('wss://')) {
-        return;
-    }
-    
-    // Assets estáticos - Cache First
+    // Assets locais - Network First com fallback para cache
     event.respondWith(
-        caches.match(event.request)
-            .then(response => {
-                if (response) {
-                    // Atualiza cache em background
-                    fetch(event.request)
-                        .then(networkResponse => {
-                            if (networkResponse.ok) {
-                                caches.open(CACHE_NAME)
-                                    .then(cache => cache.put(event.request, networkResponse));
-                            }
-                        })
-                        .catch(() => {});
-                    return response;
+        fetch(event.request)
+            .then(networkResponse => {
+                if (networkResponse.ok) {
+                    const responseClone = networkResponse.clone();
+                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
                 }
-                
-                return fetch(event.request)
-                    .then(networkResponse => {
-                        if (networkResponse.ok && event.request.method === 'GET') {
-                            const responseClone = networkResponse.clone();
-                            caches.open(CACHE_NAME)
-                                .then(cache => cache.put(event.request, responseClone));
-                        }
-                        return networkResponse;
-                    });
+                return networkResponse;
             })
+            .catch(() => caches.match(event.request))
     );
 });
 

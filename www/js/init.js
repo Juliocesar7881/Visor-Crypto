@@ -39,13 +39,13 @@
                 try { fetchCryptoStats(); } catch(e) { /* console.error('CryptoStats error:', e); */ }
                 try { fetchMovingAverages(); } catch(e) { /* console.error('MA error:', e); */ }
                 try { 
-                    fetchWhaleActivity('2h'); 
+                    fetchWhaleActivity('1h'); 
                     startWhaleActivityAutoRefresh(); 
                 } catch(e) { /* console.error('WhaleActivity error:', e); */ }
             }, 1000);
             
-            // AI update every 2s
-            setInterval(updateAIRecommendation, 2000);
+            // AI update every 10s (was 2s — reduces DOM thrashing)
+            window._aiRefreshId = setInterval(() => { try { const r = updateAIRecommendation(); if (r && r.catch) r.catch(()=>{}); } catch(e) {} }, 10000);
             
             // Whale Activity: 5 min auto-refresh configurado na função startWhaleActivityAutoRefresh
             
@@ -53,13 +53,13 @@
             const _autoRefreshConfigs = [
                 { fn: fetchPricesViaREST, ms: 3000, label: 'prices' },
                 { fn: fetchOrderBook, ms: 2000, label: 'orderbook' },
-                { fn: fetchAltseasonIndex, ms: 30000, label: 'altseason' },
+                { fn: fetchAltseasonIndex, ms: 60000, label: 'altseason' },
                 { fn: fetchNews, ms: 300000, label: 'news' },
-                { fn: fetchFearGreed, ms: 60000, label: 'feargreed' },
-                { fn: fetchGlobalData, ms: 30000, label: 'globaldata' },
-                { fn: fetchVolume, ms: 5000, label: 'volume' },
-                { fn: fetchCryptoStats, ms: 30000, label: 'stats' },
-                { fn: fetchMovingAverages, ms: 10000, label: 'ma' },
+                { fn: fetchFearGreed, ms: 120000, label: 'feargreed' },
+                { fn: fetchGlobalData, ms: 60000, label: 'globaldata' },
+                { fn: fetchVolume, ms: 10000, label: 'volume' },
+                { fn: fetchCryptoStats, ms: 60000, label: 'stats' },
+                { fn: fetchMovingAverages, ms: 30000, label: 'ma' },
             ];
             window._autoRefreshIds = [];
             window._autoRefreshConfigs = _autoRefreshConfigs;
@@ -67,20 +67,43 @@
             
             function _startAllAutoRefresh() {
                 _stopAllAutoRefresh();
-                window._autoRefreshIds = _autoRefreshConfigs.map(c => setInterval(c.fn, c.ms));
-                // Hot news auto-refresh
+                // Escalonar intervalos para evitar picos simultâneos
+                const offsets = {
+                    'prices': 0, 'orderbook': 400, 'volume': 800,
+                    'altseason': 1200, 'news': 1600, 'feargreed': 2000,
+                    'globaldata': 2400, 'stats': 2800, 'ma': 3200
+                };
+                window._autoRefreshIds = _autoRefreshConfigs.map(c => {
+                    const offset = offsets[c.label] || 0;
+                    let intervalId = null;
+                    const timerId = setTimeout(() => {
+                        intervalId = setInterval(() => { 
+                            try { 
+                                const r = c.fn(); 
+                                if (r && typeof r.catch === 'function') r.catch(e => {}); 
+                            } catch(e) {} 
+                        }, c.ms);
+                        // Store the real interval id back
+                        const idx = window._autoRefreshIds.indexOf(timerId);
+                        if (idx !== -1) window._autoRefreshIds[idx] = intervalId;
+                    }, offset);
+                    return timerId;
+                });
                 window._hotNewsRefreshId = setInterval(async () => {
-                    if (newsFilter === 'hot') {
-                        const newHotNews = await fetchHotNews();
-                        if (newHotNews.length > 0) renderHotNewsList(newHotNews);
-                    }
+                    try {
+                        if (newsFilter === 'hot') {
+                            const newHotNews = await fetchHotNews();
+                            if (newHotNews && newHotNews.length > 0) renderHotNewsList(newHotNews);
+                        }
+                    } catch(e) {}
                 }, 120000);
             }
             
             function _stopAllAutoRefresh() {
-                (window._autoRefreshIds || []).forEach(id => clearInterval(id));
+                (window._autoRefreshIds || []).forEach(id => { clearInterval(id); clearTimeout(id); });
                 window._autoRefreshIds = [];
                 if (window._hotNewsRefreshId) { clearInterval(window._hotNewsRefreshId); window._hotNewsRefreshId = null; }
+                if (window._aiRefreshId) { clearInterval(window._aiRefreshId); window._aiRefreshId = null; }
             }
             
             window._startAllAutoRefresh = _startAllAutoRefresh;
@@ -92,6 +115,15 @@
             } else {
                 _updateAutoRefreshUI(true);
             }
+            
+            // Pause auto-refresh when app/tab is hidden to save CPU & network
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    _stopAllAutoRefresh();
+                } else if (!window._autoRefreshPaused) {
+                    _startAllAutoRefresh();
+                }
+            });
         });
         // v7.1: Auto-Refresh Toggle
         function _updateAutoRefreshUI(paused) {
@@ -103,14 +135,14 @@
                 btn.style.background = 'rgba(239,68,68,0.15)';
                 btn.style.borderColor = 'rgba(239,68,68,0.3)';
                 btn.style.color = '#ef4444';
-                icon.textContent = '◼';
-                label.textContent = 'PAUSED';
+                if (icon) icon.textContent = '◼';
+                if (label) label.textContent = 'PAUSED';
             } else {
                 btn.style.background = 'rgba(16,185,129,0.15)';
                 btn.style.borderColor = 'rgba(16,185,129,0.3)';
                 btn.style.color = '#10b981';
-                icon.textContent = '●';
-                label.textContent = 'LIVE';
+                if (icon) icon.textContent = '●';
+                if (label) label.textContent = 'LIVE';
             }
         }
         
@@ -124,4 +156,4 @@
             }
             _updateAutoRefreshUI(window._autoRefreshPaused);
         }
-
+

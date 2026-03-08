@@ -16,17 +16,18 @@
       "https://api.rss2json.com",
       "https://translate.googleapis.com",
       "https://api.mymemory.translated.net",
+      "https://api.groq.com",
       "wss://stream.binance.com"
     ]
   },
   "android": {
     "allowMixedContent": false,
     "captureInput": true,
-    "webContentsDebuggingEnabled": false
+    "webContentsDebuggingEnabled": true
   },
   "plugins": {
     "AdMob": {
-      "appId": "ca-app-pub-2121626726443679~6618029871",
+      "appId": "ca-app-pub-6014128977421637~6845308314",
       "autoInit": true
     }
   }

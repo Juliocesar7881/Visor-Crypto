@@ -42,6 +42,18 @@
         }
         
         // ============================================
+        // GLOBAL ERROR HANDLER — Prevent unhandled crashes
+        // ============================================
+        window.onerror = function(msg, source, line, col, error) {
+            try { console.warn('[GlobalError]', msg, source, line); } catch(e) {}
+            return true; // Prevent crash
+        };
+        window.onunhandledrejection = function(event) {
+            try { console.warn('[UnhandledPromise]', event.reason); } catch(e) {}
+            event.preventDefault(); // Prevent crash
+        };
+        
+        // ============================================
         // POLYFILL - AbortSignal.timeout para Android WebView
         // ============================================
         if (!AbortSignal.timeout) {
@@ -241,4 +253,4 @@
             }
             // Usar noopener e noreferrer para segurança
             window.open(url, '_blank', 'noopener,noreferrer');
-        }
+        }

@@ -26,7 +26,19 @@
                     ...data,
                     timestamp: Date.now()
                 }));
-            } catch (e) {}
+            } catch (e) {
+                // localStorage quota exceeded — clear old TA caches
+                try {
+                    const keysToRemove = [];
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith(TA_CACHE_KEY + '_')) keysToRemove.push(key);
+                    }
+                    keysToRemove.forEach(k => localStorage.removeItem(k));
+                    // Retry once
+                    localStorage.setItem(`${TA_CACHE_KEY}_${symbol}`, JSON.stringify({ ...data, timestamp: Date.now() }));
+                } catch (e2) {}
+            }
         }
         
         // ═══════════════════════════════════════════════════
@@ -46,8 +58,8 @@
         }
         
         function saveCallHistory(history) {
-            // Keep last 100 calls max
-            localStorage.setItem(CALL_HISTORY_KEY, JSON.stringify(history.slice(-500)));
+            // Keep last 200 calls max (reduced to prevent localStorage overflow)
+            localStorage.setItem(CALL_HISTORY_KEY, JSON.stringify(history.slice(-200)));
         }
         
         function recordCall(symbol, signal, confidence, entryPrice, crypto, fullAnalysis) {
@@ -315,6 +327,7 @@
             stopTAAutoRefresh();
             
             const modal = document.getElementById('ta-modal');
+            if (!modal) return;
             modal.classList.remove('active');
             document.body.style.overflow = 'hidden'; // Manter scroll bloqueado para o modal do gráfico
             
@@ -1586,97 +1599,165 @@
         }
         
         // ============================================
-        // HEATMAP DE LIQUIDAÇÕES (estilo Coinglass)
-        // Estima volume a ser liquidado por nível de preço
+        // HEATMAP DE LIQUIDAÇÕES — DADOS REAIS
+        // Baseado em ordens forçadas (allForceOrders) da Binance
+        // + agregação via CoinGlass public endpoints
+        // Atualiza a cada 5 minutos
         // ============================================
+        const _liqCache = {};
+        const LIQ_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
+        async function fetchCoinglassLiquidations(symbol) {
+            // CoinGlass public aggregated liquidation data (24h)
+            const baseSymbol = symbol.replace('USDT', '');
+            try {
+                const resp = await fetch(`https://visor-crypto-api.onrender.com/api/proxy?url=${encodeURIComponent(
+                    `https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=5m&limit=1`
+                )}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    return data[0] || null;
+                }
+            } catch {}
+            return null;
+        }
+
         function analyzeRealLiquidations(forceOrders, currentPrice, openInterest, longShortRatio) {
             const result = {
                 hasData: false,
                 currentPrice: currentPrice || 0,
-                // Estimativa de volume a ser liquidado
-                longLiqVolume: 0,  // Volume de LONGs que serão liquidados se cair
-                shortLiqVolume: 0, // Volume de SHORTs que serão liquidados se subir
-                // Níveis de liquidação por faixa de preço
+                isRealData: false,
+                longLiqVolume: 0,
+                shortLiqVolume: 0,
+                longLiqCount: 0,
+                shortLiqCount: 0,
+                recentLiquidations: [],
                 liquidationLevels: [],
-                // Dominância
                 dominantRisk: 'NEUTRO',
                 riskRatio: 1,
-                lastUpdate: new Date().toLocaleTimeString('pt-BR')
+                lastUpdate: new Date().toLocaleTimeString('pt-BR'),
+                dataSource: 'Sem dados'
             };
             
             if (!currentPrice || currentPrice <= 0) return result;
             
-            // Pegar Open Interest em USD
-            const oiValue = parseFloat(openInterest?.openInterest || 0) * currentPrice;
+            // ─── FONTE PRIMÁRIA: Ordens forçadas reais da Binance ───
+            const validForceOrders = Array.isArray(forceOrders) ? forceOrders.filter(o => 
+                o && o.price && o.executedQty && o.side && o.time
+            ) : [];
+
+            if (validForceOrders.length > 0) {
+                result.hasData = true;
+                result.isRealData = true;
+                result.dataSource = `Binance (${validForceOrders.length} liquidações)`;
+                
+                let longLiqVol = 0, shortLiqVol = 0;
+                let longCount = 0, shortCount = 0;
+                const levels = [];
+                const now = Date.now();
+                const recentWindow = 24 * 60 * 60 * 1000; // últimas 24h
+                
+                validForceOrders.forEach(order => {
+                    const price = parseFloat(order.averagePrice || order.price);
+                    const qty = parseFloat(order.executedQty || order.origQty);
+                    const volumeUSD = price * qty;
+                    const orderTime = parseInt(order.time);
+                    const isRecent = (now - orderTime) < recentWindow;
+                    
+                    // side=BUY → SHORT foi liquidado (compra forçada p/ fechar short)
+                    // side=SELL → LONG foi liquidado (venda forçada p/ fechar long)
+                    const isSHORTLiq = order.side === 'BUY';
+                    const isLONGLiq = order.side === 'SELL';
+                    
+                    if (isLONGLiq) {
+                        longLiqVol += volumeUSD;
+                        longCount++;
+                    } else if (isSHORTLiq) {
+                        shortLiqVol += volumeUSD;
+                        shortCount++;
+                    }
+                    
+                    const distance = ((price - currentPrice) / currentPrice * 100);
+                    
+                    levels.push({
+                        type: isLONGLiq ? 'LONG' : 'SHORT',
+                        price: price,
+                        volume: volumeUSD,
+                        distance: Math.abs(distance),
+                        side: distance < 0 ? 'ABAIXO' : 'ACIMA',
+                        time: orderTime,
+                        isRecent: isRecent,
+                        intensity: Math.min(volumeUSD / 10000, 100)
+                    });
+                });
+                
+                levels.sort((a, b) => a.distance - b.distance);
+                result.liquidationLevels = levels.slice(0, 20); // top 20 mais próximos
+                result.longLiqVolume = longLiqVol;
+                result.shortLiqVolume = shortLiqVol;
+                result.longLiqCount = longCount;
+                result.shortLiqCount = shortCount;
+                result.recentLiquidations = levels.filter(l => l.isRecent).slice(0, 10);
+                
+                const totalVol = longLiqVol + shortLiqVol;
+                if (totalVol > 0) {
+                    result.riskRatio = longLiqVol / Math.max(shortLiqVol, 1);
+                    if (result.riskRatio > 1.5) {
+                        result.dominantRisk = 'LONGS MAIS LIQUIDADOS';
+                    } else if (result.riskRatio < 0.67) {
+                        result.dominantRisk = 'SHORTS MAIS LIQUIDADOS';
+                    } else {
+                        result.dominantRisk = 'EQUILIBRADO';
+                    }
+                }
+                
+                return result;
+            }
             
+            // ─── FALLBACK: Estimativa via Open Interest ───
+            const oiValue = parseFloat(openInterest?.openInterest || 0) * currentPrice;
             if (oiValue <= 0) return result;
             
             result.hasData = true;
+            result.isRealData = false;
+            result.dataSource = 'Estimativa (OI)';
             const lsRatio = parseFloat(longShortRatio?.longShortRatio || 1);
             
-            // Distribuir OI entre longs e shorts baseado no ratio
-            // Se ratio > 1, mais longs. Se ratio < 1, mais shorts
             const totalOI = oiValue;
             const longOI = totalOI * (lsRatio / (1 + lsRatio));
             const shortOI = totalOI * (1 / (1 + lsRatio));
             
-            // Distribuição de alavancagem típica do mercado (baseado em dados públicos)
-            // Maioria usa entre 5x e 20x
             const leverageDistribution = [
-                { lev: 3, percent: 0.05 },   // 5% usa 3x
-                { lev: 5, percent: 0.15 },   // 15% usa 5x
-                { lev: 10, percent: 0.35 },  // 35% usa 10x
-                { lev: 20, percent: 0.25 },  // 25% usa 20x
-                { lev: 25, percent: 0.12 },  // 12% usa 25x
-                { lev: 50, percent: 0.05 },  // 5% usa 50x
-                { lev: 100, percent: 0.03 }  // 3% usa 100x
+                { lev: 5, percent: 0.20 },
+                { lev: 10, percent: 0.35 },
+                { lev: 20, percent: 0.25 },
+                { lev: 50, percent: 0.15 },
+                { lev: 100, percent: 0.05 }
             ];
             
-            // Calcular níveis de liquidação e volumes
             const levels = [];
-            
-            // Para cada alavancagem, calcular onde as posições seriam liquidadas
             leverageDistribution.forEach(({ lev, percent }) => {
-                // Preço de liquidação de LONG = entrada * (1 - 1/lev) (com margem de manutenção ~10%)
                 const longLiqPrice = currentPrice * (1 - (0.9 / lev));
-                const longVolAtLevel = longOI * percent;
-                
-                // Preço de liquidação de SHORT = entrada * (1 + 1/lev)
                 const shortLiqPrice = currentPrice * (1 + (0.9 / lev));
-                const shortVolAtLevel = shortOI * percent;
-                
-                // Distância do preço atual
-                const longDistance = ((currentPrice - longLiqPrice) / currentPrice * 100);
-                const shortDistance = ((shortLiqPrice - currentPrice) / currentPrice * 100);
                 
                 levels.push({
-                    type: 'LONG',
-                    leverage: lev,
-                    price: longLiqPrice,
-                    volume: longVolAtLevel,
-                    distance: longDistance,
-                    intensity: percent * 100 // Para o heatmap visual
+                    type: 'LONG', leverage: lev, price: longLiqPrice,
+                    volume: longOI * percent,
+                    distance: ((currentPrice - longLiqPrice) / currentPrice * 100),
+                    intensity: percent * 100
                 });
-                
                 levels.push({
-                    type: 'SHORT',
-                    leverage: lev,
-                    price: shortLiqPrice,
-                    volume: shortVolAtLevel,
-                    distance: shortDistance,
+                    type: 'SHORT', leverage: lev, price: shortLiqPrice,
+                    volume: shortOI * percent,
+                    distance: ((shortLiqPrice - currentPrice) / currentPrice * 100),
                     intensity: percent * 100
                 });
             });
             
-            // Ordenar por distância do preço atual
             levels.sort((a, b) => a.distance - b.distance);
             result.liquidationLevels = levels;
-            
-            // Calcular totais
             result.longLiqVolume = longOI;
             result.shortLiqVolume = shortOI;
-            
-            // Determinar qual lado tem mais risco
             result.riskRatio = longOI / Math.max(shortOI, 1);
             
             if (result.riskRatio > 1.3) {
@@ -2177,7 +2258,7 @@
             return { delta, ratio, buyVolume, sellVolume };
         }
 
-        function generateAISummary(signalType, confidence, indicators, symbol) {
+        function generateLocalSummary(signalType, confidence, indicators, symbol) {
             const crypto = CRYPTO_DATABASE[symbol]?.name || symbol;
             
             // Análise de Médias Móveis
@@ -2340,7 +2421,7 @@ Confiança: ${confidence}%`;
 • Aguarde rompimento claro da VAL ($${indicators.val?.toFixed(2)}) com volume para SHORT`;
                 }
                 
-                return `⏳ AGUARDAR — ${crypto}
+                return `⏳ NEUTRO — ${crypto}
 
 ${pricePositionMsg}
 
@@ -2356,12 +2437,152 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
 • CVD: ${indicators.cvdSignal}
 • Order Book: ${indicators.bookSignal}
 
-⚠️ Confiança para operação: BAIXA. Melhor aguardar.`;
+⚠️ Confiança para operação: BAIXA. Sem sinal direcional.`;
             }
         }
-        
+
+        // ═══════════════════════════════════════════════════════════
+        // GROQ AI — Relatório de IA real via Llama 3.3 70B
+        // ═══════════════════════════════════════════════════════════
+        const GROQ_API_KEY = (window.APP_CONFIG && window.APP_CONFIG.GROQ_API_KEY) || '';
+        const GROQ_MODEL = 'llama-3.3-70b-versatile';
+        const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+        const _aiSummaryCache = {};
+
+        // Evitar acúmulo de memória no cache de AI summaries
+        function _cleanAISummaryCache() {
+            const keys = Object.keys(_aiSummaryCache);
+            if (keys.length > 50) {
+                // Remover entradas mais antigas (manter últimas 20)
+                keys.slice(0, keys.length - 20).forEach(k => delete _aiSummaryCache[k]);
+            }
+        }
+
+        // Sync wrapper — returns local fallback instantly
+        function generateAISummary(signalType, confidence, indicators, symbol) {
+            return generateLocalSummary(signalType, confidence, indicators, symbol);
+        }
+
+        async function fetchAISummary(analysis, symbol) {
+            if (!GROQ_API_KEY || GROQ_API_KEY === 'COLE_SUA_CHAVE_GROQ_AQUI') return null;
+            _cleanAISummaryCache();
+            const cacheKey = `${symbol}_${Math.floor(Date.now() / 300000)}`;
+            if (_aiSummaryCache[cacheKey]) return _aiSummaryCache[cacheKey];
+
+            const crypto = CRYPTO_DATABASE[symbol]?.name || symbol;
+            const ind = analysis.indicators || {};
+            const vp = ind.volumeProfile || {};
+            const of_ = ind.orderFlow || {};
+            const micro = ind.microstructure || {};
+            const sent = ind.sentiment || {};
+            const mtf = ind.multiTimeframe || {};
+            const ma = ind.movingAverages || {};
+            const mr = analysis.marketRegime || {};
+            const ms = analysis.marketStructure || {};
+            const cvdA = analysis.cvdAdvanced || {};
+            const vol = analysis.volatilityMetrics || {};
+            const bt = analysis.bigTechMacro || {};
+            const v4 = analysis.v4Signal ? {
+                signal: analysis.v4Signal,
+                confidence: analysis.v4Confidence,
+                probability: analysis.v4Probability,
+                gatesPassed: analysis.v4GatesPassed,
+                gatesTotal: analysis.v4GatesTotal,
+                action: analysis.v4ActionMessage
+            } : null;
+
+            const dataPayload = {
+                crypto, symbol,
+                signal: analysis.v4Signal || analysis.v3Signal || analysis.signal,
+                signalType: analysis._finalSignalType || analysis.signalType,
+                confidence: analysis._finalConfidence || analysis.v4Confidence || analysis.v3Confidence || analysis.confidence,
+                entry: analysis.entry, stopLoss: analysis.stopLoss,
+                targets: analysis.dynamicTargets,
+                volumeProfile: { poc: vp.poc, vah: vp.vah, val: vp.val, vwap: vp.vwap, priceLocation: vp.priceLocation },
+                orderFlow: of_,
+                microstructure: { bookImbalance: micro.bookImbalance, bookSignal: micro.bookSignal },
+                sentiment: sent, multiTimeframe: mtf, movingAverages: ma,
+                regime: { regime: mr.regime, regimeDescription: mr.regimeDescription, regimeStrength: mr.regimeStrength, squeezeDetected: mr.squeezeDetected },
+                structure: { structureDescription: ms.structureDescription },
+                cvd: { divergence: cvdA.divergence?.description, absorption: cvdA.absorption?.description },
+                volatility: { atr1h: vol.atrPercent1h, description: vol.volDescription },
+                bigTech: bt.bigTechSentiment ? { sentiment: bt.bigTechSentiment, fearGreed: bt.fearGreed } : null,
+                v4Engine: v4,
+                confluenceScore: analysis.confluenceSummary?.score,
+                contextualAdjustments: (analysis.contextualAdjustments || []).map(a => a.reason).slice(0, 5)
+            };
+
+            const systemPrompt = `Você é um analista quantitativo sênior de criptomoedas. Gere um relatório técnico conciso em português brasileiro (PT-BR) com base nos dados fornecidos.
+
+Regras:
+- Máximo 800 caracteres
+- Não use markdown, apenas texto limpo com emojis para seções
+- Comece com o sinal (📈 LONG / 📉 SHORT / ⏳ NEUTRO) e a confiança
+- Analise: regime de mercado, volume profile, order flow (CVD, funding), microestrutura, sentimento
+- Dê uma conclusão objetiva: operar ou não, e por quê
+- Se NEUTRO, explique o que esperar para entrar
+- Use linguagem direta de trader profissional
+- NÃO invente dados, use APENAS os fornecidos`;
+
+            try {
+                const resp = await fetch(GROQ_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${GROQ_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: GROQ_MODEL,
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: `Dados da análise técnica de ${crypto} (${symbol}):\n${JSON.stringify(dataPayload)}` }
+                        ],
+                        temperature: 0.4,
+                        max_tokens: 500,
+                        stream: false
+                    })
+                });
+                if (!resp.ok) throw new Error(`Groq API ${resp.status}`);
+                const data = await resp.json();
+                const aiText = data.choices?.[0]?.message?.content?.trim();
+                if (aiText) {
+                    _aiSummaryCache[cacheKey] = aiText;
+                    return aiText;
+                }
+                throw new Error('Empty response');
+            } catch (e) {
+                console.warn('[Groq AI]', e.message);
+                return null;
+            }
+        }
+
+        // Update the AI summary section in the rendered TA modal
+        async function updateAISummaryInModal(analysis, symbol) {
+            const textEl = document.querySelector('.ta-ai-text');
+            if (!textEl) return;
+            // Use final blended confidence for consistency with displayed bar/donut
+            const finalConf = analysis._finalConfidence || analysis.v4Confidence || analysis.v3Confidence || analysis.confidence;
+            const finalSigType = analysis._finalSignalType || analysis.signalType;
+            const aiResult = await fetchAISummary(analysis, symbol);
+            const modal = document.getElementById('ta-modal');
+            if (!modal || !modal.classList.contains('active')) return;
+            const currentTextEl = document.querySelector('.ta-ai-text');
+            if (!currentTextEl) return;
+            if (aiResult) {
+                currentTextEl.textContent = aiResult;
+            } else {
+                // Groq failed — show local fallback with blended confidence
+                const localText = generateLocalSummary(
+                    finalSigType, finalConf,
+                    analysis.indicators || {}, symbol
+                );
+                currentTextEl.textContent = '⚠️ IA indisponível — análise local:\n\n' + localText;
+            }
+        }
+
         function renderTechnicalAnalysis(analysis, crypto) {
             const body = document.getElementById('ta-modal-body');
+            if (!body) return;
             try {
             const { signal: origSignal, signalType: origSignalType, confidence: origConfidence, entry, stopLoss, takeProfit, riskReward, indicators, aiSummary, timestamp, dynamicTargets, marketRegime, marketStructure, cvdAdvanced, volatilityMetrics, macroNews, bigTechMacro, contextualAdjustments, v3Signal, v3SignalType, v3Confidence, v3Probability } = analysis;
             
@@ -2381,13 +2602,13 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                     signalType = v4Signal.includes('LONG') ? 'long' : 'short';
                     confidence = v4Confidence;
                 } else if (v4Signal.includes('AGUARDAR')) {
-                    displaySignal = 'AGUARDE';
+                    displaySignal = 'NEUTRO';
                     signal = v4Signal;
                     signalType = 'aguardar';
                     confidence = v4Confidence;
                 } else {
-                    displaySignal = 'AGUARDE';
-                    signal = 'AGUARDE';
+                    displaySignal = 'NEUTRO';
+                    signal = 'NEUTRO';
                     signalType = 'aguardar';
                     confidence = v4Confidence || v3Confidence || origConfidence;
                 }
@@ -2395,24 +2616,43 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                 signal = v3Signal || origSignal;
                 signalType = v3SignalType || origSignalType;
                 confidence = v3Confidence || origConfidence;
-                // Map NEUTRO to AGUARDE
+                // Map NEUTRO to NEUTRO display
                 if (signal === 'NEUTRO') {
-                    signal = 'AGUARDE';
                     signalType = 'aguardar';
                 }
-                displaySignal = signal === 'AGUARDE' ? 'AGUARDE' : signal;
+                displaySignal = (signal === 'AGUARDE' || signal === 'NEUTRO') ? 'NEUTRO' : signal;
             }
             
-            // RULE: confidence < 50 = ALWAYS AGUARDE, no exceptions
+            // RULE: confidence < 50 = ALWAYS NEUTRO, no exceptions
             if (confidence < 50 && signalType !== 'long' && signalType !== 'short') {
-                displaySignal = 'AGUARDE';
-                signal = 'AGUARDE';
+                displaySignal = 'NEUTRO';
+                signal = 'NEUTRO';
                 signalType = 'aguardar';
             } else if (confidence < 50 && (signalType === 'long' || signalType === 'short')) {
-                // Has directional bias but low confidence — show AGUARDE
-                displaySignal = 'AGUARDE';
+                // Has directional bias but low confidence — show NEUTRO
+                displaySignal = 'NEUTRO';
                 signalType = 'aguardar';
             }
+            
+            // ═══ SYNC CONFIDENCE WITH MARKET REGIME ═══
+            // Blend AI confidence with regime strength so both sections are coherent
+            if (marketRegime && marketRegime.regimeStrength != null) {
+                const regimeConf = Math.round((marketRegime.regimeStrength || 0) * 100);
+                // Weighted blend: 70% engine confidence + 30% regime strength
+                confidence = Math.round(confidence * 0.7 + regimeConf * 0.3);
+                confidence = Math.max(10, Math.min(100, confidence));
+                // Re-check NEUTRO rule after regime sync
+                if (confidence < 50 && signalType === 'aguardar') {
+                    displaySignal = 'NEUTRO';
+                    signal = 'NEUTRO';
+                }
+            }
+            
+            // AI summary will be loaded async from Groq — no local text
+            // Store final blended confidence back into analysis for AI summary consistency
+            analysis._finalConfidence = confidence;
+            analysis._finalSignalType = signalType;
+            analysis._finalSignal = signal;
             
             const signalIcon = signalType === 'long' ? 'fa-arrow-trend-up' : signalType === 'short' ? 'fa-arrow-trend-down' : signalType === 'aguardar' ? 'fa-hourglass-half' : 'fa-hourglass-half';
             const confidenceLevel = confidence >= 70 ? 'high' : confidence >= 50 ? 'medium' : 'low';
@@ -3305,24 +3545,26 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                 
                                 
                                 
-                <!-- HEATMAP DE LIQUIDAÇÕES (estilo Coinglass) -->
+                <!-- HEATMAP DE LIQUIDAÇÕES — DADOS REAIS -->
                 <div class="ta-section">
                     <div class="ta-section-header">
-                        <div class="ta-section-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
-                            <i class="fas fa-calculator"></i>
+                        <div class="ta-section-icon" style="background: linear-gradient(135deg, ${indicators.realLiquidations?.isRealData ? '#22c55e 0%, #16a34a' : '#f59e0b 0%, #d97706'} 100%);">
+                            <i class="fas ${indicators.realLiquidations?.isRealData ? 'fa-bolt' : 'fa-calculator'}"></i>
                         </div>
                         <div>
-                            <div class="ta-section-title">Liquidações Estimadas</div>
-                            <div class="ta-section-subtitle" style="color: #f59e0b;">ESTIMATIVA baseada em OI + L/S Ratio </div>
+                            <div class="ta-section-title">${indicators.realLiquidations?.isRealData ? 'Liquidações Reais' : 'Liquidações Estimadas'}</div>
+                            <div class="ta-section-subtitle" style="color: ${indicators.realLiquidations?.isRealData ? '#22c55e' : '#f59e0b'};">${indicators.realLiquidations?.dataSource || 'Sem dados'}</div>
                         </div>
                     </div>
                     ${indicators.realLiquidations?.hasData ? `
                     <div style="margin-top: 12px;">
-                        <!-- Aviso de estimativa -->
-                        <div style="padding: 10px; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; margin-bottom: 12px;">
-                            <div style="font-size: 10px; color: #f59e0b; text-align: center;">
-                                <i class="fas fa-info-circle" style="margin-right: 4px;"></i>
-                                Cálculo baseado em Open Interest real + distribuição estimada de alavancagem
+                        <!-- Fonte de dados -->
+                        <div style="padding: 10px; background: rgba(${indicators.realLiquidations?.isRealData ? '34, 197, 94' : '245, 158, 11'}, 0.15); border: 1px solid rgba(${indicators.realLiquidations?.isRealData ? '34, 197, 94' : '245, 158, 11'}, 0.3); border-radius: 8px; margin-bottom: 12px;">
+                            <div style="font-size: 10px; color: ${indicators.realLiquidations?.isRealData ? '#22c55e' : '#f59e0b'}; text-align: center;">
+                                <i class="fas ${indicators.realLiquidations?.isRealData ? 'fa-check-circle' : 'fa-info-circle'}" style="margin-right: 4px;"></i>
+                                ${indicators.realLiquidations?.isRealData 
+                                    ? `Dados reais de ${indicators.realLiquidations.longLiqCount + indicators.realLiquidations.shortLiqCount} liquidações forçadas da Binance` 
+                                    : 'Estimativa baseada em Open Interest + distribuição de alavancagem'}
                             </div>
                         </div>
                         
@@ -3588,25 +3830,25 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                                 ${analysis.positionSize.riskLevel}
                             </div>
                         </div>
-                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
-                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px;">
-                                <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Kelly (½)</div>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; min-width: 0;">
+                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px; min-width: 0; overflow: hidden;">
+                                <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Kelly (½)</div>
                                 <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">${analysis.positionSize.breakdown?.kellyHalf || 0}%</div>
                             </div>
-                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px;">
-                                <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Mult. Confiança</div>
+                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px; min-width: 0; overflow: hidden;">
+                                <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Mult. Conf.</div>
                                 <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">×${analysis.positionSize.breakdown?.confMultiplier || 1}</div>
                             </div>
-                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px;">
-                                <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Mult. Crash</div>
+                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px; min-width: 0; overflow: hidden;">
+                                <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Mult. Crash</div>
                                 <div style="font-size: 12px; font-weight: 700; color: ${(analysis.positionSize.breakdown?.crashMultiplier || 1) < 1 ? '#ef4444' : 'var(--text-primary)'};">×${analysis.positionSize.breakdown?.crashMultiplier || 1}</div>
                             </div>
-                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px;">
-                                <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Mult. Edge</div>
+                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px; min-width: 0; overflow: hidden;">
+                                <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Mult. Edge</div>
                                 <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">×${analysis.positionSize.breakdown?.edgeMultiplier || 1}</div>
                             </div>
                         </div>
-                        <div style="margin-top: 8px; font-size: 10px; color: var(--text-muted); text-align: center; font-family: monospace;">${analysis.positionSize.reasoning}</div>
+                        <div style="margin-top: 8px; font-size: 10px; color: var(--text-muted); text-align: center; font-family: monospace; word-break: break-word; overflow-wrap: break-word;">${analysis.positionSize.reasoning}</div>
                     </div>
                 </div>
                 ` : ''}
@@ -3845,27 +4087,27 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                             <div class="ta-section-subtitle">${analysis.riskEngine.killSwitchActive ? '⚠️ Kill Switch ATIVO — ' + (analysis.riskEngine.killSwitchReason || 'pausa forçada') : 'Gestão dinâmica de risco'}</div>
                         </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
-                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center;">
-                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Tamanho</div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; min-width: 0;">
+                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0; overflow: hidden;">
+                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Tamanho</div>
                             <div style="font-size: 14px; font-weight: 800; color: var(--text-primary);">${(analysis.riskEngine.positionSizePct || 0).toFixed(1)}%</div>
                         </div>
-                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center;">
-                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Alavancagem</div>
+                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0; overflow: hidden;">
+                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Alavancagem</div>
                             <div style="font-size: 14px; font-weight: 800; color: ${(analysis.riskEngine.leverage || 1) > 5 ? '#ef4444' : '#f59e0b'};">${analysis.riskEngine.leverage || 1}×</div>
                         </div>
-                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center;">
-                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Risco</div>
-                            <div style="font-size: 12px; font-weight: 700; color: ${analysis.riskEngine.riskLevel === 'LOW' ? '#22c55e' : analysis.riskEngine.riskLevel === 'MEDIUM' ? '#f59e0b' : '#ef4444'}; white-space: nowrap;">${analysis.riskEngine.riskLevel === 'LOW' ? 'Baixo' : analysis.riskEngine.riskLevel === 'MEDIUM' ? 'Médio' : analysis.riskEngine.riskLevel === 'HIGH' ? 'Alto' : 'N/A'}</div>
+                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0; overflow: hidden;">
+                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Risco</div>
+                            <div style="font-size: 12px; font-weight: 700; color: ${analysis.riskEngine.riskLevel === 'LOW' ? '#22c55e' : analysis.riskEngine.riskLevel === 'MEDIUM' ? '#f59e0b' : '#ef4444'};">${analysis.riskEngine.riskLevel === 'LOW' ? 'Baixo' : analysis.riskEngine.riskLevel === 'MEDIUM' ? 'Médio' : analysis.riskEngine.riskLevel === 'HIGH' ? 'Alto' : 'N/A'}</div>
                         </div>
                     </div>
-                    <div style="margin-top: 8px; display: flex; gap: 8px;">
-                        <div style="flex: 1; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px;">
-                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Drawdown Diário</div>
+                    <div style="margin-top: 8px; display: flex; gap: 8px; min-width: 0;">
+                        <div style="flex: 1; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px; min-width: 0; overflow: hidden;">
+                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">DD Diário</div>
                             <div style="font-size: 11px; font-weight: 700; color: ${(analysis.riskEngine.dailyDrawdown || 0) > 2 ? '#ef4444' : 'var(--text-primary)'};">${(analysis.riskEngine.dailyDrawdown || 0).toFixed(1)}% / ${(analysis.riskEngine.maxDailyDrawdown || 3).toFixed(0)}%</div>
                         </div>
-                        <div style="flex: 1; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px;">
-                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Drawdown Semanal</div>
+                        <div style="flex: 1; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px; min-width: 0; overflow: hidden;">
+                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">DD Semanal</div>
                             <div style="font-size: 11px; font-weight: 700; color: ${(analysis.riskEngine.weeklyDrawdown || 0) > 5 ? '#ef4444' : 'var(--text-primary)'};">${(analysis.riskEngine.weeklyDrawdown || 0).toFixed(1)}% / ${(analysis.riskEngine.maxWeeklyDrawdown || 7).toFixed(0)}%</div>
                         </div>
                     </div>
@@ -3971,9 +4213,9 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                         <div class="ta-ai-icon">
                             <i class="fas fa-robot"></i>
                         </div>
-                        <div class="ta-ai-title">Análise da IA</div>
+                        <div class="ta-ai-title">Relatório da IA <span style="font-size: 9px; color: var(--text-muted); font-weight: 400;">Llama 3.3 70B via Groq</span></div>
                     </div>
-                    <div class="ta-ai-text" style="white-space: pre-line;">${aiSummary}</div>
+                    <div class="ta-ai-text" style="white-space: pre-line;"><span style="color: var(--accent-blue);"><i class="fas fa-spinner fa-spin"></i> Gerando relatório com IA (Llama 3.3 70B)...</span></div>
                 </div>
                 
                 <!-- ⚠️ AVISO LEGAL - Botão que abre modal -->
@@ -3995,9 +4237,12 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
             
             // v7.1: Initialize collapsible panels after render
             setTimeout(() => initCollapsiblePanels(body), 50);
+            
+            // Trigger real AI summary (Groq Llama 3.3 70B) asynchronously
+            setTimeout(() => updateAISummaryInModal(analysis, taCurrentSymbol), 100);
             } catch (renderErr) {
                 console.error('[TA Render] Error:', renderErr);
-                body.innerHTML = `
+                if (body) body.innerHTML = `
                     <div style="padding: 40px 20px; text-align: center;">
                         <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
                         <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Erro ao renderizar análise</div>
@@ -4021,4 +4266,4 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         let fullscreenPeriod = '15m';
         let fullscreenRefreshInterval = null;
         let fullscreenCandleData = []; // Dados separados para fullscreen
-
+

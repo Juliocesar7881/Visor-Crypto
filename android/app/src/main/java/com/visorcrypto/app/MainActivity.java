@@ -31,18 +31,23 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        // App was already open, navigate to dashboard immediately
-        navigateToDashboard();
+        // Only navigate to dashboard if the intent is from a signal notification
+        if (isSignalNotificationIntent(intent)) {
+            navigateToDashboard();
+        }
+    }
+
+    private boolean isSignalNotificationIntent(Intent intent) {
+        if (intent == null) return false;
+        return intent.getBooleanExtra("FROM_SIGNAL_NOTIFICATION", false);
     }
 
     private void checkNotificationIntent(Intent intent) {
-        if (intent != null && intent.hasCategory("android.intent.category.LAUNCHER")) {
-            return; // Normal launch, not from notification
+        if (!isSignalNotificationIntent(intent)) {
+            return; // Normal launch or foreground service tap, not a signal notification
         }
-        // If the intent comes from our notification (PendingIntent targets MainActivity)
-        // set flag to open dashboard once WebView is ready
+        // Signal notification tap while app was cold — open dashboard once WebView is ready
         pendingDashboardOpen = true;
-        // Delayed execution to wait for WebView to load
         WebView webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView != null) {
             webView.postDelayed(this::navigateToDashboard, 3000);
@@ -65,7 +70,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onBackPressed() {
         // Enviar evento para o WebView JavaScript e ESPERAR resposta
-        WebView webView = getBridge().getWebView();
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView != null) {
             webView.post(() -> {
                 webView.evaluateJavascript(

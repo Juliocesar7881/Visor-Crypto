@@ -5,7 +5,24 @@
         let lastBackPressTime = 0;
         let _lastModalCloseTime = 0; // Guard contra double-fire do back button
 
+        // Dirty flags para renderização adiada de seções inativas
+        const _dirtyFlags = { home: false, news: false, analysis: false, whale: false };
+
         function handleBackButton() {
+            // ====== WHALE TX HISTORY MODAL ======
+            const whaleTxModal = document.getElementById('whale-tx-modal');
+            if (whaleTxModal) {
+                if (window._closeWhaleModal) {
+                    window._closeWhaleModal();
+                } else {
+                    whaleTxModal.remove();
+                    document.body.style.overflow = '';
+                    document.documentElement.style.overflow = '';
+                }
+                _lastModalCloseTime = Date.now();
+                return true;
+            }
+
             // ====== MACRO-SECTION.JS MODALS (created dynamically with .remove()) ======
             
             // Análise Técnica de indicador (macro-section.js)
@@ -93,14 +110,16 @@
             }
             
             // Se modal de gráfico está aberto, fechar (volta para a seção atual)
-            if (document.getElementById('chart-modal').classList.contains('active')) {
+            const chartModal = document.getElementById('chart-modal');
+            if (chartModal && chartModal.classList.contains('active')) {
                 closeChartModal();
                 _lastModalCloseTime = Date.now();
                 return true;
             }
             
             // Se modal de notícia está aberto, fechar (volta para NOTÍCIAS)
-            if (document.getElementById('news-modal').classList.contains('active')) {
+            const newsModal = document.getElementById('news-modal');
+            if (newsModal && newsModal.classList.contains('active')) {
                 const returnData = sessionStorage.getItem('returnToNewsModal');
                 if (returnData) {
                     sessionStorage.removeItem('returnToNewsModal');
@@ -131,7 +150,8 @@
         function showSectionDirect(sectionId) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            document.getElementById(sectionId).classList.add('active');
+            const sectionEl = document.getElementById(sectionId);
+            if (sectionEl) sectionEl.classList.add('active');
             
             // Ativar nav item correspondente
             document.querySelectorAll('.nav-item').forEach(nav => {
@@ -150,6 +170,7 @@
                 fetchMovingAverages();
             }
             if (sectionId === 'dashboard') dashLoad();
+            if (sectionId !== 'dashboard' && typeof dashAbortScan === 'function') dashAbortScan();
         }
 
         // Listener para botão voltar do Android (Capacitor)
@@ -255,6 +276,14 @@
             // Block any interaction outside buttons (overlay tap must not dismiss)
             overlay.addEventListener('click', (e) => { if (e.target === overlay) e.stopPropagation(); });
             overlay.addEventListener('touchend', (e) => { if (e.target === overlay) e.preventDefault(); });
+            // Block background scroll while overlay is open
+            overlay.addEventListener('touchmove', (e) => {
+                const card = overlay.querySelector('#disclaimer-card');
+                if (card && card.contains(e.target)) return;
+                e.preventDefault();
+            }, { passive: false });
+            document.body.style.overflow = 'hidden';
+            document.documentElement.style.overflow = 'hidden';
             document.body.appendChild(overlay);
             let _disclaimerHandled = false;
             function acceptDisclaimer() {
@@ -263,23 +292,45 @@
                 localStorage.setItem('visor_disclaimer_accepted', Date.now().toString());
                 overlay.style.opacity = '0';
                 overlay.style.transition = 'opacity 0.28s';
-                setTimeout(() => overlay.remove(), 290);
+                setTimeout(() => {
+                    overlay.remove();
+                    // Only restore scroll if no other overlay is present
+                    if (!document.getElementById('ad-consent-overlay')) {
+                        document.body.style.overflow = '';
+                        document.documentElement.style.overflow = '';
+                    }
+                }, 290);
             }
             const btn = overlay.querySelector('#disclaimer-accept');
-            btn.addEventListener('click', acceptDisclaimer);
-            btn.addEventListener('touchend', (e) => { e.preventDefault(); acceptDisclaimer(); });
+            let _dTouchStart = 0;
+            btn.addEventListener('pointerdown', () => { btn.style.transform = 'scale(0.97)'; btn.style.opacity = '0.8'; });
+            btn.addEventListener('pointerup',   () => { btn.style.transform = ''; btn.style.opacity = ''; });
+            btn.addEventListener('pointercancel', () => { btn.style.transform = ''; btn.style.opacity = ''; });
+            btn.addEventListener('touchstart', () => { _dTouchStart = Date.now(); }, { passive: true });
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                btn.style.transform = ''; btn.style.opacity = '';
+                if (Date.now() - _dTouchStart < 400) acceptDisclaimer();
+            });
+            btn.addEventListener('click', (e) => { if (!_dTouchStart) acceptDisclaimer(); });
         }
         document.addEventListener('DOMContentLoaded', () => setTimeout(showFirstLaunchDisclaimer, 500));
 
         // ═══════════════════════════════════════
-        // GDPR / LGPD CONSENT + ADMOB INTERSTITIAL
+        // GDPR / LGPD CONSENT + ADMOB (Banner + Interstitial + App Open)
         // ═══════════════════════════════════════
-        const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-2121626726443679/9603615439';
+        const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6014128977421637/9331870850';
+        const ADMOB_BANNER_ID = 'ca-app-pub-6014128977421637/9331870850';
         let admobReady = false;
         let admobLoaded = false;
         let _admobInitStarted = false;
         let _admobConsentGranted = false;
         let userAdConsent = localStorage.getItem('visor_ad_consent'); // 'granted' | 'denied' | null
+
+        // ── Timed interstitial config ──
+        let _lastInterstitialTime = 0;
+        const AD_TIMED_INTERVAL_MS = 600000;  // Intersticial a cada 10 minutos
+        const AD_FIRST_DELAY_MS = 10000;      // Primeiro ad 10s após abrir o app
         
         // AdMob logging (production: console only, no visible badge)
         let _admobDebugEl = null;
@@ -368,6 +419,14 @@
                 // Block any interaction outside buttons (overlay tap must not dismiss)
                 overlay.addEventListener('click', (e) => { if (e.target === overlay) e.stopPropagation(); });
                 overlay.addEventListener('touchend', (e) => { if (e.target === overlay) e.preventDefault(); });
+                // Block background scroll while overlay is open
+                overlay.addEventListener('touchmove', (e) => {
+                    const card = overlay.querySelector('#consent-card');
+                    if (card && card.contains(e.target)) return;
+                    e.preventDefault();
+                }, { passive: false });
+                document.body.style.overflow = 'hidden';
+                document.documentElement.style.overflow = 'hidden';
                 document.body.appendChild(overlay);
 
                 // ── Single-tap guard: prevents double-fire from click+touchend on WebView ──
@@ -380,7 +439,11 @@
                     userAdConsent = val;
                     overlay.style.opacity = '0';
                     overlay.style.transition = 'opacity 0.28s';
-                    setTimeout(() => overlay.remove(), 295);
+                    setTimeout(() => {
+                        overlay.remove();
+                        document.body.style.overflow = '';
+                        document.documentElement.style.overflow = '';
+                    }, 295);
                     // Resolve ALL pending callers (incl. the 8-second initAdMob retry)
                     (overlay._pendingResolves || []).forEach(r => r(granted));
                 }
@@ -389,13 +452,21 @@
                 const btnDeny   = overlay.querySelector('#consent-deny');
                 [btnAccept, btnDeny].forEach(btn => {
                     const isAccept = btn.id === 'consent-accept';
+                    let _cTouchStart = 0;
                     // Visual feedback
                     btn.addEventListener('pointerdown', () => { btn.style.transform = 'scale(0.96)'; btn.style.opacity = '0.8'; });
                     btn.addEventListener('pointerup',   () => { btn.style.transform = ''; btn.style.opacity = ''; });
-                    // Single reliable handler: touchend (with preventDefault so click is not doubled)
-                    btn.addEventListener('touchend', (e) => { e.preventDefault(); handleConsent(isAccept); }, { once: true });
-                    // Fallback for desktop / mouse
-                    btn.addEventListener('click', () => handleConsent(isAccept), { once: true });
+                    btn.addEventListener('pointercancel', () => { btn.style.transform = ''; btn.style.opacity = ''; });
+                    // Tap guard: only fire on quick taps (<400ms), not press-and-hold
+                    btn.addEventListener('touchstart', () => { _cTouchStart = Date.now(); }, { passive: true });
+                    btn.addEventListener('touchend', (e) => {
+                        e.preventDefault();
+                        // Always reset visual state (pointerup may not fire after preventDefault)
+                        btn.style.transform = ''; btn.style.opacity = '';
+                        if (Date.now() - _cTouchStart < 400) handleConsent(isAccept);
+                    });
+                    // Fallback for desktop / mouse (only if no touch was used)
+                    btn.addEventListener('click', () => { if (!_cTouchStart) handleConsent(isAccept); });
                 });
             });
         }
@@ -481,6 +552,11 @@
                         prepareInterstitial();
                     }
                 }, 30000);
+
+                // ── Banner Ad ──
+                showBannerAd();
+
+
             } catch (e) {
                 _admobDebug('Erro init: ' + (e?.message || e), '#ef4444');
                 _admobInitStarted = false;
@@ -538,6 +614,7 @@
                 await window._AdMob.showInterstitial();
                 console.log('[AdMob] Ad shown successfully');
                 admobLoaded = false;
+                _lastInterstitialTime = Date.now();
                 setTimeout(() => prepareInterstitial(), 3000);
                 return true;
             } catch (e) {
@@ -547,6 +624,80 @@
                 return false;
             }
         }
+
+
+
+        // ═══════════════════════════════════════
+        // BANNER AD (persistent bottom, above nav)
+        // ═══════════════════════════════════════
+        async function showBannerAd() {
+            if (!admobReady || !window._AdMob) return;
+            try {
+                // Listen for banner events to only adjust layout when banner is truly visible
+                try {
+                    window._AdMob.addListener('bannerAdSizeChanged', (info) => {
+                        if (info && info.height > 0) {
+                            document.body.classList.add('has-banner-ad');
+                        }
+                    });
+                    window._AdMob.addListener('bannerAdFailedToLoad', () => {
+                        document.body.classList.remove('has-banner-ad');
+                        setTimeout(() => showBannerAd(), 30000);
+                    });
+                } catch(e) {}
+
+                await window._AdMob.showBanner({
+                    adId: ADMOB_BANNER_ID,
+                    adSize: 'ADAPTIVE_BANNER',
+                    position: 'BOTTOM_CENTER',
+                    margin: 0,
+                    isTesting: false,
+                    npa: !_admobConsentGranted
+                });
+                _admobDebug('Banner solicitado', '#f59e0b');
+            } catch (e) {
+                _admobDebug('Banner erro: ' + (e?.message || e), '#ef4444');
+                document.body.classList.remove('has-banner-ad');
+                setTimeout(() => showBannerAd(), 30000);
+            }
+        }
+
+        // Track when app goes to background / foreground (pause/resume timer)
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                if (window._timedAdInterval) { clearInterval(window._timedAdInterval); window._timedAdInterval = null; }
+            } else if (document.visibilityState === 'visible') {
+                _startTimedInterstitial();
+            }
+        });
+
+        // ── Timed interstitial (every 10 min, first at 10s) ──
+        function _startTimedInterstitial() {
+            if (window._timedAdInterval) return; // already running
+            window._timedAdInterval = setInterval(() => {
+                if (document.visibilityState !== 'visible') return;
+                _admobDebug('Timed interstitial (10min)', '#6366f1');
+                showInterstitialAd().catch(() => {});
+            }, AD_TIMED_INTERVAL_MS);
+        }
+        // First ad: 10s AFTER both initial screens are dismissed, then start 10-min cycle
+        function _waitForScreensThenStartAds() {
+            const check = setInterval(() => {
+                // Wait until both disclaimer and consent overlay are gone
+                if (document.getElementById('first-launch-disclaimer')) return;
+                if (document.getElementById('ad-consent-overlay')) return;
+                clearInterval(check);
+                // Both screens dismissed — start the 10s countdown
+                setTimeout(() => {
+                    if (admobReady) {
+                        _admobDebug('Primeiro ad (10s após telas iniciais)', '#6366f1');
+                        showInterstitialAd().catch(() => {});
+                    }
+                    _startTimedInterstitial();
+                }, AD_FIRST_DELAY_MS);
+            }, 500);
+        }
+        _waitForScreensThenStartAds();
         
         // Initialize AdMob when Capacitor is ready (with retry cascade)
         document.addEventListener('DOMContentLoaded', () => setTimeout(initAdMob, 1000));
@@ -625,6 +776,8 @@
         
         // ═══════════════════════════════════════
         // OFFLINE / ONLINE INDICATOR
+        // Mostra banner vermelho apenas se ficar sem conexão por 4+ segundos contínuos.
+        // Esconde IMEDIATAMENTE ao detectar que a internet voltou.
         // ═══════════════════════════════════════
         (function() {
             const banner = document.createElement('div');
@@ -633,33 +786,104 @@
             banner.innerHTML = '<i class="fas fa-wifi-slash" style="font-size:11px;"></i> Sem conexão — dados podem estar desatualizados';
             document.body.appendChild(banner);
             
-            let isOffline = false;
+            let isOffline = false;        // Current displayed state
+            let offlineTimer = null;      // Timer ID for the 4-second delay
+            let consecutiveFails = 0;     // Counter of consecutive ping failures
+            let checkInProgress = false;  // Prevent concurrent checks
             
-            async function checkRealConnectivity() {
-                try {
-                    // Try a real fetch to verify actual internet (navigator.onLine is unreliable in WebView)
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 4000);
-                    const resp = await fetch('https://api.binance.com/api/v3/ping', {
-                        method: 'GET',
-                        signal: controller.signal,
-                        cache: 'no-store'
-                    });
-                    clearTimeout(timeout);
-                    if (resp.ok) {
-                        if (isOffline) { isOffline = false; banner.style.transform = 'translateY(-100%)'; }
-                        return;
-                    }
-                } catch (e) {}
-                // Fetch failed = truly offline
-                if (!isOffline) { isOffline = true; banner.style.transform = 'translateY(0)'; }
+            async function pingConnectivity() {
+                // Try multiple endpoints to avoid false negatives from single API issues
+                const endpoints = [
+                    'https://api.binance.com/api/v3/ping',
+                    'https://httpbin.org/get',
+                    'https://api.coingecko.com/api/v3/ping'
+                ];
+                for (const url of endpoints) {
+                    try {
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 3000);
+                        const resp = await fetch(url, {
+                            method: 'GET',
+                            signal: controller.signal,
+                            cache: 'no-store'
+                        });
+                        clearTimeout(timeout);
+                        if (resp.ok) return true;
+                    } catch (e) {}
+                }
+                return false;
             }
             
-            // Check on load + every 30s
-            checkRealConnectivity();
-            setInterval(checkRealConnectivity, 30000);
+            function showBanner() {
+                if (!isOffline) {
+                    isOffline = true;
+                    banner.style.transform = 'translateY(0)';
+                }
+            }
             
-            // Also listen to browser events as quick triggers (then verify with fetch)
-            window.addEventListener('online', () => { setTimeout(checkRealConnectivity, 1000); });
-            window.addEventListener('offline', () => { checkRealConnectivity(); });
+            function hideBanner() {
+                if (isOffline) {
+                    isOffline = false;
+                    banner.style.transform = 'translateY(-100%)';
+                }
+                consecutiveFails = 0;
+                if (offlineTimer) { clearTimeout(offlineTimer); offlineTimer = null; }
+            }
+            
+            async function checkRealConnectivity() {
+                if (checkInProgress) return;
+                // Skip checks when app is minimized/hidden to avoid false offline detection
+                if (document.visibilityState === 'hidden') return;
+                checkInProgress = true;
+                
+                try {
+                    const online = await pingConnectivity();
+                    
+                    if (online) {
+                        hideBanner();
+                    } else {
+                        consecutiveFails++;
+                        
+                        if (!isOffline && !offlineTimer) {
+                            offlineTimer = setTimeout(async () => {
+                                offlineTimer = null;
+                                // Re-verify before showing
+                                const stillOffline = !(await pingConnectivity());
+                                if (stillOffline) {
+                                    showBanner();
+                                } else {
+                                    hideBanner();
+                                }
+                            }, 4000);
+                        }
+                    }
+                } finally {
+                    checkInProgress = false;
+                }
+            }
+            
+            // Check on load (com delay para não flashar) + every 10s
+            setTimeout(checkRealConnectivity, 2000);
+            setInterval(checkRealConnectivity, 10000);
+            
+            // Browser events como triggers rápidos (then verify com fetch)
+            window.addEventListener('online', () => {
+                // Online event: wait a moment for connection to stabilize then check
+                setTimeout(checkRealConnectivity, 500);
+            });
+            window.addEventListener('offline', () => {
+                // Offline event: check immediately
+                checkRealConnectivity();
+            });
+            
+            // When app returns from background, reset offline state and re-check
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    // App came back to foreground - clear any false offline state
+                    consecutiveFails = 0;
+                    if (offlineTimer) { clearTimeout(offlineTimer); offlineTimer = null; }
+                    // Re-check connectivity after a brief delay
+                    setTimeout(checkRealConnectivity, 1000);
+                }
+            });
         })();
