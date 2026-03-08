@@ -322,19 +322,9 @@
             const labelEl = document.getElementById('fs-selected-timeframe');
             if (labelEl) labelEl.textContent = period;
             
-            // Force loading state - clear previous chart visually
-            const fsCanvas = document.getElementById('fullscreen-chart');
-            if (fsCanvas) {
-                const ctx = fsCanvas.getContext('2d');
-                ctx.clearRect(0, 0, fsCanvas.width, fsCanvas.height);
-                ctx.fillStyle = '#0d0d1a';
-                ctx.fillRect(0, 0, fsCanvas.width, fsCanvas.height);
-                const rect = fsCanvas.parentElement.getBoundingClientRect();
-                ctx.fillStyle = '#3b82f6';
-                ctx.font = '14px Inter, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('Carregando...', rect.width / 2, rect.height / 2);
-            }
+            // Mostrar loading spinner
+            const fsLoading = document.getElementById('fs-crypto-loading');
+            if (fsLoading) { fsLoading.style.opacity = '1'; fsLoading.style.display = 'flex'; }
             
             // Recarregar dados - verificar se é modo indicador ou crypto
             if (window.fullscreenIndicatorMode) {
@@ -346,6 +336,9 @@
 
         async function loadFullscreenChartData() {
             if (!currentChartSymbol) return;
+            
+            const fsLoading = document.getElementById('fs-crypto-loading');
+            if (fsLoading) { fsLoading.style.opacity = '1'; fsLoading.style.display = 'flex'; }
             
             // O símbolo já está no formato correto (BTCUSDT, ETHUSDT, etc.)
             const symbol = currentChartSymbol;
@@ -374,12 +367,13 @@
                     }));
                     renderFullscreenChart();
                 } else {
-                    // Tentar renderizar mesmo assim com dados vazios para mostrar mensagem
                     renderFullscreenChart();
                 }
             } catch (error) {
                 renderFullscreenChart();
             }
+            const _fsLoading = document.getElementById('fs-crypto-loading');
+            if (_fsLoading) { _fsLoading.style.opacity = '0'; setTimeout(() => { if (_fsLoading) _fsLoading.style.display = 'none'; }, 300); }
         }
 
         // Variáveis para zoom e pan

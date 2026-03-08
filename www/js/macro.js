@@ -2224,6 +2224,9 @@
         async function loadIndicatorFullscreenData() {
             if (!window.fullscreenIndicatorMode || !window.fullscreenIndicatorSymbol) return;
             
+            const fsLoading = document.getElementById('fs-crypto-loading');
+            if (fsLoading) { fsLoading.style.opacity = '1'; fsLoading.style.display = 'flex'; }
+            
             const period = window.fullscreenIndicatorPeriod || '1h';
             
             // Mapear períodos para intervalo/range do Yahoo Finance
@@ -2280,6 +2283,8 @@
                 }
             } catch (error) {
             }
+            const _fsL = document.getElementById('fs-crypto-loading');
+            if (_fsL) { _fsL.style.opacity = '0'; setTimeout(() => { if (_fsL) _fsL.style.display = 'none'; }, 300); }
         }
         
         // Selecionar período no fullscreen de indicadores
@@ -2293,6 +2298,10 @@
             });
             const labelEl = document.getElementById('fs-selected-timeframe');
             if (labelEl) labelEl.textContent = period;
+            
+            // Mostrar loading
+            const fsLoading = document.getElementById('fs-crypto-loading');
+            if (fsLoading) { fsLoading.style.opacity = '1'; fsLoading.style.display = 'flex'; }
             
             // Recarregar dados
             loadIndicatorFullscreenData();

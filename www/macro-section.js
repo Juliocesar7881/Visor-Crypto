@@ -597,6 +597,7 @@
                 document.getElementById('macro-tf-label').textContent = label;
                 macroTfDropdown.classList.remove('open');
                 indicatorChartPeriod = period;
+                _chartRequestId++;
                 const canvas = document.getElementById('macro-chart-canvas');
                 const loadingEl = document.getElementById('macro-chart-loading');
                 if (canvas) { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); }
@@ -776,6 +777,9 @@
             <div style="flex: 1; padding: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom, 8px)); padding-left: max(8px, env(safe-area-inset-left, 8px)); padding-right: max(8px, env(safe-area-inset-right, 8px)); display: flex; flex-direction: column; overflow: hidden; min-height: 0;">
                 <div id="fs-chart-container" style="flex: 1; background: rgba(20,20,30,0.6); border-radius: 8px; padding: 8px; border: 1px solid rgba(255,255,255,0.08); position: relative; overflow: hidden; min-height: 0; touch-action: none; width: 100%;">
                     <canvas id="fs-chart-canvas" style="width: 100%; height: 100%; display: block; touch-action: none;"></canvas>
+                    <div id="fs-chart-loading" style="position:absolute;top:0;left:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(10,10,15,0.85);z-index:5;transition:opacity 0.3s ease;">
+                        <i class="fas fa-spinner fa-spin" style="color:#3b82f6;font-size:28px;"></i>
+                    </div>
                 </div>
             </div>
             <style>
@@ -878,20 +882,9 @@
                 document.getElementById('fs-macro-tf-label').textContent = shortLabel;
                 fsMacroTfDropdown.classList.remove('open');
                 indicatorChartPeriod = period;
-                // Force loading state
-                const canvas = document.getElementById('fs-chart-canvas');
-                if (canvas) {
-                    const ctx = canvas.getContext('2d');
-                    ctx.setTransform(1, 0, 0, 1, 0, 0);
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.fillStyle = '#0d0d1a';
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    const rect = canvas.parentElement.getBoundingClientRect();
-                    ctx.fillStyle = '#3b82f6';
-                    ctx.font = '14px Inter, sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('Carregando...', rect.width / 2, rect.height / 2);
-                }
+                _chartRequestId++;
+                const fsLoadingEl = document.getElementById('fs-chart-loading');
+                if (fsLoadingEl) { fsLoadingEl.style.opacity = '1'; fsLoadingEl.style.display = 'flex'; }
                 indicatorCandleData = null;
                 await loadFullscreenChartData(symbol);
             });
@@ -1010,12 +1003,16 @@
     }
 
     async function loadFullscreenChartData(symbol) {
+        const fsLoadingEl = document.getElementById('fs-chart-loading');
+        if (fsLoadingEl) { fsLoadingEl.style.opacity = '1'; fsLoadingEl.style.display = 'flex'; }
+        
         // Verificar cache
         const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
         const cached = chartDataCache[cacheKey];
         if (cached && (Date.now() - cached.timestamp) < CHART_CACHE_TTL) {
             macroLog(`📦 Fullscreen ${symbol} (${indicatorChartPeriod}) do cache`, 'info');
             indicatorCandleData = cached.data;
+            if (fsLoadingEl) { fsLoadingEl.style.opacity = '0'; setTimeout(() => { if (fsLoadingEl) fsLoadingEl.style.display = 'none'; }, 300); }
             if (indicatorChartType === 'candle') {
                 drawFullscreenCandleChart(indicatorCandleData, symbol);
             } else {
@@ -1031,6 +1028,7 @@
                 chartDataCache[cacheKey] = { data: indicatorCandleData, timestamp: Date.now() };
             }
             
+            if (fsLoadingEl) { fsLoadingEl.style.opacity = '0'; setTimeout(() => { if (fsLoadingEl) fsLoadingEl.style.display = 'none'; }, 300); }
             if (indicatorChartType === 'candle') {
                 drawFullscreenCandleChart(indicatorCandleData, symbol);
             } else {
@@ -1038,6 +1036,7 @@
             }
         } catch (e) {
             macroLog('Erro fullscreen chart: ' + e.message, 'error');
+            if (fsLoadingEl) { fsLoadingEl.style.opacity = '0'; setTimeout(() => { if (fsLoadingEl) fsLoadingEl.style.display = 'none'; }, 300); }
         }
     }
 
