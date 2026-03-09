@@ -439,14 +439,33 @@
                 const ma99 = calculateMA(closePrices, 99);
                 const ma200 = closePrices.length >= 200 ? calculateMA(closePrices, 200) : null;
                 
-                // Calcular Suporte e Resistência por Confluência
-                const recentPeriod = 20; // Últimos 20 dias
-                const recentHighs = highPrices.slice(-recentPeriod);
-                const recentLows = lowPrices.slice(-recentPeriod);
-                
-                // Encontrar níveis de pivô
-                const resistance = Math.max(...recentHighs);
-                const support = Math.min(...recentLows);
+                // Calcular Suporte e Resistência por Confluência (Swing Pivots + MAs)
+                const lookback = Math.min(klines.length, 100);
+                const recentKlines = klines.slice(-lookback);
+                const swingLows = [];
+                const swingHighs = [];
+                for (let i = 2; i < recentKlines.length - 2; i++) {
+                    const low = parseFloat(recentKlines[i][3]);
+                    const high = parseFloat(recentKlines[i][2]);
+                    if (low <= parseFloat(recentKlines[i-1][3]) && low <= parseFloat(recentKlines[i-2][3]) && 
+                        low <= parseFloat(recentKlines[i+1][3]) && low <= parseFloat(recentKlines[i+2][3])) {
+                        swingLows.push(low);
+                    }
+                    if (high >= parseFloat(recentKlines[i-1][2]) && high >= parseFloat(recentKlines[i-2][2]) && 
+                        high >= parseFloat(recentKlines[i+1][2]) && high >= parseFloat(recentKlines[i+2][2])) {
+                        swingHighs.push(high);
+                    }
+                }
+                const supportCandidates = swingLows.filter(l => l < currentPrice);
+                if (ema50 && ema50 < currentPrice) supportCandidates.push(ema50);
+                if (ma50 && ma50 < currentPrice) supportCandidates.push(ma50);
+                if (ma200 && ma200 < currentPrice) supportCandidates.push(ma200);
+                const resistanceCandidates = swingHighs.filter(h => h > currentPrice);
+                if (ema50 && ema50 > currentPrice) resistanceCandidates.push(ema50);
+                if (ma50 && ma50 > currentPrice) resistanceCandidates.push(ma50);
+                if (ma200 && ma200 > currentPrice) resistanceCandidates.push(ma200);
+                const support = supportCandidates.length > 0 ? Math.max(...supportCandidates) : currentPrice * 0.98;
+                const resistance = resistanceCandidates.length > 0 ? Math.min(...resistanceCandidates) : currentPrice * 1.02;
                 
                 // Calcular confluência (quantas MAs estão próximas do suporte/resistência)
                 const allMAs = [ema9, ema20, ema50, ma50, ma99, ma200].filter(m => m !== null);

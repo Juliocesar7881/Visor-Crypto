@@ -536,13 +536,13 @@
             const ema200_1h = calculateEMA(klines1h, 200);
             const ema200_4h = calculateEMA(klines4h, 200);
             
-            // Médias Móveis Adicionais para painel de MAs (usando klines DIÁRIOS, igual à seção Análise)
-            const ema9 = calculateEMA(klines1d, 9);
-            const ema20 = calculateEMA(klines1d, 20);
-            const ema50 = calculateEMA(klines1d, 50);
-            const sma50 = calculateSMA(klines1d, 50);
-            const sma99 = calculateSMA(klines1d, 99);
-            const sma200 = calculateSMA(klines1d, 200);
+            // Médias Móveis para painel de MAs (usando klines 1H para curto prazo)
+            const ema9 = calculateEMA(klines1h, 9);
+            const ema20 = calculateEMA(klines1h, 20);
+            const ema50 = calculateEMA(klines1h, 50);
+            const sma50 = calculateSMA(klines1h, 50);
+            const sma99 = calculateSMA(klines1h, 99);
+            const sma200 = calculateSMA(klines1h, 200);
             
             // ============================================
             // ANÁLISE GRÁFICA MULTI-TIMEFRAME (1m, 5m, 15m, 1h)
@@ -1655,7 +1655,7 @@
                 let longCount = 0, shortCount = 0;
                 const levels = [];
                 const now = Date.now();
-                const recentWindow = 24 * 60 * 60 * 1000; // últimas 24h
+                const recentWindow = 12 * 60 * 60 * 1000; // últimas 12h
                 
                 validForceOrders.forEach(order => {
                     const price = parseFloat(order.averagePrice || order.price);
@@ -3552,7 +3552,7 @@ Regras:
                             <i class="fas ${indicators.realLiquidations?.isRealData ? 'fa-bolt' : 'fa-calculator'}"></i>
                         </div>
                         <div>
-                            <div class="ta-section-title">${indicators.realLiquidations?.isRealData ? 'Liquidações Reais' : 'Liquidações Estimadas'}</div>
+                            <div class="ta-section-title">${indicators.realLiquidations?.isRealData ? 'Mapa de Liquidações (12h)' : 'Liquidações Estimadas'}</div>
                             <div class="ta-section-subtitle" style="color: ${indicators.realLiquidations?.isRealData ? '#22c55e' : '#f59e0b'};">${indicators.realLiquidations?.dataSource || 'Sem dados'}</div>
                         </div>
                     </div>

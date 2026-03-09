@@ -172,10 +172,8 @@
             
             const modal = document.getElementById('news-modal');
             const sentimentIcon = news.sentiment === 'positive' ? '<i class="fas fa-arrow-trend-up"></i>' : 
-                                  news.sentiment === 'negative' ? '<i class="fas fa-arrow-trend-down"></i>' : 
-                                  '<i class="fas fa-minus"></i>';
-            const sentimentText = news.sentiment === 'positive' ? 'Positiva' : 
-                                  news.sentiment === 'negative' ? 'Negativa' : 'Neutra';
+                                  '<i class="fas fa-arrow-trend-down"></i>';
+            const sentimentText = news.sentiment === 'positive' ? 'Positiva' : 'Negativa';
             
             // Traduzir título se ainda não foi traduzido
             if (!news.translatedTitle) {
@@ -914,10 +912,15 @@
             // Classificar por diferença de score
             if (positiveScore > negativeScore) return 'positive';
             if (negativeScore > positiveScore) return 'negative';
-            // Empate com indicadores dos dois lados = neutro (ambíguo)
-            if (positiveScore > 0 && negativeScore > 0) return 'neutral';
-            // Sem indicadores = neutro
-            return 'neutral';
+            // Empate com indicadores dos dois lados = classificar pelo contexto
+            if (positiveScore > 0 && negativeScore > 0) {
+                // Palavras negativas de alto impacto (hack, scam, crash) têm prioridade
+                const highImpactNeg = ['hack', 'hacked', 'exploit', 'scam', 'fraud', 'collapse', 'crash', 'ban', 'banned'];
+                if (highImpactNeg.some(w => lower.includes(w))) return 'negative';
+                return 'positive';
+            }
+            // Sem indicadores = positiva (notícia informativa/neutra sobre crypto é geralmente positiva)
+            return 'positive';
         }
 
         function categorizeRelevance(title) {
@@ -1603,10 +1606,8 @@
                 
                 const modal = document.getElementById('news-modal');
                 const sentimentIcon = news.sentiment === 'positive' ? '<i class="fas fa-arrow-trend-up"></i>' : 
-                                      news.sentiment === 'negative' ? '<i class="fas fa-arrow-trend-down"></i>' : 
-                                      '<i class="fas fa-minus"></i>';
-                const sentimentText = news.sentiment === 'positive' ? 'Positiva' : 
-                                      news.sentiment === 'negative' ? 'Negativa' : 'Neutra';
+                                      '<i class="fas fa-arrow-trend-down"></i>';
+                const sentimentText = news.sentiment === 'positive' ? 'Positiva' : 'Negativa';
                 
                 // Traduzir título se ainda não foi traduzido
                 if (!news.translatedTitle) {
@@ -1634,7 +1635,7 @@
             // Atualizar modal
             document.getElementById('news-modal-source').textContent = `🔥 ${news.source}`;
             document.getElementById('news-modal-sentiment').className = `news-modal-sentiment hot`;
-            document.getElementById('news-modal-sentiment').innerHTML = `<i class="fas fa-fire"></i> Relevante ${news.sentiment !== 'neutral' ? '• ' + sentimentText : ''}`;
+            document.getElementById('news-modal-sentiment').innerHTML = `<i class="fas fa-fire"></i> Relevante • ${sentimentText}`;
             document.getElementById('news-modal-title').textContent = translatedTitle;
             document.getElementById('news-modal-summary').textContent = summary;
             document.getElementById('news-modal-time-text').textContent = `${timeAgo} \u2022 ${shortDateH}`;
@@ -1829,8 +1830,8 @@
                     sentimentClass = 'negative';
                 } else {
                     sentimentIcon = '';
-                    sentimentText = 'Neutra';
-                    sentimentClass = 'neutral';
+                    sentimentText = 'Positiva';
+                    sentimentClass = 'positive';
                 }
                 
                 const timeAgo = getTimeAgo(news.published);
