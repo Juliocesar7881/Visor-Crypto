@@ -813,7 +813,10 @@
                 return null;
             }
             
-            const [yhRes, fgiRes, wbCpiRes, wbUnempRes] = await Promise.all([
+            const FRED_KEY = '289c022214958a3eb611142e8dc34f6b';
+            const fredFetch = (seriesId) => fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=1&api_key=${FRED_KEY}&file_type=json`, { signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : null).catch(() => null);
+            
+            const [yhRes, fgiRes, wbCpiRes, wbUnempRes, fredCpi, fredPce, fredUnemp, fredIsm] = await Promise.all([
                 fetchYahoo(),
                 // Crypto Fear & Greed Index — free, no key
                 fetch('https://api.alternative.me/fng/?limit=1&format=json')
@@ -823,7 +826,15 @@
                     .then(r => r.ok ? r.json() : null).catch(() => null),
                 // US Unemployment from World Bank — free, no key
                 fetch('https://api.worldbank.org/v2/country/US/indicator/SL.UEM.TOTL.ZS?format=json&mrv=1&per_page=1')
-                    .then(r => r.ok ? r.json() : null).catch(() => null)
+                    .then(r => r.ok ? r.json() : null).catch(() => null),
+                // FRED: CPI YoY (CPIAUCSL → monthly)
+                fredFetch('CPIAUCSL'),
+                // FRED: PCE Price Index (PCEPI → monthly)
+                fredFetch('PCEPI'),
+                // FRED: Unemployment Rate (UNRATE → monthly)
+                fredFetch('UNRATE'),
+                // FRED: ISM Manufacturing PMI (MANEMP → monthly, proxy ISM)
+                fredFetch('ISM/MAN_PMI').catch(() => fredFetch('NAPM'))
             ]);
             
             // === PROCESS YAHOO FINANCE DATA ===
@@ -1008,6 +1019,67 @@
                     icon: '🏛️', unit: '%',
                     note: 'Tempo real via Yahoo Finance'
                 });
+            }
+            
+            // === FRED API INDICATORS (monthly, near real-time) ===
+            // CPI from FRED (overrides World Bank if available)
+            const fredCpiObs = fredCpi?.observations?.[0];
+            if (fredCpiObs?.value && fredCpiObs.value !== '.') {
+                const cpiVal = parseFloat(fredCpiObs.value);
+                const existingCpi = results.macroIndicators.findIndex(m => m.name.includes('CPI'));
+                const cpiEntry = {
+                    name: 'CPI EUA (Índice Mensal)',
+                    value: cpiVal.toFixed(1),
+                    date: fredCpiObs.date,
+                    icon: '📊', unit: '',
+                    note: 'FRED API — mensal'
+                };
+                if (existingCpi >= 0) results.macroIndicators[existingCpi] = cpiEntry;
+                else results.macroIndicators.push(cpiEntry);
+            }
+            
+            // PCE from FRED
+            const fredPceObs = fredPce?.observations?.[0];
+            if (fredPceObs?.value && fredPceObs.value !== '.') {
+                results.macroIndicators.push({
+                    name: 'PCE Price Index',
+                    value: parseFloat(fredPceObs.value).toFixed(1),
+                    date: fredPceObs.date,
+                    icon: '💵', unit: '',
+                    note: 'FRED API — indicador preferido do Fed'
+                });
+            }
+            
+            // Unemployment from FRED (overrides World Bank if available)
+            const fredUnempObs = fredUnemp?.observations?.[0];
+            if (fredUnempObs?.value && fredUnempObs.value !== '.') {
+                const unempVal = parseFloat(fredUnempObs.value);
+                const existingUnemp = results.macroIndicators.findIndex(m => m.name.includes('Desemprego'));
+                const unempEntry = {
+                    name: 'Desemprego EUA',
+                    value: unempVal.toFixed(1),
+                    date: fredUnempObs.date,
+                    icon: '👷', unit: '%',
+                    note: 'FRED API — mensal'
+                };
+                if (existingUnemp >= 0) results.macroIndicators[existingUnemp] = unempEntry;
+                else results.macroIndicators.push(unempEntry);
+                if (unempVal > 5) results.bigTechScore -= 0.5;
+            }
+            
+            // ISM Manufacturing PMI from FRED
+            const fredIsmObs = fredIsm?.observations?.[0];
+            if (fredIsmObs?.value && fredIsmObs.value !== '.') {
+                const ismVal = parseFloat(fredIsmObs.value);
+                results.macroIndicators.push({
+                    name: 'ISM Manufacturing PMI',
+                    value: ismVal.toFixed(1),
+                    date: fredIsmObs.date,
+                    icon: '🏭', unit: '',
+                    note: ismVal >= 50 ? 'Expansão' : 'Contração'
+                });
+                if (ismVal < 48) results.bigTechScore -= 0.5;
+                else if (ismVal > 55) results.bigTechScore += 0.3;
             }
             
             // Clamp score

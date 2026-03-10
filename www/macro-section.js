@@ -4321,7 +4321,7 @@
         setTimeout(() => connectMacroWebSocket(), 1000);
         
         macroIntervals.fedWatch = setInterval(updateFedWatch, 30 * 60 * 1000);
-        macroIntervals.calendar = setInterval(updateEconomicCalendar, 60 * 60 * 1000);
+        macroIntervals.calendar = setInterval(updateEconomicCalendar, 30 * 60 * 1000); // 30 min refresh
     }
 
     function stopMacroUpdates() {

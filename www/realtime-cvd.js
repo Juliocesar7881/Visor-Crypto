@@ -21,7 +21,7 @@
     // CONFIG
     // ═══════════════════════════════════════════════════
     const WS_BASE_URL = 'wss://stream.binance.com:9443/ws/';
-    const MAX_TRADES_BUFFER = 10000;     // Máximo de trades armazenados
+    const MAX_TRADES_BUFFER = 3000;     // Máximo de trades armazenados (reduzido para evitar crash de memória)
     const ICEBERG_VOLUME_MULT = 5;       // Volume > 5x média = potencial iceberg
     const ICEBERG_PRICE_THRESHOLD = 0.02; // Menos de 0.02% de movimento = absorção
     const RECONNECT_BASE_MS = 2000;

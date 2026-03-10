@@ -9,6 +9,24 @@
         const _dirtyFlags = { home: false, news: false, analysis: false, whale: false };
 
         function handleBackButton() {
+            // ====== WHALE PERIOD MODAL ======
+            const whalePeriodModal = document.getElementById('whale-period-modal');
+            if (whalePeriodModal) {
+                whalePeriodModal.remove();
+                document.body.style.overflow = '';
+                _lastModalCloseTime = Date.now();
+                return true;
+            }
+
+            // ====== AVISO LEGAL MODAL ======
+            const avisoLegalModal = document.getElementById('aviso-legal-modal');
+            if (avisoLegalModal) {
+                avisoLegalModal.remove();
+                document.body.style.overflow = '';
+                _lastModalCloseTime = Date.now();
+                return true;
+            }
+            
             // ====== WHALE TX HISTORY MODAL ======
             const whaleTxModal = document.getElementById('whale-tx-modal');
             if (whaleTxModal) {

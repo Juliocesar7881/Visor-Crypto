@@ -39,27 +39,28 @@
                 try { fetchCryptoStats(); } catch(e) { /* console.error('CryptoStats error:', e); */ }
                 try { fetchMovingAverages(); } catch(e) { /* console.error('MA error:', e); */ }
                 try { 
-                    fetchWhaleActivity('1h'); 
-                    startWhaleActivityAutoRefresh(); 
-                } catch(e) { /* console.error('WhaleActivity error:', e); */ }
+                    fetchExchangeFlow('1h'); 
+                    startExchangeFlowAutoRefresh(); 
+                } catch(e) { /* console.error('ExchangeFlow error:', e); */ }
             }, 1000);
             
-            // AI update every 10s (was 2s — reduces DOM thrashing)
-            window._aiRefreshId = setInterval(() => { try { const r = updateAIRecommendation(); if (r && r.catch) r.catch(()=>{}); } catch(e) {} }, 10000);
+            // AI update every 30s (was 10s — reduces CPU & network load on mobile)
+            window._aiRefreshId = setInterval(() => { try { if (document.hidden) return; const r = updateAIRecommendation(); if (r && r.catch) r.catch(()=>{}); } catch(e) {} }, 30000);
             
             // Whale Activity: 5 min auto-refresh configurado na função startWhaleActivityAutoRefresh
             
             // v7.1: Managed auto-refresh intervals (can be paused/resumed)
+            // v8: Reduced intervals to prevent crash on low-end devices
             const _autoRefreshConfigs = [
-                { fn: fetchPricesViaREST, ms: 3000, label: 'prices' },
-                { fn: fetchOrderBook, ms: 2000, label: 'orderbook' },
-                { fn: fetchAltseasonIndex, ms: 60000, label: 'altseason' },
+                { fn: fetchPricesViaREST, ms: 10000, label: 'prices' },
+                { fn: fetchOrderBook, ms: 30000, label: 'orderbook' },
+                { fn: fetchAltseasonIndex, ms: 300000, label: 'altseason' },
                 { fn: fetchNews, ms: 300000, label: 'news' },
-                { fn: fetchFearGreed, ms: 120000, label: 'feargreed' },
-                { fn: fetchGlobalData, ms: 60000, label: 'globaldata' },
-                { fn: fetchVolume, ms: 10000, label: 'volume' },
-                { fn: fetchCryptoStats, ms: 60000, label: 'stats' },
-                { fn: fetchMovingAverages, ms: 30000, label: 'ma' },
+                { fn: fetchFearGreed, ms: 300000, label: 'feargreed' },
+                { fn: fetchGlobalData, ms: 120000, label: 'globaldata' },
+                { fn: fetchVolume, ms: 30000, label: 'volume' },
+                { fn: fetchCryptoStats, ms: 120000, label: 'stats' },
+                { fn: fetchMovingAverages, ms: 60000, label: 'ma' },
             ];
             window._autoRefreshIds = [];
             window._autoRefreshConfigs = _autoRefreshConfigs;
@@ -79,6 +80,7 @@
                     const timerId = setTimeout(() => {
                         intervalId = setInterval(() => { 
                             try { 
+                                if (document.hidden) return;
                                 const r = c.fn(); 
                                 if (r && typeof r.catch === 'function') r.catch(e => {}); 
                             } catch(e) {} 

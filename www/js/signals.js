@@ -468,6 +468,16 @@
             const details = document.getElementById('notif-config-details');
             if (details) details.style.display = checked ? 'block' : 'none';
             updateBellIcon(checked);
+            
+            // Request notification permissions when enabling
+            if (checked) {
+                try {
+                    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+                        window.Capacitor.Plugins.LocalNotifications.requestPermissions().catch(() => {});
+                    }
+                } catch(e) {}
+            }
+            
             saveNotifConfig();
         }
 
@@ -901,6 +911,7 @@
 
         async function runAutoScan() {
             if (isScanning) return;
+            if (document.hidden) return;
             const prefs = getSignalPrefs();
             if (!prefs.masterEnabled) return;
 
@@ -1041,14 +1052,14 @@
             }
         };
 
-        // Auto-start on page load if master was enabled
+        // Auto-start on page load — only init notification listeners, do NOT auto-scan
+        // (auto-scan removed to prevent unwanted signals on app open)
         document.addEventListener('DOMContentLoaded', () => {
             setTimeout(async () => {
                 const prefs = getSignalPrefs();
                 if (prefs.masterEnabled) {
                     await initLocalNotifications();
-                    await startBackgroundService();
-                    startAutoScan();
+                    // Background service + auto-scan only start from Dashboard toggle
                 }
 
                 // Listen for notification taps → go to Dashboard

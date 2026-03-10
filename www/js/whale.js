@@ -26,68 +26,211 @@
         };
 
         // ============================================
-        // ACUMULADOR LOCAL DE TRANSAÇÕES
-        // Armazena txs de cada fetch para construir histórico
+        // EXCHANGE FLOW — Fluxo de todo o mercado via Binance
+        // Taker Buy/Sell Vol agregado dos top pares = proxy de fluxo real
         // ============================================
-        const TX_STORE_KEY = 'vc_whale_tx_store_v1';
-        const TX_STORE_MAX_AGE = 31536000000; // 1 ano em ms
-        const TX_STORE_MAX_ENTRIES = 5000;
-        let _txStore = {};
+        let _whaleViewMode = 'exchange'; // 'exchange' only (on-chain removed)
+        let _efMarketType = 'futures'; // 'futures' | 'spot'
+        let _efLoading = false; // loading state for UI spinner
+        let _exchangeFlowData = {
+            inflow: 0,       // taker buy vol (capital entrando)
+            outflow: 0,      // taker sell vol (capital saindo)
+            totalVolume: 0,
+            direction: 'neutral',
+            interpretation: '',
+            interpColor: '#eab308',
+            interpIcon: '🟡',
+            lastUpdate: null,
+            period: '1h',
+            pairsCount: 0,
+            error: false
+        };
+        let _exchangeFlowInterval = null;
 
-        (function loadTxStore() {
-            try {
-                const raw = localStorage.getItem(TX_STORE_KEY);
-                if (raw) _txStore = JSON.parse(raw);
-                // Purge entries older than max age
-                const cutoff = Date.now() - TX_STORE_MAX_AGE;
-                let changed = false;
-                for (const txid in _txStore) {
-                    if ((_txStore[txid]._storedAt || 0) < cutoff) {
-                        delete _txStore[txid];
-                        changed = true;
-                    }
-                }
-                if (changed) _saveTxStore();
-            } catch(e) { _txStore = {}; }
-        })();
+        const EF_TOP_PAIRS = ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT','ADAUSDT','AVAXUSDT','LINKUSDT','DOTUSDT'];
+        const EF_PERIOD_MAP = {
+            '1h':  { period: '5m',  limit: 12 },
+            '12h': { period: '1h',  limit: 12 },
+            '1d':  { period: '1h',  limit: 24 },
+            '1s':  { period: '4h',  limit: 42 },
+            '1m':  { period: '1d',  limit: 30 },
+            '1a':  { period: '1d',  limit: 365 }
+        };
 
-        function _saveTxStore() {
+        async function fetchExchangeFlow(period) {
+            if (_exchangeFlowFetching) return;
+            _exchangeFlowFetching = true;
+            _efLoading = true;
+            renderWhaleActivityUI(); // show loading spinner immediately
             try {
-                // Se exceder limite, remover mais antigos
-                const keys = Object.keys(_txStore);
-                if (keys.length > TX_STORE_MAX_ENTRIES) {
-                    const sorted = keys.sort((a, b) => (_txStore[a]._storedAt || 0) - (_txStore[b]._storedAt || 0));
-                    const toRemove = sorted.slice(0, keys.length - TX_STORE_MAX_ENTRIES);
-                    toRemove.forEach(k => delete _txStore[k]);
-                }
-                localStorage.setItem(TX_STORE_KEY, JSON.stringify(_txStore));
-            } catch(e) {}
+            period = period || whaleActivityPeriod || '1h';
+            const mapped = EF_PERIOD_MAP[period] || EF_PERIOD_MAP['1h'];
+
+            if (_efMarketType === 'spot') {
+                await _fetchSpotFlow(period, mapped);
+            } else {
+                await _fetchFuturesFlow(period, mapped);
+            }
+            } finally { _exchangeFlowFetching = false; _efLoading = false; }
         }
 
+        // Spot klines: field 5 = volume (base), field 7 = quote volume, field 10 = taker buy quote vol
+        const EF_SPOT_PAIRS = ['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT','ADAUSDT','AVAXUSDT','LINKUSDT','DOTUSDT'];
+        const EF_SPOT_PERIOD_MAP = {
+            '1h':  { interval: '5m',  limit: 12 },
+            '12h': { interval: '1h',  limit: 12 },
+            '1d':  { interval: '1h',  limit: 24 },
+            '1s':  { interval: '4h',  limit: 42 },
+            '1m':  { interval: '1d',  limit: 30 },
+            '1a':  { interval: '1d',  limit: 365 }
+        };
+
+        async function _fetchSpotFlow(period, mapped) {
+            const spotMapped = EF_SPOT_PERIOD_MAP[period] || EF_SPOT_PERIOD_MAP['1h'];
+            try {
+                const klinesPromises = EF_SPOT_PAIRS.map(sym =>
+                    fetch(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${spotMapped.interval}&limit=${spotMapped.limit}`)
+                        .then(r => r.ok ? r.json() : []).catch(() => [])
+                );
+                const allKlines = await Promise.all(klinesPromises);
+
+                let totalBuy = 0, totalSell = 0;
+                let pairsWithData = 0;
+                EF_SPOT_PAIRS.forEach((sym, i) => {
+                    const klines = allKlines[i];
+                    if (!Array.isArray(klines) || klines.length === 0) return;
+                    pairsWithData++;
+                    klines.forEach(k => {
+                        const quoteVol = parseFloat(k[7]) || 0;       // total quote volume (USD)
+                        const takerBuyQuote = parseFloat(k[10]) || 0;  // taker buy quote volume
+                        const takerSellQuote = quoteVol - takerBuyQuote;
+                        totalBuy += takerBuyQuote;
+                        totalSell += takerSellQuote;
+                    });
+                });
+
+                const totalVol = totalBuy + totalSell;
+                const ratio = totalSell > 0 ? totalBuy / totalSell : 1;
+                let direction = 'neutral', interpretation = '', interpColor = '#eab308', interpIcon = '🟡';
+
+                if (ratio > 1.03) {
+                    direction = 'acumulando';
+                    interpretation = 'Compras dominam no spot — capital entrando no mercado';
+                    interpColor = '#22c55e'; interpIcon = '🟢';
+                } else if (ratio < 0.97) {
+                    direction = 'vendendo';
+                    interpretation = 'Vendas dominam no spot — capital saindo do mercado';
+                    interpColor = '#ef4444'; interpIcon = '🔴';
+                } else {
+                    interpretation = 'Fluxo equilibrado no spot — mercado indeciso';
+                }
+
+                _exchangeFlowData = {
+                    inflow: totalBuy, outflow: totalSell, totalVolume: totalVol,
+                    direction, interpretation, interpColor, interpIcon,
+                    lastUpdate: new Date(), period, pairsCount: pairsWithData,
+                    error: false, marketType: 'spot'
+                };
+            } catch (e) {
+                _exchangeFlowData.error = true;
+            }
+            renderWhaleActivityUI();
+        }
+
+        async function _fetchFuturesFlow(period, mapped) {
+            try {
+                // Preços atuais para converter volume em USD
+                const pricesRes = await fetch('https://fapi.binance.com/fapi/v1/ticker/price');
+                const allPrices = await pricesRes.json();
+                const priceMap = {};
+                (Array.isArray(allPrices) ? allPrices : []).forEach(p => { priceMap[p.symbol] = parseFloat(p.price); });
+
+                // Taker buy/sell ratio para cada par
+                const ratioPromises = EF_TOP_PAIRS.map(sym =>
+                    fetch(`https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=${sym}&period=${mapped.period}&limit=${mapped.limit}`)
+                        .then(r => r.ok ? r.json() : []).catch(() => [])
+                );
+                const ratios = await Promise.all(ratioPromises);
+
+                let totalBuy = 0, totalSell = 0;
+                let pairsWithData = 0;
+                EF_TOP_PAIRS.forEach((sym, i) => {
+                    const price = priceMap[sym] || 0;
+                    const data = ratios[i];
+                    if (!Array.isArray(data) || data.length === 0 || !price) return;
+                    pairsWithData++;
+                    data.forEach(r => {
+                        totalBuy  += parseFloat(r.buyVol || 0) * price;
+                        totalSell += parseFloat(r.sellVol || 0) * price;
+                    });
+                });
+
+                const totalVol = totalBuy + totalSell;
+                const ratio = totalSell > 0 ? totalBuy / totalSell : 1;
+                let direction = 'neutral', interpretation = '', interpColor = '#eab308', interpIcon = '🟡';
+
+                if (ratio > 1.03) {
+                    direction = 'acumulando';
+                    interpretation = 'Compras dominam nas exchanges — capital entrando no mercado';
+                    interpColor = '#22c55e'; interpIcon = '🟢';
+                } else if (ratio < 0.97) {
+                    direction = 'vendendo';
+                    interpretation = 'Vendas dominam nas exchanges — capital saindo do mercado';
+                    interpColor = '#ef4444'; interpIcon = '🔴';
+                } else {
+                    interpretation = 'Fluxo equilibrado nas exchanges — mercado indeciso';
+                }
+
+                _exchangeFlowData = {
+                    inflow: totalBuy,
+                    outflow: totalSell,
+                    totalVolume: totalVol,
+                    direction,
+                    interpretation, interpColor, interpIcon,
+                    lastUpdate: new Date(),
+                    period,
+                    pairsCount: pairsWithData,
+                    error: false,
+                    marketType: 'futures'
+                };
+            } catch (e) {
+                _exchangeFlowData.error = true;
+                console.warn('[ExchangeFlow]', e.message);
+            }
+            renderWhaleActivityUI();
+        }
+
+        let _exchangeFlowFetching = false;
+        function startExchangeFlowAutoRefresh() {
+            if (_exchangeFlowInterval) clearInterval(_exchangeFlowInterval);
+            _exchangeFlowInterval = setInterval(() => {
+                if (document.hidden) return;
+                if (_exchangeFlowFetching) return;
+                fetchExchangeFlow(whaleActivityPeriod);
+            }, 120000); // 2 min
+        }
+
+        function switchWhaleView(mode) {
+            if (_whaleViewMode === mode) return;
+            _whaleViewMode = mode;
+            if (mode === 'exchange') {
+                fetchExchangeFlow(whaleActivityPeriod);
+                startExchangeFlowAutoRefresh();
+            }
+            renderWhaleActivityUI();
+        }
+
+        // ============================================
+        // TX STORE — stub functions (localStorage removed)
+        // On-chain agora usa apenas dados frescos do mempool
+        // ============================================
+        let _txStore = {};
+        function _saveTxStore() {}
         function storeTx(tx) {
             if (!tx || !tx.txid) return;
-            if (!_txStore[tx.txid]) {
-                _txStore[tx.txid] = { ...tx, _storedAt: Date.now() };
-            } else {
-                // Atualizar classificação se melhorou
-                if (tx.flowType !== 'unknown' && _txStore[tx.txid].flowType === 'unknown') {
-                    _txStore[tx.txid] = { ...tx, _storedAt: _txStore[tx.txid]._storedAt || Date.now() };
-                }
-            }
+            _txStore[tx.txid] = tx;
         }
-
-        function getStoredTxsForPeriod(periodStart) {
-            const result = [];
-            const startMs = periodStart * 1000;
-            for (const txid in _txStore) {
-                const tx = _txStore[txid];
-                const txTime = tx.time ? new Date(tx.time).getTime() : (tx._storedAt || 0);
-                if (txTime >= startMs) {
-                    result.push(tx);
-                }
-            }
-            return result;
-        }
+        function getStoredTxsForPeriod() { return []; }
         
         // Limite mínimo: $50k USD para transação grande (mais resultados)
         const WHALE_MIN_USD = 50000;
@@ -1570,6 +1713,11 @@
         
         // Função principal
         async function fetchWhaleActivity(period = '1h') {
+            if (_whaleActivityFetching) return;
+            _whaleActivityFetching = true;
+            try { await _fetchWhaleActivityInner(period); } finally { _whaleActivityFetching = false; }
+        }
+        async function _fetchWhaleActivityInner(period = '1h') {
             let config = WHALE_PERIODS[period];
             if (!config) {
                 period = '1h';
@@ -1662,20 +1810,9 @@
                         coveragePct, dataSpanSeconds
                     };
                     
-                    try { localStorage.setItem('whale_last_good', JSON.stringify({ data: whaleActivityData, timestamp: Date.now() })); } catch(e) {}
+                    try { /* dados mantidos apenas em memoria */ } catch(e) {}
                 } else {
-                    // Cache fallback
-                    try {
-                        const cached = JSON.parse(localStorage.getItem('whale_last_good'));
-                        if (cached && cached.data && cached.timestamp && (Date.now() - cached.timestamp) < 15 * 60 * 1000) {
-                            whaleActivityData = cached.data;
-                            whaleActivityData._cacheAge = Math.round((Date.now() - cached.timestamp) / 60000);
-                        } else {
-                            whaleActivityData = { transactions: [], totalVolume: 0, toExchange: 0, fromExchange: 0, direction: 'neutral', count: 0, btcPrice, noData: true };
-                        }
-                    } catch(e) {
-                        whaleActivityData = { transactions: [], totalVolume: 0, toExchange: 0, fromExchange: 0, direction: 'neutral', count: 0, btcPrice, noData: true };
-                    }
+                    whaleActivityData = { transactions: [], totalVolume: 0, toExchange: 0, fromExchange: 0, direction: 'neutral', count: 0, btcPrice, noData: true };
                 }
                 
                 whaleActivityLastUpdate = new Date();
@@ -1939,9 +2076,12 @@
         }
         
         // Iniciar atualização automática a cada 2 minutos (dados reais!)
+        let _whaleActivityFetching = false;
         function startWhaleActivityAutoRefresh() {
             if (whaleActivityInterval) clearInterval(whaleActivityInterval);
             whaleActivityInterval = setInterval(() => {
+                if (document.hidden) return;
+                if (_whaleActivityFetching) return;
                 fetchWhaleActivity(whaleActivityPeriod);
             }, 120000); // 2 minutos para dados mais frescos
         }
@@ -2016,6 +2156,109 @@
             }
             
             requestAnimationFrame(() => {
+
+            // ── Exchange Flow view ──
+            if (_whaleViewMode === 'exchange') {
+                const ef = _exchangeFlowData;
+                const efUpdate = ef.lastUpdate ? ef.lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+                const fmtVol = formatVolume;
+                const efOutflow = ef.outflow || 0;
+                const efInflow = ef.inflow || 0;
+                const efTotal = efOutflow + efInflow;
+                const efOutPct = efTotal > 0 ? (efOutflow / efTotal * 100).toFixed(0) : 50;
+                const efInPct = efTotal > 0 ? (efInflow / efTotal * 100).toFixed(0) : 50;
+                const efInterpColor = ef.interpColor || '#eab308';
+                const efInterpIcon = ef.interpIcon || '🟡';
+                const isFutures = _efMarketType === 'futures';
+                const marketLabel = isFutures ? 'Futures' : 'Spot';
+
+                container.innerHTML = `
+                <div class="card-header" style="flex-wrap: wrap; gap: 8px;">
+                    <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width:32px;height:32px;background:linear-gradient(135deg,#f59e0b,#ef4444);border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(245,158,11,0.3);">
+                            <i class="fas fa-exchange-alt" style="color:white;font-size:14px;"></i>
+                        </div>
+                        <div>
+                            <div style="font-size:15px;font-weight:700;">Fluxo de Exchange</div>
+                            <div style="font-size:10px;color:var(--text-muted);font-weight:400;">Binance ${marketLabel} (${ef.pairsCount || 0} pares) • ${efUpdate}</div>
+                        </div>
+                    </div>
+                    <button onclick="openWhalePeriodModal()"
+                        style="display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);color:#f59e0b;font-size:12px;font-weight:700;cursor:pointer;transition:all 0.2s;">
+                        <i class="fas fa-clock" style="font-size:10px;"></i>
+                        ${periodLabel.toUpperCase()}
+                        <i class="fas fa-chevron-down" style="font-size:8px;opacity:0.7;"></i>
+                    </button>
+                </div>
+                <!-- Futures / Spot toggle -->
+                <div style="display:flex;gap:4px;padding:0 16px;margin-top:6px;">
+                    <button onclick="switchEfMarketType('futures')" style="flex:1;padding:7px;border-radius:8px;border:1px solid ${isFutures ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.08)'};background:${isFutures ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.03)'};color:${isFutures ? '#f59e0b' : '#9ca3af'};font-size:12px;font-weight:${isFutures ? '700' : '600'};cursor:pointer;">
+                        <i class="fas fa-bolt" style="margin-right:4px;font-size:10px;"></i>Futures
+                    </button>
+                    <button onclick="switchEfMarketType('spot')" style="flex:1;padding:7px;border-radius:8px;border:1px solid ${!isFutures ? 'rgba(59,130,246,0.4)' : 'rgba(255,255,255,0.08)'};background:${!isFutures ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.03)'};color:${!isFutures ? '#60a5fa' : '#9ca3af'};font-size:12px;font-weight:${!isFutures ? '700' : '600'};cursor:pointer;">
+                        <i class="fas fa-coins" style="margin-right:4px;font-size:10px;"></i>Spot
+                    </button>
+                </div>
+                <div style="padding:16px;">
+                    ${_efLoading ? `
+                        <div style="text-align:center;padding:24px;color:var(--text-muted);">
+                            <i class="fas fa-circle-notch fa-spin" style="font-size:24px;color:#f59e0b;margin-bottom:10px;"></i>
+                            <div style="font-size:13px;">Carregando dados...</div>
+                        </div>
+                    ` : ef.error ? `
+                        <div style="text-align:center;padding:20px;color:#ef4444;">
+                            <i class="fas fa-exclamation-triangle" style="font-size:20px;margin-bottom:8px;"></i>
+                            <div style="font-size:13px;">Erro ao buscar dados de fluxo</div>
+                        </div>
+                    ` : !ef.lastUpdate ? `
+                        <div style="text-align:center;padding:20px;color:var(--text-muted);">
+                            <i class="fas fa-spinner fa-spin" style="font-size:20px;margin-bottom:8px;"></i>
+                            <div style="font-size:13px;">Carregando fluxo das exchanges...</div>
+                        </div>
+                    ` : `
+                        <!-- Outflow / Inflow -->
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                            <div style="background:rgba(239,68,68,0.08);padding:14px 10px;border-radius:12px;border:1px solid rgba(239,68,68,0.2);text-align:center;min-width:0;overflow:hidden;">
+                                <div style="font-size:11px;color:#ef4444;font-weight:700;margin-bottom:8px;text-transform:uppercase;">Vendas (Outflow)</div>
+                                <div style="font-size:20px;font-weight:800;color:#ef4444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${fmtVol(efOutflow)}</div>
+                                <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Taker sells (${efOutPct}%)</div>
+                            </div>
+                            <div style="background:rgba(34,197,94,0.08);padding:14px 10px;border-radius:12px;border:1px solid rgba(34,197,94,0.2);text-align:center;min-width:0;overflow:hidden;">
+                                <div style="font-size:11px;color:#22c55e;font-weight:700;margin-bottom:8px;text-transform:uppercase;">Compras (Inflow)</div>
+                                <div style="font-size:20px;font-weight:800;color:#22c55e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${fmtVol(efInflow)}</div>
+                                <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Taker buys (${efInPct}%)</div>
+                            </div>
+                        </div>
+
+                        <!-- Barra de fluxo -->
+                        <div style="margin-bottom:16px;">
+                            <div style="background:#22c55e;border-radius:6px;overflow:hidden;height:8px;">
+                                <div style="height:100%;width:${efOutPct}%;background:#ef4444;transition:width 0.5s;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Interpretação -->
+                        <div style="padding:14px;background:${efInterpColor}10;border:1px solid ${efInterpColor}30;border-radius:12px;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="font-size:24px;">${efInterpIcon}</span>
+                                <div style="font-size:13px;font-weight:600;color:${efInterpColor};line-height:1.4;">
+                                    ${ef.interpretation}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Volume total -->
+                        <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--text-muted);">
+                            Volume total: <strong style="color:var(--text-secondary);">${fmtVol(ef.totalVolume || 0)}</strong>
+                            • ${ef.pairsCount || 0} pares monitorados
+                        </div>
+                    `}
+                </div>
+                `;
+                return;
+            }
+
+            // ── On-Chain view (original) ──
             container.innerHTML = `
                 <div class="card-header" style="flex-wrap: wrap; gap: 8px;">
                     <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
@@ -2047,6 +2290,15 @@
                         <i class="fas fa-clock" style="font-size: 10px;"></i>
                         ${periodLabel.toUpperCase()}
                         <i class="fas fa-chevron-down" style="font-size: 8px; opacity: 0.7;"></i>
+                    </button>
+                </div>
+                <!-- Toggle tabs -->
+                <div style="display:flex;gap:4px;padding:0 16px;margin-top:4px;">
+                    <button onclick="switchWhaleView('onchain')" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(59,130,246,0.4);background:rgba(59,130,246,0.12);color:#60a5fa;font-size:12px;font-weight:700;cursor:pointer;">
+                        <i class="fas fa-water" style="margin-right:4px;"></i>On-Chain
+                    </button>
+                    <button onclick="switchWhaleView('exchange')" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);color:#9ca3af;font-size:12px;font-weight:600;cursor:pointer;">
+                        <i class="fas fa-exchange-alt" style="margin-right:4px;"></i>Exchange Flow
                     </button>
                 </div>
                 
@@ -2127,12 +2379,12 @@
             if (existing) existing.remove();
             
             const periods = [
-                { key: '1h',  label: '1 Hora',    icon: '⏱️', desc: 'Dados em tempo real do mempool' },
-                { key: '12h', label: '12 Horas',   icon: '🕐', desc: 'Dados acumulados das últimas 12h' },
-                { key: '1d',  label: '1 Dia',      icon: '📅', desc: 'Resumo das últimas 24 horas' },
-                { key: '1s',  label: '1 Semana',   icon: '📊', desc: 'Visão semanal do fluxo' },
-                { key: '1m',  label: '1 Mês',      icon: '📈', desc: 'Tendência mensal de baleias' },
-                { key: '1a',  label: '1 Ano',      icon: '🗓️', desc: 'Panorama anual do fluxo' }
+                { key: '1h',  label: '1 Hora',    desc: 'Dados em tempo real' },
+                { key: '12h', label: '12 Horas',   desc: 'Dados das ultimas 12h' },
+                { key: '1d',  label: '1 Dia',      desc: 'Resumo das ultimas 24 horas' },
+                { key: '1s',  label: '1 Semana',   desc: 'Visao semanal do fluxo' },
+                { key: '1m',  label: '1 Mes',      desc: 'Tendencia mensal' },
+                { key: '1a',  label: '1 Ano',      desc: 'Panorama anual do fluxo' }
             ];
             
             document.body.style.overflow = 'hidden';
@@ -2160,7 +2412,6 @@
                         color: ${isActive ? '#60a5fa' : '#e5e7eb'};
                         cursor: pointer;
                         transition: all 0.15s;">
-                        <span style="font-size: 22px; width: 36px; text-align: center;">${p.icon}</span>
                         <div style="flex: 1; text-align: left;">
                             <div style="font-size: 14px; font-weight: 700;">${p.label}</div>
                             <div style="font-size: 10px; color: #9ca3af; margin-top: 2px;">${p.desc}</div>
@@ -2216,8 +2467,19 @@
             
             if (whaleActivityPeriod !== period) {
                 whaleActivityPeriod = period;
-                fetchWhaleActivity(period);
+                _efLoading = true;
+                renderWhaleActivityUI(); // show loading immediately
+                fetchExchangeFlow(period);
             }
+        }
+
+        function switchEfMarketType(type) {
+            if (_efMarketType === type) return;
+            _efMarketType = type;
+            _exchangeFlowFetching = false; // allow new fetch
+            _efLoading = true;
+            renderWhaleActivityUI();
+            fetchExchangeFlow(whaleActivityPeriod);
         }
         
         // Aliases para compatibilidade

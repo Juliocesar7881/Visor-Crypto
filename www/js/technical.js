@@ -502,6 +502,19 @@
                     .then(r => r.json()).catch(() => [])
             ]);
             
+            // Tentar buscar liquidações 12h do worker (se URL configurada)
+            const workerUrl = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
+            let workerLiqData = null;
+            if (workerUrl) {
+                try {
+                    const liqRes = await fetch(`${workerUrl}/liquidations?symbol=${symbol}`, { signal: AbortSignal.timeout(5000) });
+                    if (liqRes.ok) {
+                        const liqJson = await liqRes.json();
+                        if (liqJson.success && liqJson.totalCount > 0) workerLiqData = liqJson;
+                    }
+                } catch(_) {}
+            }
+
             return {
                 klines15m,
                 klines1h,
@@ -515,12 +528,13 @@
                 takerBuySellVol: takerBuySellVol || [],
                 forceOrders: forceOrders || [],  // LIQUIDAÇÕES REAIS
                 openInterestHist: openInterestHist || [],  // OI Delta
+                workerLiqData,  // Liquidações 12h do worker (ou null)
                 currentPrice: prices[symbol] || parseFloat(ticker24h.lastPrice) || 0
             };
         }
         
         function generateTechnicalAnalysis(data, symbol) {
-            const { klines15m, klines1h, klines4h, klines1d, ticker24h, orderBook, fundingRate, openInterest, trades, takerBuySellVol, forceOrders, openInterestHist, currentPrice } = data;
+            const { klines15m, klines1h, klines4h, klines1d, ticker24h, orderBook, fundingRate, openInterest, trades, takerBuySellVol, forceOrders, openInterestHist, workerLiqData: _workerLiqRaw, currentPrice } = data;
             
             // ============================================
             // MULTI-TIMEFRAME TECHNICAL INDICATORS
@@ -536,13 +550,13 @@
             const ema200_1h = calculateEMA(klines1h, 200);
             const ema200_4h = calculateEMA(klines4h, 200);
             
-            // Médias Móveis para painel de MAs (usando klines 1H para curto prazo)
-            const ema9 = calculateEMA(klines1h, 9);
-            const ema20 = calculateEMA(klines1h, 20);
-            const ema50 = calculateEMA(klines1h, 50);
-            const sma50 = calculateSMA(klines1h, 50);
-            const sma99 = calculateSMA(klines1h, 99);
-            const sma200 = calculateSMA(klines1h, 200);
+            // Médias Móveis para painel de MAs (cada MA no timeframe adequado)
+            const ema9 = calculateEMA(klines15m, 9);    // EMA 9 de 15m (scalp)
+            const ema21 = calculateEMA(klines1h, 21);   // EMA 21 de 1h (swing)
+            const ema50 = calculateEMA(klines1h, 50);   // EMA 50 de 1h (tendência)
+            const sma50 = calculateSMA(klines4h, 50);   // SMA 50 de 4h (macro)
+            const sma99 = calculateSMA(klines4h, 99);   // SMA 99 de 4h (macro)
+            const sma200 = calculateSMA(klines1d, 200); // SMA 200 de 1d (longo prazo)
             
             // ============================================
             // ANÁLISE GRÁFICA MULTI-TIMEFRAME (1m, 5m, 15m, 1h)
@@ -552,7 +566,23 @@
             // ============================================
             // HEATMAP DE LIQUIDAÇÕES (estilo Coinglass)
             // ============================================
-            const realLiquidations = analyzeRealLiquidations(forceOrders, currentPrice, openInterest, null);
+            const workerLiqData = data.workerLiqData || null;
+            const realLiquidations = workerLiqData
+                ? {
+                    hasData: true, isRealData: true,
+                    dataSource: `Worker 12h (${workerLiqData.totalCount} liqs)`,
+                    longLiqVolume: workerLiqData.longVol, shortLiqVolume: workerLiqData.shortVol,
+                    longLiqCount: workerLiqData.longCount, shortLiqCount: workerLiqData.shortCount,
+                    riskRatio: workerLiqData.ratio,
+                    dominantRisk: workerLiqData.ratio > 1.5 ? 'LONGS MAIS LIQUIDADOS' : workerLiqData.ratio < 0.67 ? 'SHORTS MAIS LIQUIDADOS' : 'EQUILIBRADO',
+                    currentPrice, recentLiquidations: [],
+                    liquidationLevels: (workerLiqData.topLevels || []).map(l => ({
+                        type: l.side, price: l.price, volume: l.vol, distance: Math.abs((l.price - currentPrice) / currentPrice * 100),
+                        side: l.price < currentPrice ? 'ABAIXO' : 'ACIMA', time: l.time, isRecent: true, intensity: Math.min(l.vol / 10000, 100)
+                    })),
+                    lastUpdate: new Date().toLocaleTimeString('pt-BR')
+                  }
+                : analyzeRealLiquidations(forceOrders, currentPrice, openInterest, null);
             
             // Manter heatmap estimado para referência
             const liquidationHeatmap = calculateLiquidationHeatmap(currentPrice, openInterest, orderBook, takerBuySellVol);
@@ -727,39 +757,62 @@
             // LIQUIDAÇÕES ESTIMADAS (peso 1) - Baseado em OI + L/S Ratio
             // ============================================
             if (realLiquidations.hasData) {
-                const longPct = realLiquidations.longLiqVolume / (realLiquidations.longLiqVolume + realLiquidations.shortLiqVolume + 0.001) * 100;
+                const longLiqVol = realLiquidations.longLiqVolume || 0;
+                const shortLiqVol = realLiquidations.shortLiqVolume || 0;
+                const longPct = longLiqVol / (longLiqVol + shortLiqVol + 0.001) * 100;
                 const shortPct = 100 - longPct;
                 
-                if (longPct > 55) {
-                    // Mais longs = mais risco de queda = bearish
+                // Enhanced: 1.2x ratio for directional bias
+                if (shortLiqVol > longLiqVol * 1.2) {
+                    // Significativamente mais shorts liquidados = bullish bias
+                    confluenceScore += 1.5;
+                    confluenceDetails.push({ 
+                        name: 'Mapa Liquidações', 
+                        value: `${shortPct.toFixed(0)}% Short liq`, 
+                        signal: 'LONG', 
+                        weight: 1.5, 
+                        color: '#22c55e',
+                        isEstimate: false 
+                    });
+                } else if (longLiqVol > shortLiqVol * 1.2) {
+                    // Significativamente mais longs liquidados = bearish bias
+                    confluenceScore -= 1.5;
+                    confluenceDetails.push({ 
+                        name: 'Mapa Liquidações', 
+                        value: `${longPct.toFixed(0)}% Long liq`, 
+                        signal: 'SHORT', 
+                        weight: 1.5, 
+                        color: '#ef4444',
+                        isEstimate: false 
+                    });
+                } else if (longPct > 55) {
                     confluenceScore -= 1;
                     confluenceDetails.push({ 
-                        name: 'Liq. Estimadas', 
-                        value: `${longPct.toFixed(0)}% Long`, 
+                        name: 'Mapa Liquidações', 
+                        value: `${longPct.toFixed(0)}% Long liq`, 
                         signal: 'SHORT', 
                         weight: 1, 
                         color: '#ef4444',
-                        isEstimate: true 
+                        isEstimate: false 
                     });
                 } else if (shortPct > 55) {
-                    // Mais shorts = mais risco de squeeze = bullish
                     confluenceScore += 1;
                     confluenceDetails.push({ 
-                        name: 'Liq. Estimadas', 
-                        value: `${shortPct.toFixed(0)}% Short`, 
+                        name: 'Mapa Liquidações', 
+                        value: `${shortPct.toFixed(0)}% Short liq`, 
                         signal: 'LONG', 
                         weight: 1, 
                         color: '#22c55e',
-                        isEstimate: true 
+                        isEstimate: false 
                     });
                 } else {
                     confluenceDetails.push({ 
-                        name: 'Liq. Estimadas', 
+                        name: 'Mapa Liquidações', 
                         value: 'Equilibrado', 
                         signal: 'NEUTRO', 
                         weight: 0, 
                         color: '#94a3b8',
-                        isEstimate: true 
+                        isEstimate: false 
                     });
                 }
             }
@@ -990,7 +1043,7 @@
             const aiSummary = generateAISummary(signalType, confidence, {
                 priceLocation, fundingSignal, cvdSignal, bookSignal, rsiSignal, lsSignal, poc, vah, val,
                 confluenceDetails, longIndicators, shortIndicators, totalIndicators,
-                movingAverages: { ema9, ema20, ema50, sma50, sma99, sma200, currentPrice },
+                movingAverages: { ema9, ema21, ema50, sma50, sma99, sma200, currentPrice },
                 bookImbalance: bookImbalance,
                 whaleActivity: whaleActivity,
                 // V2 data for enhanced summary
@@ -1060,10 +1113,10 @@
                         netVolume4h: netVolume4h
                     },
                     movingAverages: (() => {
-                        const sr = calculateSupportResistance(klines1h, currentPrice, ema50, sma50, sma200, val, vah);
+                        const sr = calculateSupportResistance(klines1h, currentPrice, ema50, sma50, sma200, val, vah, klines4h, klines1d);
                         return {
                             ema9: (ema9 || 0).toFixed(2),
-                            ema20: (ema20 || 0).toFixed(2),
+                            ema21: (ema21 || 0).toFixed(2),
                             ema50: (ema50 || 0).toFixed(2),
                             sma50: (sma50 || 0).toFixed(2),
                             sma99: (sma99 || 0).toFixed(2),
@@ -1981,7 +2034,7 @@
         }
         
         // Suporte e Resistência baseados em Swing Highs/Lows + Médias Móveis
-        function calculateSupportResistance(klines, currentPrice, ema50, sma50, sma200, val, vah) {
+        function calculateSupportResistance(klines, currentPrice, ema50, sma50, sma200, val, vah, klines4h, klines1d) {
             if (!klines || klines.length < 20) {
                 return {
                     support: Math.min(ema50 || currentPrice * 0.98, sma50 || currentPrice * 0.98, val || currentPrice * 0.98),
@@ -1989,56 +2042,66 @@
                 };
             }
             
-            const lookback = Math.min(klines.length, 100);
-            const recentKlines = klines.slice(-lookback);
+            // Multi-timeframe swing detection with weighted clustering
+            const clusterTolerance = 0.005; // 0.5%
+            const rawLevels = [];
             
-            // Encontrar swing lows (suportes) e swing highs (resistências) com janela de 5
-            const swingLows = [];
-            const swingHighs = [];
-            
-            for (let i = 2; i < recentKlines.length - 2; i++) {
-                const low = parseFloat(recentKlines[i][3]);
-                const high = parseFloat(recentKlines[i][2]);
-                
-                const isSwingLow = low <= parseFloat(recentKlines[i-1][3]) && 
-                                   low <= parseFloat(recentKlines[i-2][3]) && 
-                                   low <= parseFloat(recentKlines[i+1][3]) && 
-                                   low <= parseFloat(recentKlines[i+2][3]);
-                
-                const isSwingHigh = high >= parseFloat(recentKlines[i-1][2]) && 
-                                    high >= parseFloat(recentKlines[i-2][2]) && 
-                                    high >= parseFloat(recentKlines[i+1][2]) && 
-                                    high >= parseFloat(recentKlines[i+2][2]);
-                
-                if (isSwingLow) swingLows.push(low);
-                if (isSwingHigh) swingHighs.push(high);
+            // Helper: extract swing highs/lows from klines with weight
+            function extractSwings(kl, weight) {
+                if (!kl || kl.length < 5) return;
+                const lookback = Math.min(kl.length, 250);
+                const data = kl.slice(-lookback);
+                for (let i = 2; i < data.length - 2; i++) {
+                    const low = parseFloat(data[i][3]);
+                    const high = parseFloat(data[i][2]);
+                    const isSwingLow = low <= parseFloat(data[i-1][3]) && low <= parseFloat(data[i-2][3]) && 
+                                       low <= parseFloat(data[i+1][3]) && low <= parseFloat(data[i+2][3]);
+                    const isSwingHigh = high >= parseFloat(data[i-1][2]) && high >= parseFloat(data[i-2][2]) && 
+                                        high >= parseFloat(data[i+1][2]) && high >= parseFloat(data[i+2][2]);
+                    if (isSwingLow) rawLevels.push({ price: low, weight, type: 'low' });
+                    if (isSwingHigh) rawLevels.push({ price: high, weight, type: 'high' });
+                }
             }
             
-            // Candidatos a suporte: swing lows abaixo do preço + MAs abaixo do preço
-            const supportCandidates = [];
-            swingLows.filter(l => l < currentPrice).forEach(l => supportCandidates.push(l));
-            if (ema50 && ema50 < currentPrice) supportCandidates.push(ema50);
-            if (sma50 && sma50 < currentPrice) supportCandidates.push(sma50);
-            if (sma200 && sma200 < currentPrice) supportCandidates.push(sma200);
-            if (val && val < currentPrice) supportCandidates.push(val);
+            extractSwings(klines, 1);     // 1h weight=1
+            extractSwings(klines4h, 2);   // 4h weight=2
+            extractSwings(klines1d, 3);   // 1d weight=3
             
-            // Candidatos a resistência: swing highs acima do preço + MAs acima do preço
-            const resistanceCandidates = [];
-            swingHighs.filter(h => h > currentPrice).forEach(h => resistanceCandidates.push(h));
-            if (ema50 && ema50 > currentPrice) resistanceCandidates.push(ema50);
-            if (sma50 && sma50 > currentPrice) resistanceCandidates.push(sma50);
-            if (sma200 && sma200 > currentPrice) resistanceCandidates.push(sma200);
-            if (vah && vah > currentPrice) resistanceCandidates.push(vah);
+            // Cluster nearby levels (within 0.5% tolerance)
+            const clusters = [];
+            const sorted = rawLevels.sort((a, b) => a.price - b.price);
+            for (const level of sorted) {
+                const existing = clusters.find(c => Math.abs(c.price - level.price) / c.price < clusterTolerance);
+                if (existing) {
+                    existing.totalWeight += level.weight;
+                    existing.price = (existing.price * (existing.totalWeight - level.weight) + level.price * level.weight) / existing.totalWeight;
+                    existing.count++;
+                } else {
+                    clusters.push({ price: level.price, totalWeight: level.weight, count: 1 });
+                }
+            }
             
-            // Suporte = o mais próximo (mais alto) abaixo do preço
-            const support = supportCandidates.length > 0 
-                ? Math.max(...supportCandidates) 
-                : currentPrice * 0.98;
+            // Add MA candidates with weight 1
+            [ema50, sma50, sma200, val, vah].filter(Boolean).forEach(ma => {
+                const existing = clusters.find(c => Math.abs(c.price - ma) / ma < clusterTolerance);
+                if (existing) {
+                    existing.totalWeight += 1;
+                    existing.count++;
+                } else {
+                    clusters.push({ price: ma, totalWeight: 1, count: 1 });
+                }
+            });
             
-            // Resistência = o mais próximo (mais baixo) acima do preço
-            const resistance = resistanceCandidates.length > 0 
-                ? Math.min(...resistanceCandidates) 
-                : currentPrice * 1.02;
+            // Sort by weight descending
+            clusters.sort((a, b) => b.totalWeight - a.totalWeight);
+            
+            // Support = strongest cluster below price
+            const supportClusters = clusters.filter(c => c.price < currentPrice).sort((a, b) => b.totalWeight - a.totalWeight);
+            const support = supportClusters.length > 0 ? supportClusters[0].price : currentPrice * 0.98;
+            
+            // Resistance = strongest cluster above price
+            const resistanceClusters = clusters.filter(c => c.price > currentPrice).sort((a, b) => b.totalWeight - a.totalWeight);
+            const resistance = resistanceClusters.length > 0 ? resistanceClusters[0].price : currentPrice * 1.02;
             
             return { support, resistance };
         }
@@ -2265,7 +2328,7 @@
             let maAnalysis = '';
             if (indicators.movingAverages) {
                 const ma = indicators.movingAverages;
-                const aboveEmas = [ma.ema9, ma.ema20, ma.ema50].filter(v => ma.currentPrice > v).length;
+                const aboveEmas = [ma.ema9, ma.ema21, ma.ema50].filter(v => ma.currentPrice > v).length;
                 const aboveSmas = [ma.sma50, ma.sma99, ma.sma200].filter(v => ma.currentPrice > v).length;
                 
                 if (aboveEmas === 3 && aboveSmas >= 2) {
@@ -2464,7 +2527,7 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         }
 
         async function fetchAISummary(analysis, symbol) {
-            if (!GROQ_API_KEY || GROQ_API_KEY === 'COLE_SUA_CHAVE_GROQ_AQUI') return null;
+            if (!GROQ_API_KEY || GROQ_API_KEY === 'COLE_SUA_CHAVE_GROQ_AQUI' || GROQ_API_KEY === 'YOUR_GROQ_API_KEY') return null;
             _cleanAISummaryCache();
             const cacheKey = `${symbol}_${Math.floor(Date.now() / 300000)}`;
             if (_aiSummaryCache[cacheKey]) return _aiSummaryCache[cacheKey];
@@ -2576,7 +2639,11 @@ Regras:
                     finalSigType, finalConf,
                     analysis.indicators || {}, symbol
                 );
-                currentTextEl.textContent = '⚠️ IA indisponível — análise local:\n\n' + localText;
+                const noKey = !GROQ_API_KEY || GROQ_API_KEY === 'COLE_SUA_CHAVE_GROQ_AQUI' || GROQ_API_KEY === 'YOUR_GROQ_API_KEY';
+                const prefix = noKey
+                    ? '⚠️ Chave Groq não configurada — usando análise local.\nConfigure GROQ_API_KEY em js/config.js (grátis em console.groq.com)\n\n'
+                    : '⚠️ IA indisponível — análise local:\n\n';
+                currentTextEl.textContent = prefix + localText;
             }
         }
 
@@ -3200,8 +3267,8 @@ Regras:
                             <i class="fas fa-globe"></i>
                         </div>
                         <div>
-                            <div class="ta-section-title">Macro + Notícias Urgentes</div>
-                            <div class="ta-section-subtitle">Eventos econômicos e alertas de alto impacto</div>
+                            <div class="ta-section-title">Notícias Urgentes</div>
+                            <div class="ta-section-subtitle">Alertas de alto impacto e notícias relevantes</div>
                         </div>
                     </div>
                     <div style="padding: 16px; background: var(--bg-tertiary); border-radius: 12px;">
@@ -3670,47 +3737,47 @@ Regras:
                         </div>
                         <div>
                             <div class="ta-section-title">Médias Móveis</div>
-                            <div class="ta-section-subtitle">EMAs e SMAs em diferentes períodos</div>
+                            <div class="ta-section-subtitle">EMAs e SMAs multi-timeframe (15m, 1h, 4h, 1d)</div>
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px;">
                         <div style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, transparent 100%); padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 10px; color: #3b82f6; font-weight: 700;">EMA 9</div>
+                            <div style="font-size: 10px; color: #3b82f6; font-weight: 700;">EMA 9 <span style="font-size:8px;color:var(--text-muted);">(15m)</span></div>
                             <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.ema9 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema9 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema9 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, transparent 100%); padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(34, 197, 94, 0.3); text-align: center; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 10px; color: #22c55e; font-weight: 700;">EMA 20</div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.ema20 || 0))}</div>
-                            <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema20 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
-                                ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema20 || 0) ? '▲ Acima' : '▼ Abaixo'}
+                            <div style="font-size: 10px; color: #22c55e; font-weight: 700;">EMA 21 <span style="font-size:8px;color:var(--text-muted);">(1h)</span></div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.ema21 || 0))}</div>
+                            <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema21 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
+                                ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema21 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, transparent 100%); padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(249, 115, 22, 0.3); text-align: center; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 10px; color: #f97316; font-weight: 700;">EMA 50</div>
+                            <div style="font-size: 10px; color: #f97316; font-weight: 700;">EMA 50 <span style="font-size:8px;color:var(--text-muted);">(1h)</span></div>
                             <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.ema50 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema50 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema50 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: var(--bg-tertiary); padding: 10px 8px; border-radius: 10px; text-align: center; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 50</div>
+                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 50 <span style="font-size:8px;">(4h)</span></div>
                             <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.sma50 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma50 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma50 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: var(--bg-tertiary); padding: 10px 8px; border-radius: 10px; text-align: center; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 99</div>
+                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 99 <span style="font-size:8px;">(4h)</span></div>
                             <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.sma99 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma99 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma99 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: var(--bg-tertiary); padding: 10px 8px; border-radius: 10px; text-align: center; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 200</div>
+                            <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 200 <span style="font-size:8px;">(1d)</span></div>
                             <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.sma200 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma200 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma200 || 0) ? '▲ Acima' : '▼ Abaixo'}
@@ -3821,12 +3888,12 @@ Regras:
                         </div>
                     </div>
                     <div style="padding: 16px; background: rgba(14,165,233,0.08); border-radius: 12px; border: 1px solid rgba(14,165,233,0.2);">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                            <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                            <div style="min-width: 0;">
                                 <div style="font-size: 24px; font-weight: 800; color: #0ea5e9; white-space: nowrap;">${analysis.positionSize.icon} ${analysis.positionSize.sizePercent}%</div>
-                                <div style="font-size: 11px; color: var(--text-secondary); white-space: nowrap;">${analysis.positionSize.recommendation}</div>
+                                <div style="font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;">${analysis.positionSize.recommendation}</div>
                             </div>
-                            <div style="padding: 6px 12px; border-radius: 8px; white-space: nowrap; background: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? 'rgba(34,197,94,0.2)' : analysis.positionSize.riskLevel === 'MODERADO' ? 'rgba(234,179,8,0.2)' : 'rgba(239,68,68,0.2)'}; color: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? '#22c55e' : analysis.positionSize.riskLevel === 'MODERADO' ? '#eab308' : '#ef4444'}; font-size: 10px; font-weight: 700;">
+                            <div style="padding: 4px 8px; border-radius: 8px; white-space: nowrap; background: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? 'rgba(34,197,94,0.2)' : analysis.positionSize.riskLevel === 'MODERADO' ? 'rgba(234,179,8,0.2)' : 'rgba(239,68,68,0.2)'}; color: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? '#22c55e' : analysis.positionSize.riskLevel === 'MODERADO' ? '#eab308' : '#ef4444'}; font-size: 9px; font-weight: 700;">
                                 ${analysis.positionSize.riskLevel}
                             </div>
                         </div>

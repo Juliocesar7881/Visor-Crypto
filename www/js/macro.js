@@ -111,17 +111,18 @@
                 
                 // 1. Buscar probabilidades Fed da Polymarket (Gamma API - top mercados ativos)
                 try {
-                    const polymarketUrl = 'https://gamma-api.polymarket.com/markets?limit=30&active=true&order=volume24hr&ascending=false';
+                    const polymarketUrl = 'https://gamma-api.polymarket.com/markets?limit=50&active=true&order=volume24hr&ascending=false';
                     
                     const polyRes = await fetchWithTimeout(polymarketUrl, {}, 8000);
                     if (polyRes.ok) {
                         const polyData = await polyRes.json();
                         
                         if (polyData && Array.isArray(polyData) && polyData.length > 0) {
-                            // Filtrar mercados Fed por texto da question
+                            // Filtrar mercados Fed por texto da question (expanded keywords)
                             const fedMarkets = polyData.filter(m => {
                                 const q = (m.question || '').toLowerCase();
-                                return q.includes('fed') && (q.includes('interest') || q.includes('rate'));
+                                return (q.includes('fed') || q.includes('fomc') || q.includes('monetary policy')) && 
+                                       (q.includes('interest') || q.includes('rate') || q.includes('cut') || q.includes('hike') || q.includes('basis point'));
                             });
                             
                             for (const market of fedMarkets) {

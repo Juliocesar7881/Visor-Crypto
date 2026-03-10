@@ -639,6 +639,77 @@ export default {
             }
         }
 
+        // GET /liquidations?symbol=BTCUSDT — Liquidações agregadas 12h via Binance
+        if (path === '/liquidations') {
+            const symbol = (url.searchParams.get('symbol') || 'BTCUSDT').toUpperCase();
+            if (!/^[A-Z0-9]{4,20}$/.test(symbol)) {
+                return new Response(JSON.stringify({ success: false, error: 'Invalid symbol' }), {
+                    status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            }
+
+            try {
+                const cacheKey = `liq_12h_${symbol}`;
+                let cached = null;
+                if (env.CALENDAR_KV) {
+                    cached = await env.CALENDAR_KV.get(cacheKey, 'json');
+                }
+                if (cached && (Date.now() - cached.ts < 300000)) {
+                    return new Response(JSON.stringify({ success: true, ...cached, source: 'cache' }), {
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                // Buscar últimas 1000 forceOrders (máximo da Binance) e filtrar 12h
+                const binRes = await fetch(
+                    `https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${symbol}&limit=1000`,
+                    { cf: { cacheTtl: 60 } }
+                );
+                if (!binRes.ok) throw new Error(`Binance ${binRes.status}`);
+                const orders = await binRes.json();
+
+                const now = Date.now();
+                const window12h = 12 * 60 * 60 * 1000;
+                let longVol = 0, shortVol = 0, longCount = 0, shortCount = 0;
+                const levels = [];
+
+                (Array.isArray(orders) ? orders : []).forEach(o => {
+                    const t = parseInt(o.time || 0);
+                    if (now - t > window12h) return;
+                    const price = parseFloat(o.averagePrice || o.price);
+                    const qty = parseFloat(o.executedQty || o.origQty);
+                    const vol = price * qty;
+                    const isLong = o.side === 'SELL';
+                    if (isLong) { longVol += vol; longCount++; }
+                    else { shortVol += vol; shortCount++; }
+                    levels.push({ price, vol, side: isLong ? 'LONG' : 'SHORT', time: t });
+                });
+
+                levels.sort((a, b) => b.vol - a.vol);
+
+                const result = {
+                    symbol, ts: now,
+                    longVol, shortVol, longCount, shortCount,
+                    totalVol: longVol + shortVol,
+                    totalCount: longCount + shortCount,
+                    ratio: shortVol > 0 ? longVol / shortVol : 0,
+                    topLevels: levels.slice(0, 30),
+                };
+
+                if (env.CALENDAR_KV) {
+                    await env.CALENDAR_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 600 });
+                }
+
+                return new Response(JSON.stringify({ success: true, ...result, source: 'fresh' }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            } catch (e) {
+                return new Response(JSON.stringify({ success: false, error: e.message }), {
+                    status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            }
+        }
+
         // GET /health - Status check
         if (path === '/health') {
             return new Response(JSON.stringify({
