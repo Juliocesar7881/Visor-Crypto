@@ -2296,31 +2296,67 @@
             .finally(() => clearTimeout(timer));
     }
     
-    // Native HTTP request via Capacitor plugin (bypasses SW and fetch patching issues)
+    // Native HTTP request — Capacitor 8 patches fetch() to use native HTTP automatically
+    // Multiple fallback strategies for maximum reliability
     async function nativeHttpGet(url) {
-        // Use CapacitorHttp plugin directly — guaranteed native HTTP, no CORS, no SW interference
-        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) {
-            const resp = await window.Capacitor.Plugins.CapacitorHttp.request({
-                url: url,
-                method: 'GET',
-                connectTimeout: 15000,
-                readTimeout: 15000
-            });
-            if (resp.status < 200 || resp.status >= 300) throw new Error('HTTP ' + resp.status);
-            return typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
+        // Strategy 1: Capacitor.Plugins.CapacitorHttp (Capacitor 5-6 style)
+        try {
+            if (window.Capacitor?.Plugins?.CapacitorHttp) {
+                const resp = await window.Capacitor.Plugins.CapacitorHttp.request({
+                    url, method: 'GET', connectTimeout: 8000, readTimeout: 8000
+                });
+                if (resp.status >= 200 && resp.status < 300) {
+                    return typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
+                }
+            }
+        } catch (_) {}
+
+        // Strategy 2: CapacitorHttp global (Capacitor 6+ module style)
+        try {
+            if (window.CapacitorHttp?.request) {
+                const resp = await window.CapacitorHttp.request({
+                    url, method: 'GET', connectTimeout: 8000, readTimeout: 8000
+                });
+                if (resp.status >= 200 && resp.status < 300) {
+                    return typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
+                }
+            }
+        } catch (_) {}
+
+        // Strategy 3: Standard fetch with timeout (Capacitor 8 patches this natively)
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return await response.json();
+        } catch (e) {
+            clearTimeout(timer);
+            throw e;
         }
-        // Fallback: standard fetch (browser testing only)
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        return await response.json();
     }
 
-    // Fetch FRED series data directly (Render proxy is offline)
+    // Fetch FRED series data — tries direct first, then CORS proxy as fallback
     async function fetchFredSmart(seriesId, opts = {}) {
         const { sortOrder = 'desc', limit = 10, units } = opts;
         let url = 'https://api.stlouisfed.org/fred/series/observations?series_id=' + seriesId + '&api_key=' + FRED_API_KEY + '&file_type=json&sort_order=' + sortOrder + '&limit=' + limit;
         if (units) url += '&units=' + units;
-        return await nativeHttpGet(url);
+
+        // Tentativa 1: direto
+        try {
+            return await nativeHttpGet(url);
+        } catch (e) {
+            macroLog('⚠️ FRED direto falhou (' + seriesId + '): ' + e.message + ', tentando proxy...', 'warn');
+        }
+
+        // Tentativa 2: via CORS proxy
+        try {
+            return await nativeHttpGet(CORS_PROXY + encodeURIComponent(url));
+        } catch (e2) {
+            macroLog('❌ FRED proxy falhou (' + seriesId + '): ' + e2.message, 'error');
+            throw e2;
+        }
     }
     
     // ============================================
