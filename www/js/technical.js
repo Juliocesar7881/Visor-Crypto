@@ -1723,10 +1723,8 @@
         // HEATMAP DE LIQUIDAÇÕES — DADOS REAIS
         // Baseado em ordens forçadas (allForceOrders) da Binance
         // + agregação via CoinGlass public endpoints
-        // Atualiza a cada 5 minutos
+        // Dados acumulados server-side via Cloudflare KV (compartilhado entre todos os usuários)
         // ============================================
-        const _liqCache = {};
-        const LIQ_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
         async function fetchCoinglassLiquidations(symbol) {
             // CoinGlass public aggregated liquidation data (24h)

@@ -7,6 +7,6 @@ compatibility_date = "2024-01-01"
 binding = "CALENDAR_KV"
 id = "YOUR_KV_NAMESPACE_ID"
 
-# Cron trigger - runs every 3 hours
+# Cron trigger - runs every 5 minutes for liquidation accumulation + every 3h for calendar
 [triggers]
-crons = ["0 */3 * * *"]
+crons = ["*/5 * * * *"]

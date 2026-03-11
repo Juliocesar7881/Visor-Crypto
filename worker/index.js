@@ -648,6 +648,22 @@ export default {
                 });
             }
 
+            // Registrar símbolo dinâmico para acumulação via cron (se não é base)
+            if (env.CALENDAR_KV) {
+                try {
+                    const dynData = await env.CALENDAR_KV.get('liq_tracked_symbols', 'json');
+                    const tracked = (dynData && Array.isArray(dynData.symbols)) ? dynData.symbols : [];
+                    if (!tracked.includes(symbol)) {
+                        tracked.push(symbol);
+                        // Manter no máximo 50 símbolos dinâmicos, remover os mais antigos
+                        const trimmed = tracked.slice(-50);
+                        await env.CALENDAR_KV.put('liq_tracked_symbols', JSON.stringify({
+                            symbols: trimmed, ts: Date.now()
+                        }), { expirationTtl: 86400 }); // 24h TTL
+                    }
+                } catch (_) { /* non-critical */ }
+            }
+
             try {
                 const cacheKey = `liq_12h_${symbol}`;
                 let cached = null;
@@ -813,55 +829,84 @@ export default {
         return new Response('Not Found', { status: 404, headers: corsHeaders });
     },
 
-    // Cron trigger handler - roda a cada 3 horas
+    // Cron trigger handler - roda a cada 5 minutos
+    // Liquidações: acumula a cada execução (5min)
+    // Calendário: atualiza a cada 3 horas (verifica lastUpdate)
     async scheduled(event, env, ctx) {
-        console.log('Cron triggered: refreshing calendar data...');
+        console.log('Cron triggered:', new Date().toISOString());
 
+        // ─── CALENDÁRIO: só atualiza a cada 3 horas ───
         try {
-            // Buscar eventos frescos
-            const events = await buildCalendar();
-            const now = new Date();
-
-            // Salvar no KV
+            let shouldRefreshCalendar = true;
             if (env.CALENDAR_KV) {
-                await env.CALENDAR_KV.put(
-                    CACHE_KEY_CALENDAR,
-                    JSON.stringify({
-                        events,
-                        lastUpdate: now.toISOString(),
-                        nextUpdate: new Date(now.getTime() + CACHE_TTL_SECONDS * 1000).toISOString(),
-                    }),
-                    { expirationTtl: CACHE_TTL_SECONDS }
-                );
-            }
-
-            // Pré-cachear histórico FRED dos eventos atuais
-            const seriesIds = [...new Set(events.map(e => e.fredSeriesId).filter(Boolean))];
-            for (let i = 0; i < seriesIds.length; i += 4) {
-                const batch = seriesIds.slice(i, i + 4);
-                const results = await Promise.all(
-                    batch.map(id => fetchHistoryFromFRED(id, 12))
-                );
-                if (env.CALENDAR_KV) {
-                    await Promise.all(batch.map((id, idx) =>
-                        env.CALENDAR_KV.put(
-                            `history_${id}`,
-                            JSON.stringify(results[idx]),
-                            { expirationTtl: 24 * 60 * 60 }
-                        )
-                    ));
+                const cached = await env.CALENDAR_KV.get(CACHE_KEY_CALENDAR, 'json');
+                if (cached && cached.lastUpdate) {
+                    const elapsed = Date.now() - new Date(cached.lastUpdate).getTime();
+                    if (elapsed < 3 * 60 * 60 * 1000) { // 3 horas
+                        shouldRefreshCalendar = false;
+                    }
                 }
             }
 
-            console.log(`Calendar refreshed: ${events.length} events, ${seriesIds.length} history series cached`);
+            if (shouldRefreshCalendar) {
+                const events = await buildCalendar();
+                const now = new Date();
+                if (env.CALENDAR_KV) {
+                    await env.CALENDAR_KV.put(
+                        CACHE_KEY_CALENDAR,
+                        JSON.stringify({
+                            events,
+                            lastUpdate: now.toISOString(),
+                            nextUpdate: new Date(now.getTime() + CACHE_TTL_SECONDS * 1000).toISOString(),
+                        }),
+                        { expirationTtl: CACHE_TTL_SECONDS }
+                    );
+                }
+                const seriesIds = [...new Set(events.map(e => e.fredSeriesId).filter(Boolean))];
+                for (let i = 0; i < seriesIds.length; i += 4) {
+                    const batch = seriesIds.slice(i, i + 4);
+                    const results = await Promise.all(
+                        batch.map(id => fetchHistoryFromFRED(id, 12))
+                    );
+                    if (env.CALENDAR_KV) {
+                        await Promise.all(batch.map((id, idx) =>
+                            env.CALENDAR_KV.put(
+                                `history_${id}`,
+                                JSON.stringify(results[idx]),
+                                { expirationTtl: 24 * 60 * 60 }
+                            )
+                        ));
+                    }
+                }
+                console.log(`Calendar refreshed: ${events.length} events, ${seriesIds.length} history series`);
+            }
         } catch (e) {
             console.error('Cron error (calendar):', e);
         }
 
-        // ─── Accumulate liquidation data for top symbols ───
+        // ─── LIQUIDAÇÕES: acumula a cada execução (5 min) ───
+        // Escalável: KV compartilhado entre todos os usuários
         try {
-            const topSymbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
-            for (const sym of topSymbols) {
+            // Símbolos base + símbolos dinâmicos adicionados por requisições de usuários
+            const baseSymbols = [
+                'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
+                'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'LINKUSDT',
+                'MATICUSDT', 'LTCUSDT', 'UNIUSDT', 'ATOMUSDT', 'NEARUSDT'
+            ];
+
+            // Carregar símbolos dinâmicos (adicionados por requisições de usuários)
+            let dynamicSymbols = [];
+            if (env.CALENDAR_KV) {
+                const dynData = await env.CALENDAR_KV.get('liq_tracked_symbols', 'json');
+                if (dynData && Array.isArray(dynData.symbols)) {
+                    dynamicSymbols = dynData.symbols;
+                }
+            }
+
+            const allSymbols = [...new Set([...baseSymbols, ...dynamicSymbols])];
+            let accumulated = 0;
+
+            for (const sym of allSymbols) {
                 try {
                     const binRes = await fetch(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${sym}&limit=1000`);
                     if (!binRes.ok) continue;
@@ -877,7 +922,6 @@ export default {
                     }
                     const existingOrders = (existing && Array.isArray(existing.orders)) ? existing.orders : [];
 
-                    // Merge and deduplicate
                     const orderMap = new Map();
                     [...existingOrders, ...orders].forEach(o => {
                         const key = `${o.time}_${o.price}_${o.side}`;
@@ -891,11 +935,12 @@ export default {
                             ts: now
                         }), { expirationTtl: 43200 });
                     }
+                    accumulated++;
                 } catch (symErr) {
                     console.warn(`Liq accumulate ${sym}:`, symErr.message);
                 }
             }
-            console.log('Liquidation accumulation complete');
+            console.log(`Liquidation accumulation: ${accumulated}/${allSymbols.length} symbols`);
         } catch (e) {
             console.error('Cron error (liquidations):', e);
         }

@@ -365,8 +365,20 @@
             }
             const cleanNew = uniqueNew.filter(item => !_isAdNews(item.title) && !_isAdNews(item.translatedTitle));
             
+            // DEDUPLICAR POR SIMILARIDADE DE TÍTULO — mesma notícia de fontes diferentes
+            // Mantém a que foi publicada primeiro (mais antiga)
+            const dedupedNew = cleanNew.filter(item => {
+                const itemTitle = item.translatedTitle || item.title || '';
+                // Checar contra notícias já existentes em allNews
+                const hasSimilarExisting = allNews.some(existing => {
+                    const existingTitle = existing.translatedTitle || existing.title || '';
+                    return titleSimilarity(itemTitle, existingTitle) > 0.5;
+                });
+                return !hasSimilarExisting;
+            });
+            
             // MARCAR NOTÍCIAS IMPORTANTES IMEDIATAMENTE ao adicionar
-            cleanNew.forEach(news => {
+            dedupedNew.forEach(news => {
                 const hotCheck = isHotNews(news.title);
                 if (hotCheck.isHot) {
                     news.isHotNews = true;
@@ -383,7 +395,7 @@
                 'stablecoin', 'BlackRock', 'Fidelity', 'Grayscale', 'MicroStrategy',
                 'government', 'governo', 'sanction', 'sanção'
             ];
-            const _filteredClean = cleanNew.filter(news => {
+            const _filteredClean = dedupedNew.filter(news => {
                 const src = (news.source || '').toLowerCase();
                 if (!src.includes('bitcoin world')) return true; // outras fontes passam
                 if (news.isHotNews) return true; // relevantes sempre passam
@@ -423,6 +435,33 @@
             
             // Limitar a 150 notícias mais recentes
             allNews = allNews.sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 150);
+            
+            // DEDUP FINAL: remover duplicatas por similaridade de título
+            // Manter a publicada primeiro (mais antiga) removendo as mais recentes que são parecidas
+            // allNews já está newest-first, então ao iterar, o mais recente é visto antes
+            // Precisamos inverter a lógica: marcar duplicatas para remoção
+            const _keepIndices = new Set();
+            const _titleIndex = []; // {title, pubTime, idx}
+            allNews.forEach((news, idx) => {
+                const title = news.translatedTitle || news.title || '';
+                const pubTime = new Date(news.published).getTime();
+                // Checar se já existe similar no _titleIndex
+                const similar = _titleIndex.find(t => titleSimilarity(title, t.title) > 0.5);
+                if (!similar) {
+                    // Primeira vez vendo este tema
+                    _titleIndex.push({ title, pubTime, idx });
+                    _keepIndices.add(idx);
+                } else if (pubTime < similar.pubTime) {
+                    // Este artigo é MAIS ANTIGO que o similar já registrado — trocar
+                    _keepIndices.delete(similar.idx);
+                    _keepIndices.add(idx);
+                    similar.pubTime = pubTime;
+                    similar.idx = idx;
+                    similar.title = title;
+                }
+                // Se pubTime >= similar.pubTime, é mais recente = duplicata, descartamos
+            });
+            allNews = allNews.filter((_, idx) => _keepIndices.has(idx));
         }
 
         // ──────────────────────────────────────────────
@@ -1137,10 +1176,13 @@
         }
         
         // Similaridade de títulos para deduplicação (Jaccard simples)
+        // Suporta EN e PT-BR com normalização de acentos
         function titleSimilarity(a, b) {
             if (!a || !b) return 0;
-            const wordsA = new Set(a.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2));
-            const wordsB = new Set(b.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2));
+            // Normalizar: remover acentos, lowercase, só alfanuméricos
+            const normalize = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s]/g, '');
+            const wordsA = new Set(normalize(a).split(/\s+/).filter(w => w.length > 2));
+            const wordsB = new Set(normalize(b).split(/\s+/).filter(w => w.length > 2));
             if (wordsA.size === 0 || wordsB.size === 0) return 0;
             let intersection = 0;
             for (const w of wordsA) { if (wordsB.has(w)) intersection++; }
