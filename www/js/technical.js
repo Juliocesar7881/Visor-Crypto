@@ -326,6 +326,16 @@
             // Parar auto-refresh
             stopTAAutoRefresh();
             
+            // Desconectar WebSockets de OrderFlow e CVD para evitar memory leak
+            if (taCurrentSymbol) {
+                if (window.TAEngineV4 && window.TAEngineV4.disconnectOrderFlowWS) {
+                    try { window.TAEngineV4.disconnectOrderFlowWS(taCurrentSymbol); } catch(e) {}
+                }
+                if (window.RealtimeCVD && window.RealtimeCVD.disconnect) {
+                    try { window.RealtimeCVD.disconnect(taCurrentSymbol); } catch(e) {}
+                }
+            }
+            
             const modal = document.getElementById('ta-modal');
             if (!modal) return;
             modal.classList.remove('active');

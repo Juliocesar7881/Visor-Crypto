@@ -4547,6 +4547,7 @@
         try {
             const pair = symbol.toLowerCase().replace('/', '');
             const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${pair}@aggTrade`);
+            buf._ws = ws;
             ws.onmessage = (event) => {
                 try {
                     const trade = JSON.parse(event.data);
@@ -4556,13 +4557,32 @@
             ws.onopen = () => { buf.wsConnected = true; };
             ws.onclose = () => {
                 buf.wsConnected = false;
-                // Auto-reconnect after 5s
-                setTimeout(() => connectOrderFlowWS(symbol), 5000);
+                // Auto-reconnect after 5s only if not intentionally disconnected
+                if (!buf._disconnected) {
+                    setTimeout(() => connectOrderFlowWS(symbol), 5000);
+                }
             };
             ws.onerror = () => { ws.close(); };
         } catch (e) {
             console.warn('[V4] OrderFlow WS error:', e.message);
         }
+    }
+
+    function disconnectOrderFlowWS(symbol) {
+        const buf = ORDER_FLOW_BUFFERS[symbol];
+        if (!buf) return;
+        buf._disconnected = true;
+        buf.wsConnected = false;
+        if (buf._ws) {
+            buf._ws.onclose = null; // prevent reconnect
+            buf._ws.close();
+            buf._ws = null;
+        }
+        delete ORDER_FLOW_BUFFERS[symbol];
+    }
+
+    function disconnectAllOrderFlowWS() {
+        Object.keys(ORDER_FLOW_BUFFERS).forEach(sym => disconnectOrderFlowWS(sym));
     }
 
     function getOrderFlowAnalysis(symbol) {
@@ -4679,6 +4699,8 @@
         generateDynamicExitPlan,
         estimateLiquidationZones,
         connectOrderFlowWS,
+        disconnectOrderFlowWS,
+        disconnectAllOrderFlowWS,
         getOrderFlowAnalysis,
         getOrderFlowBuffer,
         isNotificationOnCooldown,

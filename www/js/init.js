@@ -74,23 +74,23 @@
                     'altseason': 1200, 'news': 1600, 'feargreed': 2000,
                     'globaldata': 2400, 'stats': 2800, 'ma': 3200
                 };
-                window._autoRefreshIds = _autoRefreshConfigs.map(c => {
+                // Use an object array to safely track both timers and intervals
+                window._autoRefreshEntries = _autoRefreshConfigs.map(c => {
+                    const entry = { timerId: null, intervalId: null };
                     const offset = offsets[c.label] || 0;
-                    let intervalId = null;
-                    const timerId = setTimeout(() => {
-                        intervalId = setInterval(() => { 
+                    entry.timerId = setTimeout(() => {
+                        entry.timerId = null;
+                        entry.intervalId = setInterval(() => { 
                             try { 
                                 if (document.hidden) return;
                                 const r = c.fn(); 
                                 if (r && typeof r.catch === 'function') r.catch(e => {}); 
                             } catch(e) {} 
                         }, c.ms);
-                        // Store the real interval id back
-                        const idx = window._autoRefreshIds.indexOf(timerId);
-                        if (idx !== -1) window._autoRefreshIds[idx] = intervalId;
                     }, offset);
-                    return timerId;
+                    return entry;
                 });
+                window._autoRefreshIds = []; // keep for compat
                 window._hotNewsRefreshId = setInterval(async () => {
                     try {
                         if (newsFilter === 'hot') {
@@ -102,6 +102,13 @@
             }
             
             function _stopAllAutoRefresh() {
+                // Clear using the new safe entry objects
+                (window._autoRefreshEntries || []).forEach(entry => {
+                    if (entry.timerId) { clearTimeout(entry.timerId); entry.timerId = null; }
+                    if (entry.intervalId) { clearInterval(entry.intervalId); entry.intervalId = null; }
+                });
+                window._autoRefreshEntries = [];
+                // Legacy cleanup
                 (window._autoRefreshIds || []).forEach(id => { clearInterval(id); clearTimeout(id); });
                 window._autoRefreshIds = [];
                 if (window._hotNewsRefreshId) { clearInterval(window._hotNewsRefreshId); window._hotNewsRefreshId = null; }
@@ -122,6 +129,13 @@
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     _stopAllAutoRefresh();
+                    // Disconnect all OrderFlow and CVD WebSockets when backgrounded
+                    if (window.TAEngineV4 && window.TAEngineV4.disconnectAllOrderFlowWS) {
+                        try { window.TAEngineV4.disconnectAllOrderFlowWS(); } catch(e) {}
+                    }
+                    if (window.RealtimeCVD && window.RealtimeCVD.disconnectAll) {
+                        try { window.RealtimeCVD.disconnectAll(); } catch(e) {}
+                    }
                 } else if (!window._autoRefreshPaused) {
                     _startAllAutoRefresh();
                 }

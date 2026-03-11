@@ -208,7 +208,10 @@
         }, false);
         
         // Integração com Capacitor App Plugin (método mais confiável)
+        let _capacitorAppInitialized = false;
         async function initCapacitorApp() {
+            if (_capacitorAppInitialized) return; // Prevent double init
+            _capacitorAppInitialized = true;
             try {
                 // TRAVAR orientação em PORTRAIT ao iniciar o app
                 await lockPortrait();
@@ -229,9 +232,8 @@
             }
         }
         
-        // Iniciar Capacitor App após DOM loaded
+        // Iniciar Capacitor App após DOM loaded (one listener only)
         document.addEventListener('DOMContentLoaded', initCapacitorApp);
-        window.addEventListener('load', initCapacitorApp);
         
         // ═══════════════════════════════════════
         // FIRST-LAUNCH DISCLAIMER (Aviso Legal obrigatório)
@@ -564,12 +566,12 @@
                     setTimeout(() => { if (!admobLoaded) prepareInterstitial(); }, 25000);
                 }
                 
-                // Periodic retry: ensure an ad is always pre-loaded (faster: 30s)
+                // Periodic retry: ensure an ad is always pre-loaded (60s, skip when hidden)
                 setInterval(() => {
-                    if (admobReady && !admobLoaded) {
+                    if (admobReady && !admobLoaded && document.visibilityState !== 'hidden') {
                         prepareInterstitial();
                     }
-                }, 30000);
+                }, 60000);
 
                 // ── Banner Ad ──
                 showBannerAd();
@@ -810,25 +812,18 @@
             let checkInProgress = false;  // Prevent concurrent checks
             
             async function pingConnectivity() {
-                // Try multiple endpoints to avoid false negatives from single API issues
-                const endpoints = [
-                    'https://api.binance.com/api/v3/ping',
-                    'https://httpbin.org/get',
-                    'https://api.coingecko.com/api/v3/ping'
-                ];
-                for (const url of endpoints) {
-                    try {
-                        const controller = new AbortController();
-                        const timeout = setTimeout(() => controller.abort(), 3000);
-                        const resp = await fetch(url, {
-                            method: 'GET',
-                            signal: controller.signal,
-                            cache: 'no-store'
-                        });
-                        clearTimeout(timeout);
-                        if (resp.ok) return true;
-                    } catch (e) {}
-                }
+                // Single lightweight endpoint to minimize network overhead
+                try {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 4000);
+                    const resp = await fetch('https://api.binance.com/api/v3/ping', {
+                        method: 'GET',
+                        signal: controller.signal,
+                        cache: 'no-store'
+                    });
+                    clearTimeout(timeout);
+                    if (resp.ok) return true;
+                } catch (e) {}
                 return false;
             }
             
@@ -880,9 +875,9 @@
                 }
             }
             
-            // Check on load (com delay para não flashar) + every 10s
+            // Check on load (com delay para não flashar) + every 60s
             setTimeout(checkRealConnectivity, 2000);
-            setInterval(checkRealConnectivity, 10000);
+            setInterval(checkRealConnectivity, 60000);
             
             // Browser events como triggers rápidos (then verify com fetch)
             window.addEventListener('online', () => {

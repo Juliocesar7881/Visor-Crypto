@@ -383,7 +383,8 @@
         }
 
         function startTopOpportunitiesRefresh() {
+            if (_topOpportunitiesTimer) clearInterval(_topOpportunitiesTimer);
             loadTopOpportunities();
-            _topOpportunitiesTimer = setInterval(() => { try { loadTopOpportunities(); } catch(e) {} }, 30000);
+            _topOpportunitiesTimer = setInterval(() => { try { if (!document.hidden) loadTopOpportunities(); } catch(e) {} }, 30000);
         }
 
