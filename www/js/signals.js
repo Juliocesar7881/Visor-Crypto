@@ -297,99 +297,105 @@
                 return;
             }
             
-            // Buscar dados em paralelo (incluindo Macro/News layer v2 + Big Tech & Macro)
+            // Buscar dados em paralelo — FAST RENDER: Binance primeiro, extras em background
             try {
-                const [analysisData, macroNewsData, bigTechData] = await Promise.all([
-                    fetchTechnicalAnalysisData(currentChartSymbol),
-                    (window.TAEngineV2 && window.TAEngineV2.fetchMacroNewsLayer) ?
-                        window.TAEngineV2.fetchMacroNewsLayer(currentChartSymbol) :
-                        Promise.resolve(null),
-                    (window.TAEngineV2 && window.TAEngineV2.fetchBigTechAndMacro) ?
-                        window.TAEngineV2.fetchBigTechAndMacro() :
-                        Promise.resolve(null)
-                ]);
-                
+                // 1. Fetch Binance data (rápido ~1-2s) e renderizar imediatamente
+                const analysisData = await fetchTechnicalAnalysisData(currentChartSymbol);
                 const analysis = generateTechnicalAnalysis(analysisData, currentChartSymbol);
                 
-                // Inject macro/news data into analysis
-                analysis.macroNews = macroNewsData;
-                analysis.bigTechMacro = bigTechData;
-                if (macroNewsData && macroNewsData.totalImpact !== 0 && window.TAEngineV2) {
-                    // Re-apply contextual scoring with macro data
-                    const V2 = window.TAEngineV2;
-                    const reScored = V2.applyContextualScoring(
-                        analysis.confluenceDetails, analysis.marketRegime, analysis.marketStructure,
-                        analysis.cvdAdvanced, macroNewsData, analysis.volatilityMetrics
-                    );
-                    analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + macroNewsData.totalImpact).toFixed(1);
-                    analysis.contextualAdjustments = reScored.adjustments;
-                }
-                // Add Big Tech score to overall
-                if (bigTechData && bigTechData.bigTechScore !== 0) {
-                    analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + bigTechData.bigTechScore).toFixed(1);
-                }
-                // Inject bigTechMacro into indicators for AI summary
-                if (bigTechData) {
-                    analysis.indicators = analysis.indicators || {};
-                    analysis.indicators.bigTechMacro = bigTechData;
-                }
-                
-                // V3 Enhancement — crash detection, decorrelation, position sizing, on-chain, edge
-                if (window.TAEngineV3 && window.TAEngineV3.enhanceAnalysis) {
-                    try {
-                        const enhanced = await window.TAEngineV3.enhanceAnalysis(analysis, analysisData, currentChartSymbol);
-                        Object.assign(analysis, enhanced);
-                        // Regenerate AI summary with V3 corrected signal/confidence
-                        if (enhanced.v3Signal) {
-                            analysis.aiSummary = generateAISummary(
-                                enhanced.v3SignalType || analysis.signalType,
-                                enhanced.v3Confidence || analysis.confidence,
-                                analysis.indicators,
-                                currentChartSymbol
-                            );
-                        }
-                    } catch (v3err) { /* console.warn('[V3] Enhancement error:', v3err); */ }
-                }
-                
-                // V4 Enhancement — Reactive Trading Intelligence + Collective Learning
-                if (window.TAEngineV4 && window.TAEngineV4.enhanceWithReactive) {
-                    try {
-                        const v4Enhanced = await window.TAEngineV4.enhanceWithReactive(analysis, analysisData, currentChartSymbol);
-                        Object.assign(analysis, v4Enhanced);
-                        // Regenerate AI summary with V4 reactive signal
-                        if (v4Enhanced.v4Signal) {
-                            const v4Dir = v4Enhanced.v4Signal.includes('LONG') ? 'long' : v4Enhanced.v4Signal.includes('SHORT') ? 'short' : 'neutral';
-                            analysis.aiSummary = generateAISummary(
-                                v4Dir,
-                                v4Enhanced.v4Confidence || analysis.confidence,
-                                analysis.indicators,
-                                currentChartSymbol
-                            );
-                            // Append reactive summary to AI text
-                            if (v4Enhanced.reactiveSummary) {
-                                analysis.aiSummary += '\n\n━━━ ANÁLISE AVANÇADA ━━━\n' + v4Enhanced.reactiveSummary;
-                            }
-                        }
-                    } catch (v4err) { /* console.warn('[V4] Enhancement error:', v4err); */ }
-                }
-                
-                // Salvar no cache
-                setTACache(currentChartSymbol, { analysis });
-                
-                // Renderizar
+                // Renderizar imediatamente com dados Binance
                 renderTechnicalAnalysis(analysis, crypto);
                 
-                // Record call if signal is strong enough
-                try {
-                    const callSignal = analysis.v4Signal || analysis.v3Signal || analysis.signal;
-                    const callConf = analysis.v4Confidence || analysis.v3Confidence || analysis.confidence;
-                    const callEntry = parseFloat(analysis.entry) || parseFloat(analysis.indicators?.movingAverages?.currentPrice) || 0;
-                    if (callSignal && callConf && callEntry > 0) {
-                        recordCall(currentChartSymbol, callSignal, callConf, callEntry, crypto, analysis);
-                    }
-                } catch (e) { /* console.warn('[CallHistory] Record error:', e); */ }
+                // 2. Enhancement progressivo em background (não bloqueia a UI)
+                (async () => {
+                    try {
+                        const [macroNewsData, bigTechData] = await Promise.all([
+                            (window.TAEngineV2 && window.TAEngineV2.fetchMacroNewsLayer) ?
+                                window.TAEngineV2.fetchMacroNewsLayer(currentChartSymbol) :
+                                Promise.resolve(null),
+                            (window.TAEngineV2 && window.TAEngineV2.fetchBigTechAndMacro) ?
+                                window.TAEngineV2.fetchBigTechAndMacro() :
+                                Promise.resolve(null)
+                        ]);
+                        
+                        // Inject macro/news data
+                        analysis.macroNews = macroNewsData;
+                        analysis.bigTechMacro = bigTechData;
+                        if (macroNewsData && macroNewsData.totalImpact !== 0 && window.TAEngineV2) {
+                            const V2 = window.TAEngineV2;
+                            const reScored = V2.applyContextualScoring(
+                                analysis.confluenceDetails, analysis.marketRegime, analysis.marketStructure,
+                                analysis.cvdAdvanced, macroNewsData, analysis.volatilityMetrics
+                            );
+                            analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + macroNewsData.totalImpact).toFixed(1);
+                            analysis.contextualAdjustments = reScored.adjustments;
+                        }
+                        if (bigTechData && bigTechData.bigTechScore !== 0) {
+                            analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + bigTechData.bigTechScore).toFixed(1);
+                        }
+                        if (bigTechData) {
+                            analysis.indicators = analysis.indicators || {};
+                            analysis.indicators.bigTechMacro = bigTechData;
+                        }
+                        
+                        // V3 Enhancement
+                        if (window.TAEngineV3 && window.TAEngineV3.enhanceAnalysis) {
+                            try {
+                                const enhanced = await window.TAEngineV3.enhanceAnalysis(analysis, analysisData, currentChartSymbol);
+                                Object.assign(analysis, enhanced);
+                                if (enhanced.v3Signal) {
+                                    analysis.aiSummary = generateAISummary(
+                                        enhanced.v3SignalType || analysis.signalType,
+                                        enhanced.v3Confidence || analysis.confidence,
+                                        analysis.indicators,
+                                        currentChartSymbol
+                                    );
+                                }
+                            } catch (v3err) {}
+                        }
+                        
+                        // V4 Enhancement
+                        if (window.TAEngineV4 && window.TAEngineV4.enhanceWithReactive) {
+                            try {
+                                const v4Enhanced = await window.TAEngineV4.enhanceWithReactive(analysis, analysisData, currentChartSymbol);
+                                Object.assign(analysis, v4Enhanced);
+                                if (v4Enhanced.v4Signal) {
+                                    const v4Dir = v4Enhanced.v4Signal.includes('LONG') ? 'long' : v4Enhanced.v4Signal.includes('SHORT') ? 'short' : 'neutral';
+                                    analysis.aiSummary = generateAISummary(
+                                        v4Dir,
+                                        v4Enhanced.v4Confidence || analysis.confidence,
+                                        analysis.indicators,
+                                        currentChartSymbol
+                                    );
+                                    if (v4Enhanced.reactiveSummary) {
+                                        analysis.aiSummary += '\n\n━━━ ANÁLISE AVANÇADA ━━━\n' + v4Enhanced.reactiveSummary;
+                                    }
+                                }
+                            } catch (v4err) {}
+                        }
+                        
+                        // Atualizar cache com dados completos
+                        setTACache(currentChartSymbol, { analysis });
+                        
+                        // Re-renderizar com dados completos (se modal ainda aberto)
+                        const modal = document.getElementById('ta-modal');
+                        if (modal && modal.classList.contains('active')) {
+                            renderTechnicalAnalysis(analysis, crypto);
+                        }
+                        
+                        // Record call
+                        try {
+                            const callSignal = analysis.v4Signal || analysis.v3Signal || analysis.signal;
+                            const callConf = analysis.v4Confidence || analysis.v3Confidence || analysis.confidence;
+                            const callEntry = parseFloat(analysis.entry) || parseFloat(analysis.indicators?.movingAverages?.currentPrice) || 0;
+                            if (callSignal && callConf && callEntry > 0) {
+                                recordCall(currentChartSymbol, callSignal, callConf, callEntry, crypto, analysis);
+                            }
+                        } catch (e) {}
+                    } catch (bgErr) { /* background enhancement failed silently */ }
+                })();
                 
-                // Iniciar auto-refresh a cada 5 minutos
+                // Iniciar auto-refresh
                 startTAAutoRefresh(currentChartSymbol);
                 
             } catch (e) {

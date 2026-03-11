@@ -17,6 +17,7 @@
       "https://translate.googleapis.com",
       "https://api.mymemory.translated.net",
       "https://api.groq.com",
+      "https://api.twelvedata.com",
       "wss://stream.binance.com"
     ]
   },

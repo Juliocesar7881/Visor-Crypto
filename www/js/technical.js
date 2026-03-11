@@ -448,6 +448,8 @@
         async function fetchTechnicalAnalysisData(symbol) {
             const baseSymbol = symbol.replace('USDT', '');
             
+            const workerUrl = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
+            
             // V7: Otimizado — removidos 1m/5m klines (ruído) e rácios defasados
             // Apenas timeframes estruturais: 15m, 1h, 4h, 1d
             const [
@@ -462,7 +464,8 @@
                 trades,
                 takerBuySellVol,
                 forceOrders,
-                openInterestHist
+                openInterestHist,
+                workerLiqRaw
             ] = await Promise.all([
                 // Klines 15m (últimas 100 velas) - para RSI e indicadores de curto prazo
                 fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=15m&limit=100`)
@@ -499,20 +502,15 @@
                     .then(r => r.json()).catch(() => []),
                 // Open Interest Histórico (últimos 12 períodos de 5min) - para OI Delta
                 fetch(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=5m&limit=12`)
-                    .then(r => r.json()).catch(() => [])
+                    .then(r => r.json()).catch(() => []),
+                // Liquidações 12h do worker (em paralelo, timeout 3s)
+                workerUrl ? fetch(`${workerUrl}/liquidations?symbol=${symbol}`, { signal: AbortSignal.timeout(3000) })
+                    .then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null)
             ]);
             
-            // Tentar buscar liquidações 12h do worker (se URL configurada)
-            const workerUrl = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
             let workerLiqData = null;
-            if (workerUrl) {
-                try {
-                    const liqRes = await fetch(`${workerUrl}/liquidations?symbol=${symbol}`, { signal: AbortSignal.timeout(5000) });
-                    if (liqRes.ok) {
-                        const liqJson = await liqRes.json();
-                        if (liqJson.success && liqJson.totalCount > 0) workerLiqData = liqJson;
-                    }
-                } catch(_) {}
+            if (workerLiqRaw && workerLiqRaw.success && workerLiqRaw.totalCount > 0) {
+                workerLiqData = workerLiqRaw;
             }
 
             return {

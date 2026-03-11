@@ -2120,60 +2120,70 @@
         }
     }
     
-    // Fetch real technical analysis data from Yahoo Finance
+    // TwelveData symbol mapping for TA data
+    const TD_TA_SYMBOL_MAP = {
+        'GC=F': 'XAU/USD', 'SI=F': 'XAG/USD', 'CL=F': 'WTI/USD',
+        'DX-Y.NYB': 'DXY', '^GSPC': 'SPX', '^NDX': 'NDX',
+        '^RUT': 'RUT', '^VIX': 'VIX', 'XLE': 'XLE'
+    };
+
+    // Fetch real technical analysis data — TwelveData primary, Yahoo fallback
     async function fetchRealTAData(symbol) {
-        // Try Yahoo Finance v8 chart API
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`;
+        let closes = null, highs = null, lows = null;
         
-        const proxyUrls = [
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-            `https://corsproxy.io/?${encodeURIComponent(url)}`
-        ];
-        
-        let data;
-        let fetched = false;
-        
-        // Try direct first
-        try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 5000);
-            const res = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeout);
-            if (res.ok) {
-                data = await res.json();
-                fetched = true;
+        // === Strategy 1: TwelveData time_series (reliable, CORS-friendly) ===
+        const tdSymbol = TD_TA_SYMBOL_MAP[symbol];
+        if (tdSymbol) {
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const apiKey = getTwelveDataKey();
+                try {
+                    const tdUrl = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=1day&outputsize=90&apikey=${apiKey}`;
+                    const res = await fetch(tdUrl, { signal: AbortSignal.timeout(8000) });
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.values && json.values.length >= 14) {
+                            // TwelveData returns newest first — reverse for chronological order
+                            const values = json.values.reverse();
+                            closes = values.map(v => parseFloat(v.close)).filter(v => !isNaN(v));
+                            highs = values.map(v => parseFloat(v.high)).filter(v => !isNaN(v));
+                            lows = values.map(v => parseFloat(v.low)).filter(v => !isNaN(v));
+                            break;
+                        }
+                        // If rate limited (code 429), try next key
+                        if (json.code === 429) continue;
+                    }
+                } catch(e) { /* try next key */ }
             }
-        } catch(e) { /* direct failed, try proxies */ }
+        }
         
-        // Try proxies
-        if (!fetched) {
+        // === Strategy 2: Yahoo Finance via CORS proxies ===
+        if (!closes || closes.length < 14) {
+            const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`;
+            const proxyUrls = [
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+                `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
+                `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`
+            ];
+            
             for (const proxyUrl of proxyUrls) {
                 try {
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 6000);
-                    const res = await fetch(proxyUrl, { signal: controller.signal });
-                    clearTimeout(timeout);
+                    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(6000) });
                     if (res.ok) {
-                        data = await res.json();
-                        fetched = true;
-                        break;
+                        const data = await res.json();
+                        const result = data?.chart?.result?.[0];
+                        if (result?.indicators?.quote?.[0]) {
+                            const quotes = result.indicators.quote[0];
+                            closes = (quotes.close || []).filter(c => c != null && !isNaN(c));
+                            highs = (quotes.high || []).filter(h => h != null && !isNaN(h));
+                            lows = (quotes.low || []).filter(l => l != null && !isNaN(l));
+                            if (closes.length >= 14) break;
+                        }
                     }
                 } catch(e) { /* try next proxy */ }
             }
         }
         
-        if (!fetched || !data) throw new Error('Dados indisponíveis');
-        
-        const result = data?.chart?.result?.[0];
-        if (!result?.indicators?.quote?.[0]) throw new Error('Sem dados de preço');
-        
-        const quotes = result.indicators.quote[0];
-        const closes = (quotes.close || []).filter(c => c != null && !isNaN(c));
-        const highs = (quotes.high || []).filter(h => h != null && !isNaN(h));
-        const lows = (quotes.low || []).filter(l => l != null && !isNaN(l));
-        
-        if (closes.length < 14) throw new Error('Dados insuficientes para análise');
+        if (!closes || closes.length < 14) throw new Error('Dados insuficientes para análise');
         
         const currentPrice = closes[closes.length - 1];
         const change = indicatorChanges[symbol] || 0;
