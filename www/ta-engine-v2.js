@@ -417,14 +417,14 @@
             if (lastCVD > cvdMean + 2 * cvdStd) {
                 breakout = {
                     type: 'CVD_BREAKOUT_UP',
-                    description: 'CVD rompeu 2σ para cima → pressão compradora excepcional',
+                    description: 'O volume de compra rompeu o teto da média de forma agressiva → pressão compradora excepcional',
                     icon: '💥',
                     impact: 1.5
                 };
             } else if (lastCVD < cvdMean - 2 * cvdStd) {
                 breakout = {
                     type: 'CVD_BREAKOUT_DOWN',
-                    description: 'CVD rompeu 2σ para baixo → pressão vendedora excepcional',
+                    description: 'O volume de venda rompeu o teto da média de forma agressiva → pressão vendedora excepcional',
                     icon: '💥',
                     impact: -1.5
                 };

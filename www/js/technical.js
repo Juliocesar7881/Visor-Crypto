@@ -3884,38 +3884,43 @@ Regras:
                         </div>
                         <div>
                             <div class="ta-section-title">Gestão de Risco & Posição</div>
-                            <div class="ta-section-subtitle">Kelly Criterion + ATR + Confiança</div>
+                            <div class="ta-section-subtitle">Quanto arriscar nesta operação</div>
                         </div>
                     </div>
                     <div style="padding: 16px; background: rgba(14,165,233,0.08); border-radius: 12px; border: 1px solid rgba(14,165,233,0.2);">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-                            <div style="min-width: 0;">
-                                <div style="font-size: 24px; font-weight: 800; color: #0ea5e9; white-space: nowrap;">${analysis.positionSize.icon} ${analysis.positionSize.sizePercent}%</div>
-                                <div style="font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;">${analysis.positionSize.recommendation}</div>
-                            </div>
-                            <div style="padding: 4px 8px; border-radius: 8px; white-space: nowrap; background: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? 'rgba(34,197,94,0.2)' : analysis.positionSize.riskLevel === 'MODERADO' ? 'rgba(234,179,8,0.2)' : 'rgba(239,68,68,0.2)'}; color: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? '#22c55e' : analysis.positionSize.riskLevel === 'MODERADO' ? '#eab308' : '#ef4444'}; font-size: 9px; font-weight: 700;">
-                                ${analysis.positionSize.riskLevel}
-                            </div>
-                        </div>
-                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; min-width: 0;">
-                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px; min-width: 0; overflow: hidden;">
-                                <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Kelly (½)</div>
-                                <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">${analysis.positionSize.breakdown?.kellyHalf || 0}%</div>
-                            </div>
-                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px; min-width: 0; overflow: hidden;">
-                                <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Mult. Conf.</div>
-                                <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">×${analysis.positionSize.breakdown?.confMultiplier || 1}</div>
-                            </div>
-                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px; min-width: 0; overflow: hidden;">
-                                <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Mult. Crash</div>
-                                <div style="font-size: 12px; font-weight: 700; color: ${(analysis.positionSize.breakdown?.crashMultiplier || 1) < 1 ? '#ef4444' : 'var(--text-primary)'};">×${analysis.positionSize.breakdown?.crashMultiplier || 1}</div>
-                            </div>
-                            <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px; min-width: 0; overflow: hidden;">
-                                <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Mult. Edge</div>
-                                <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">×${analysis.positionSize.breakdown?.edgeMultiplier || 1}</div>
+                        <!-- Tamanho sugerido -->
+                        <div style="text-align: center; margin-bottom: 14px;">
+                            <div style="font-size: 28px; font-weight: 800; color: #0ea5e9;">${analysis.positionSize.icon} ${analysis.positionSize.sizePercent}%</div>
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px; word-wrap: break-word; overflow-wrap: break-word;">${analysis.positionSize.recommendation}</div>
+                            <div style="display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 8px; background: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? 'rgba(34,197,94,0.2)' : analysis.positionSize.riskLevel === 'MODERADO' ? 'rgba(234,179,8,0.2)' : 'rgba(239,68,68,0.2)'}; color: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? '#22c55e' : analysis.positionSize.riskLevel === 'MODERADO' ? '#eab308' : '#ef4444'}; font-size: 10px; font-weight: 700;">
+                                ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? '🛡️ Risco Baixo' : analysis.positionSize.riskLevel === 'MODERADO' ? '⚖️ Risco Médio' : analysis.positionSize.riskLevel === 'AGRESSIVO' ? '🔥 Risco Alto' : '⚠️ Risco Máximo'}
                             </div>
                         </div>
-                        <div style="margin-top: 8px; font-size: 10px; color: var(--text-muted); text-align: center; font-family: monospace; word-break: break-word; overflow-wrap: break-word;">${analysis.positionSize.reasoning}</div>
+                        <!-- Explicação simples -->
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
+                                <span style="font-size: 11px; color: var(--text-muted);">📊 O que significa</span>
+                                <span style="font-size: 11px; color: var(--text-primary); font-weight: 600; text-align: right; max-width: 55%; word-wrap: break-word;">Use ${analysis.positionSize.sizePercent}% do seu capital</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
+                                <span style="font-size: 11px; color: var(--text-muted);">📈 Confiança do sinal</span>
+                                <span style="font-size: 11px; color: var(--text-primary); font-weight: 600;">${((analysis.positionSize.breakdown?.confMultiplier || 1) * 100).toFixed(0)}%</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
+                                <span style="font-size: 11px; color: var(--text-muted);">🌡️ Volatilidade (ATR)</span>
+                                <span style="font-size: 11px; color: ${(analysis.positionSize.breakdown?.atrPercent || 0) > 5 ? '#ef4444' : '#22c55e'}; font-weight: 600;">${(analysis.positionSize.breakdown?.atrPercent || 0).toFixed(1)}% ${(analysis.positionSize.breakdown?.atrPercent || 0) > 5 ? '(alta)' : '(normal)'}</span>
+                            </div>
+                            ${(analysis.positionSize.breakdown?.crashMultiplier || 1) < 1 ? `
+                            <div style="padding: 10px; background: rgba(239,68,68,0.1); border-radius: 8px; border: 1px solid rgba(239,68,68,0.2);">
+                                <span style="font-size: 11px; color: #ef4444; font-weight: 600;">⚠️ Mercado em queda detectado — posição reduzida automaticamente</span>
+                            </div>
+                            ` : ''}
+                        </div>
+                        <div style="margin-top: 10px; padding: 10px; background: rgba(14,165,233,0.06); border-radius: 8px; border: 1px dashed rgba(14,165,233,0.2);">
+                            <div style="font-size: 10px; color: var(--text-muted); text-align: center; line-height: 1.5;">
+                                💡 <strong>Dica:</strong> Se você tem R$ 1.000, use no máximo R$ ${(10 * analysis.positionSize.sizePercent).toFixed(0)} nesta operação.
+                            </div>
+                        </div>
                     </div>
                 </div>
                 ` : ''}

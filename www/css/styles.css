@@ -2906,9 +2906,24 @@
 
         .section { 
             display: none;
-            animation: fadeInSection 0.4s ease;
         }
         .section.active { display: block; }
+
+        .section.slide-in-right {
+            animation: slideInRight 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+        }
+        .section.slide-in-left {
+            animation: slideInLeft 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+        }
+
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(60px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideInLeft {
+            from { opacity: 0; transform: translateX(-60px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
 
         @keyframes fadeInSection {
             from { opacity: 0; transform: translateY(20px); }

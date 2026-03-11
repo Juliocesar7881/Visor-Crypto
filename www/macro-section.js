@@ -2125,18 +2125,45 @@
         // Try Yahoo Finance v8 chart API
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=3mo`;
         
+        const proxyUrls = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+            `https://corsproxy.io/?${encodeURIComponent(url)}`
+        ];
+        
         let data;
+        let fetched = false;
+        
+        // Try direct first
         try {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`Yahoo API ${res.status}`);
-            data = await res.json();
-        } catch(e) {
-            // Try with CORS proxy
-            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-            const res = await fetch(proxyUrl);
-            if (!res.ok) throw new Error('Dados indisponíveis');
-            data = await res.json();
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 5000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeout);
+            if (res.ok) {
+                data = await res.json();
+                fetched = true;
+            }
+        } catch(e) { /* direct failed, try proxies */ }
+        
+        // Try proxies
+        if (!fetched) {
+            for (const proxyUrl of proxyUrls) {
+                try {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 6000);
+                    const res = await fetch(proxyUrl, { signal: controller.signal });
+                    clearTimeout(timeout);
+                    if (res.ok) {
+                        data = await res.json();
+                        fetched = true;
+                        break;
+                    }
+                } catch(e) { /* try next proxy */ }
+            }
         }
+        
+        if (!fetched || !data) throw new Error('Dados indisponíveis');
         
         const result = data?.chart?.result?.[0];
         if (!result?.indicators?.quote?.[0]) throw new Error('Sem dados de preço');

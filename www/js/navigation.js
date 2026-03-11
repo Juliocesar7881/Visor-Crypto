@@ -1,11 +1,23 @@
         // ============================================
         // NAVIGATION
         // ============================================
+        const _sectionOrder = { home: 0, dashboard: 1, news: 2, macro: 3, analysis: 4 };
+        let _previousSection = 'home';
+
         function showSection(sectionId) {
-            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            const direction = (_sectionOrder[sectionId] ?? 0) >= (_sectionOrder[_previousSection] ?? 0) ? 'right' : 'left';
+            
+            document.querySelectorAll('.section').forEach(s => {
+                s.classList.remove('active', 'slide-in-right', 'slide-in-left');
+            });
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
             const sectionEl = document.getElementById(sectionId);
-            if (sectionEl) sectionEl.classList.add('active');
+            if (sectionEl) {
+                sectionEl.classList.add('active');
+                sectionEl.classList.add(direction === 'right' ? 'slide-in-right' : 'slide-in-left');
+            }
+            
+            _previousSection = sectionId;
             
             // Ativar nav item correspondente (compatível com Android/Capacitor)
             document.querySelectorAll('.nav-item').forEach(nav => {
