@@ -568,7 +568,7 @@
             const realLiquidations = workerLiqData
                 ? {
                     hasData: true, isRealData: true,
-                    dataSource: `Worker 12h (${workerLiqData.totalCount} liqs)`,
+                    dataSource: `Binance Futures (${workerLiqData.totalCount} liquidações 12h)`,
                     longLiqVolume: workerLiqData.longVol, shortLiqVolume: workerLiqData.shortVol,
                     longLiqCount: workerLiqData.longCount, shortLiqCount: workerLiqData.shortCount,
                     riskRatio: workerLiqData.ratio,
@@ -578,7 +578,16 @@
                         type: l.side, price: l.price, volume: l.vol, distance: Math.abs((l.price - currentPrice) / currentPrice * 100),
                         side: l.price < currentPrice ? 'ABAIXO' : 'ACIMA', time: l.time, isRecent: true, intensity: Math.min(l.vol / 10000, 100)
                     })),
-                    lastUpdate: new Date().toLocaleTimeString('pt-BR')
+                    lastUpdate: new Date().toLocaleTimeString('pt-BR'),
+                    // Enhanced: Real OI-based pending liquidation data
+                    openInterestUSD: workerLiqData.openInterestUSD || 0,
+                    longOI: workerLiqData.longOI || 0,
+                    shortOI: workerLiqData.shortOI || 0,
+                    longPct: workerLiqData.longPct || 50,
+                    shortPct: workerLiqData.shortPct || 50,
+                    pendingLevels: workerLiqData.pendingLevels || [],
+                    totalPendingLong: workerLiqData.totalPendingLong || 0,
+                    totalPendingShort: workerLiqData.totalPendingShort || 0
                   }
                 : analyzeRealLiquidations(forceOrders, currentPrice, openInterest, null);
             
@@ -839,6 +848,70 @@
             } else {
                 priceLocation = 'lower_value';
                 priceLocationScore = 0.5;
+            }
+            
+            // ============================================
+            // S/R BREAKOUT DETECTION → Confluence
+            // ============================================
+            const sr = calculateSupportResistance(klines1h, currentPrice, ema50, sma50, sma200, val, vah, klines4h, klines1d);
+            const srSupport = sr.support || currentPrice * 0.98;
+            const srResistance = sr.resistance || currentPrice * 1.02;
+            
+            // Check volume confirmation: recent 3 candles vs average
+            const _srVolumes = klines1h.slice(-20).map(k => parseFloat(k[5]));
+            const _srAvgVol = _srVolumes.slice(0, -3).reduce((a, b) => a + b, 0) / Math.max(_srVolumes.length - 3, 1);
+            const _srRecentVol = _srVolumes.slice(-3).reduce((a, b) => a + b, 0) / 3;
+            const _srVolRatio = _srRecentVol / Math.max(_srAvgVol, 1);
+            const _srHasVolume = _srVolRatio > 1.3; // Volume acima da média = confirmação
+            
+            // Resistance breakout (price above resistance)
+            const _srResBreakPct = srResistance > 0 ? ((currentPrice - srResistance) / srResistance * 100) : 0;
+            if (_srResBreakPct > 0.1 && _srHasVolume) {
+                // Strong breakout with volume
+                const breakWeight = _srResBreakPct > 1 ? 2 : 1.5;
+                confluenceScore += breakWeight;
+                confluenceDetails.push({
+                    name: 'Breakout Resistência',
+                    value: `+${_srResBreakPct.toFixed(2)}% (Vol ${_srVolRatio.toFixed(1)}x)`,
+                    signal: 'LONG',
+                    weight: breakWeight,
+                    color: '#22c55e'
+                });
+            } else if (_srResBreakPct > 0.1 && !_srHasVolume) {
+                // Breakout without volume — weaker signal
+                confluenceScore += 0.5;
+                confluenceDetails.push({
+                    name: 'Breakout Resistência',
+                    value: `+${_srResBreakPct.toFixed(2)}% (s/ vol)`,
+                    signal: 'LONG',
+                    weight: 0.5,
+                    color: '#86efac'
+                });
+            }
+            
+            // Support breakout (price below support)
+            const _srSupBreakPct = srSupport > 0 ? ((srSupport - currentPrice) / srSupport * 100) : 0;
+            if (_srSupBreakPct > 0.1 && _srHasVolume) {
+                // Strong breakdown with volume
+                const breakWeight = _srSupBreakPct > 1 ? 2 : 1.5;
+                confluenceScore -= breakWeight;
+                confluenceDetails.push({
+                    name: 'Rompimento Suporte',
+                    value: `-${_srSupBreakPct.toFixed(2)}% (Vol ${_srVolRatio.toFixed(1)}x)`,
+                    signal: 'SHORT',
+                    weight: breakWeight,
+                    color: '#ef4444'
+                });
+            } else if (_srSupBreakPct > 0.1 && !_srHasVolume) {
+                // Breakdown without volume — weaker signal
+                confluenceScore -= 0.5;
+                confluenceDetails.push({
+                    name: 'Rompimento Suporte',
+                    value: `-${_srSupBreakPct.toFixed(2)}% (s/ vol)`,
+                    signal: 'SHORT',
+                    weight: 0.5,
+                    color: '#fca5a5'
+                });
             }
             
             // ============================================
@@ -1110,20 +1183,17 @@
                         netVolume1h: netVolume1h,
                         netVolume4h: netVolume4h
                     },
-                    movingAverages: (() => {
-                        const sr = calculateSupportResistance(klines1h, currentPrice, ema50, sma50, sma200, val, vah, klines4h, klines1d);
-                        return {
-                            ema9: (ema9 || 0).toFixed(2),
-                            ema21: (ema21 || 0).toFixed(2),
-                            ema50: (ema50 || 0).toFixed(2),
-                            sma50: (sma50 || 0).toFixed(2),
-                            sma99: (sma99 || 0).toFixed(2),
-                            sma200: (sma200 || 0).toFixed(2),
-                            currentPrice: currentPrice,
-                            support: (sr.support || 0).toFixed(2),
-                            resistance: (sr.resistance || 0).toFixed(2)
-                        };
-                    })(),
+                    movingAverages: {
+                        ema9: (ema9 || 0).toFixed(2),
+                        ema21: (ema21 || 0).toFixed(2),
+                        ema50: (ema50 || 0).toFixed(2),
+                        sma50: (sma50 || 0).toFixed(2),
+                        sma99: (sma99 || 0).toFixed(2),
+                        sma200: (sma200 || 0).toFixed(2),
+                        currentPrice: currentPrice,
+                        support: (srSupport || 0).toFixed(2),
+                        resistance: (srResistance || 0).toFixed(2)
+                    },
                     orderBookDetail: {
                         bids: orderBook.bids?.slice(0, 5) || [],
                         asks: orderBook.asks?.slice(0, 5) || []
@@ -1771,37 +1841,56 @@
             
             result.hasData = true;
             result.isRealData = false;
-            result.dataSource = 'Estimativa (OI)';
+            result.dataSource = 'Estimativa (OI Real)';
             const lsRatio = parseFloat(longShortRatio?.longShortRatio || 1);
             
             const totalOI = oiValue;
             const longOI = totalOI * (lsRatio / (1 + lsRatio));
             const shortOI = totalOI * (1 / (1 + lsRatio));
             
+            // Enhanced leverage distribution matching market reality
             const leverageDistribution = [
-                { lev: 5, percent: 0.20 },
-                { lev: 10, percent: 0.35 },
-                { lev: 20, percent: 0.25 },
-                { lev: 50, percent: 0.15 },
-                { lev: 100, percent: 0.05 }
+                { lev: 2, percent: 0.05 },
+                { lev: 3, percent: 0.08 },
+                { lev: 5, percent: 0.15 },
+                { lev: 10, percent: 0.30 },
+                { lev: 20, percent: 0.22 },
+                { lev: 25, percent: 0.10 },
+                { lev: 50, percent: 0.07 },
+                { lev: 100, percent: 0.03 }
             ];
             
             const levels = [];
+            const pendingLevels = [];
             leverageDistribution.forEach(({ lev, percent }) => {
                 const longLiqPrice = currentPrice * (1 - (0.9 / lev));
                 const shortLiqPrice = currentPrice * (1 + (0.9 / lev));
+                const longAtRisk = longOI * percent;
+                const shortAtRisk = shortOI * percent;
                 
                 levels.push({
                     type: 'LONG', leverage: lev, price: longLiqPrice,
-                    volume: longOI * percent,
+                    volume: longAtRisk,
                     distance: ((currentPrice - longLiqPrice) / currentPrice * 100),
                     intensity: percent * 100
                 });
                 levels.push({
                     type: 'SHORT', leverage: lev, price: shortLiqPrice,
-                    volume: shortOI * percent,
+                    volume: shortAtRisk,
                     distance: ((shortLiqPrice - currentPrice) / currentPrice * 100),
                     intensity: percent * 100
+                });
+                pendingLevels.push({
+                    leverage: lev, type: 'LONG',
+                    liqPrice: Math.round(longLiqPrice * 100) / 100,
+                    distPct: ((currentPrice - longLiqPrice) / currentPrice * 100).toFixed(2),
+                    volumeUSD: Math.round(longAtRisk)
+                });
+                pendingLevels.push({
+                    leverage: lev, type: 'SHORT',
+                    liqPrice: Math.round(shortLiqPrice * 100) / 100,
+                    distPct: ((shortLiqPrice - currentPrice) / currentPrice * 100).toFixed(2),
+                    volumeUSD: Math.round(shortAtRisk)
                 });
             });
             
@@ -1810,6 +1899,14 @@
             result.longLiqVolume = longOI;
             result.shortLiqVolume = shortOI;
             result.riskRatio = longOI / Math.max(shortOI, 1);
+            result.openInterestUSD = Math.round(totalOI);
+            result.longOI = Math.round(longOI);
+            result.shortOI = Math.round(shortOI);
+            result.longPct = Math.round((longOI / totalOI) * 1000) / 10;
+            result.shortPct = Math.round((shortOI / totalOI) * 1000) / 10;
+            result.pendingLevels = pendingLevels;
+            result.totalPendingLong = Math.round(longOI);
+            result.totalPendingShort = Math.round(shortOI);
             
             if (result.riskRatio > 1.3) {
                 result.dominantRisk = 'LONGS EM RISCO';
@@ -2579,6 +2676,7 @@ Regras:
 - Máximo 800 caracteres
 - Não use markdown, apenas texto limpo com emojis para seções
 - Comece com o sinal (📈 LONG / 📉 SHORT / ⏳ NEUTRO) e a confiança
+- A confiança DEVE ser EXATAMENTE ${dataPayload.confidence}% — este valor já foi calculado pelo motor de confluência, NÃO calcule nem invente outro valor
 - Analise: regime de mercado, volume profile, order flow (CVD, funding), microestrutura, sentimento
 - Dê uma conclusão objetiva: operar ou não, e por quê
 - Se NEUTRO, explique o que esperar para entrar
@@ -2718,6 +2816,9 @@ Regras:
             analysis._finalConfidence = confidence;
             analysis._finalSignalType = signalType;
             analysis._finalSignal = signal;
+            
+            // Regenerate local AI summary with blended confidence so it matches header bar
+            analysis.aiSummary = generateLocalSummary(signalType, confidence, analysis.indicators || {}, taCurrentSymbol || 'BTCUSDT');
             
             const signalIcon = signalType === 'long' ? 'fa-arrow-trend-up' : signalType === 'short' ? 'fa-arrow-trend-down' : signalType === 'aguardar' ? 'fa-hourglass-half' : 'fa-hourglass-half';
             const confidenceLevel = confidence >= 70 ? 'high' : confidence >= 50 ? 'medium' : 'low';
@@ -3613,23 +3714,23 @@ Regras:
                 <!-- HEATMAP DE LIQUIDAÇÕES — DADOS REAIS -->
                 <div class="ta-section">
                     <div class="ta-section-header">
-                        <div class="ta-section-icon" style="background: linear-gradient(135deg, ${indicators.realLiquidations?.isRealData ? '#22c55e 0%, #16a34a' : '#f59e0b 0%, #d97706'} 100%);">
-                            <i class="fas ${indicators.realLiquidations?.isRealData ? 'fa-bolt' : 'fa-calculator'}"></i>
+                        <div class="ta-section-icon" style="background: linear-gradient(135deg, ${indicators.realLiquidations?.isRealData ? '#22c55e 0%, #16a34a' : '#a78bfa 0%, #7c3aed'} 100%);">
+                            <i class="fas ${indicators.realLiquidations?.isRealData ? 'fa-bolt' : 'fa-crosshairs'}"></i>
                         </div>
                         <div>
-                            <div class="ta-section-title">${indicators.realLiquidations?.isRealData ? 'Mapa de Liquidações (12h)' : 'Liquidações Estimadas'}</div>
-                            <div class="ta-section-subtitle" style="color: ${indicators.realLiquidations?.isRealData ? '#22c55e' : '#f59e0b'};">${indicators.realLiquidations?.dataSource || 'Sem dados'}</div>
+                            <div class="ta-section-title">Mapa de Liquidações (12h)</div>
+                            <div class="ta-section-subtitle" style="color: ${indicators.realLiquidations?.isRealData ? '#22c55e' : '#a78bfa'};">${indicators.realLiquidations?.dataSource || 'Sem dados'}${indicators.realLiquidations?.openInterestUSD ? ' | OI: ' + formatBigNumber(indicators.realLiquidations.openInterestUSD) : ''}</div>
                         </div>
                     </div>
                     ${indicators.realLiquidations?.hasData ? `
                     <div style="margin-top: 12px;">
                         <!-- Fonte de dados -->
-                        <div style="padding: 10px; background: rgba(${indicators.realLiquidations?.isRealData ? '34, 197, 94' : '245, 158, 11'}, 0.15); border: 1px solid rgba(${indicators.realLiquidations?.isRealData ? '34, 197, 94' : '245, 158, 11'}, 0.3); border-radius: 8px; margin-bottom: 12px;">
-                            <div style="font-size: 10px; color: ${indicators.realLiquidations?.isRealData ? '#22c55e' : '#f59e0b'}; text-align: center;">
-                                <i class="fas ${indicators.realLiquidations?.isRealData ? 'fa-check-circle' : 'fa-info-circle'}" style="margin-right: 4px;"></i>
+                        <div style="padding: 10px; background: rgba(${indicators.realLiquidations?.isRealData ? '34, 197, 94' : '139, 92, 246'}, 0.15); border: 1px solid rgba(${indicators.realLiquidations?.isRealData ? '34, 197, 94' : '139, 92, 246'}, 0.3); border-radius: 8px; margin-bottom: 12px;">
+                            <div style="font-size: 10px; color: ${indicators.realLiquidations?.isRealData ? '#22c55e' : '#a78bfa'}; text-align: center;">
+                                <i class="fas ${indicators.realLiquidations?.isRealData ? 'fa-check-circle' : 'fa-database'}" style="margin-right: 4px;"></i>
                                 ${indicators.realLiquidations?.isRealData 
-                                    ? `Dados reais de ${indicators.realLiquidations.longLiqCount + indicators.realLiquidations.shortLiqCount} liquidações forçadas da Binance` 
-                                    : 'Estimativa baseada em Open Interest + distribuição de alavancagem'}
+                                    ? `Dados reais de ${indicators.realLiquidations.longLiqCount + indicators.realLiquidations.shortLiqCount} liquidações + OI de ${formatBigNumber(indicators.realLiquidations.openInterestUSD || 0)}` 
+                                    : `Baseado em Open Interest real de ${formatBigNumber(indicators.realLiquidations.openInterestUSD || 0)} + distribuição de alavancagem`}
                             </div>
                         </div>
                         
@@ -3645,23 +3746,23 @@ Regras:
                             </div>
                         </div>
                         
-                        <!-- Volume a ser liquidado -->
+                        <!-- Volume liquidado (12h) / Volume pendente -->
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
                             <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.05) 100%); padding: 16px; border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3);">
                                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                                     <i class="fas fa-arrow-up" style="color: #22c55e;"></i>
-                                    <div style="font-size: 11px; color: #22c55e; text-transform: uppercase; font-weight: 700; white-space: nowrap;">Posições LONG</div>
+                                    <div style="font-size: 11px; color: #22c55e; text-transform: uppercase; font-weight: 700; white-space: nowrap;">${indicators.realLiquidations.isRealData ? 'Longs Liquidados' : 'Longs em Risco'}</div>
                                 </div>
                                 <div style="font-size: 15px; font-weight: 800; color: #22c55e; white-space: nowrap;">${formatBigNumber(indicators.realLiquidations.longLiqVolume || 0)}</div>
-                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Liquidam se CAIR</div>
+                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${indicators.realLiquidations.isRealData ? `${indicators.realLiquidations.longLiqCount || 0} liquidações (12h)` : 'Liquidam se CAIR'}</div>
                             </div>
                             <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.05) 100%); padding: 16px; border-radius: 12px; border: 1px solid rgba(239, 68, 68, 0.3);">
                                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                                     <i class="fas fa-arrow-down" style="color: #ef4444;"></i>
-                                    <div style="font-size: 11px; color: #ef4444; text-transform: uppercase; font-weight: 700; white-space: nowrap;">Posições SHORT</div>
+                                    <div style="font-size: 11px; color: #ef4444; text-transform: uppercase; font-weight: 700; white-space: nowrap;">${indicators.realLiquidations.isRealData ? 'Shorts Liquidados' : 'Shorts em Risco'}</div>
                                 </div>
                                 <div style="font-size: 15px; font-weight: 800; color: #ef4444; white-space: nowrap;">${formatBigNumber(indicators.realLiquidations.shortLiqVolume || 0)}</div>
-                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Liquidam se SUBIR</div>
+                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${indicators.realLiquidations.isRealData ? `${indicators.realLiquidations.shortLiqCount || 0} liquidações (12h)` : 'Liquidam se SUBIR'}</div>
                             </div>
                         </div>
                         
@@ -3697,7 +3798,45 @@ Regras:
                         </div>
                         
                         <!-- Níveis de liquidação por alavancagem -->
-                        ${indicators.realLiquidations.liquidationLevels?.length > 0 ? `
+                        ${indicators.realLiquidations.pendingLevels?.length > 0 ? `
+                        <div style="margin-top: 12px; background: var(--bg-tertiary); border-radius: 10px; padding: 12px;">
+                            <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; text-transform: uppercase;">
+                                <i class="fas fa-crosshairs" style="margin-right: 6px; color: #a78bfa;"></i>Liquidações Pendentes (OI Real)
+                            </div>
+                            ${indicators.realLiquidations.openInterestUSD ? `
+                            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 10px; padding: 6px 8px; background: rgba(139,92,246,0.1); border-radius: 6px;">
+                                Open Interest: <strong style="color: #a78bfa;">${formatBigNumber(indicators.realLiquidations.openInterestUSD)}</strong> — 
+                                Longs: <strong style="color: #22c55e;">${indicators.realLiquidations.longPct || 50}%</strong> | 
+                                Shorts: <strong style="color: #ef4444;">${indicators.realLiquidations.shortPct || 50}%</strong>
+                            </div>` : ''}
+                            <div style="font-size: 10px; color: #22c55e; font-weight: 700; margin-bottom: 6px;">▲ Longs a serem liquidados se CAIR</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                                ${indicators.realLiquidations.pendingLevels.filter(l => l.type === 'LONG').map(liq => `
+                                    <div style="padding: 8px; background: rgba(34, 197, 94, 0.08); border-radius: 6px; border: 1px solid rgba(34, 197, 94, 0.15);">
+                                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                                            <span style="font-size: 10px; color: #22c55e; font-weight: 700;">${liq.leverage}x</span>
+                                            <span style="font-size: 9px; color: var(--text-muted);">-${liq.distPct}%</span>
+                                        </div>
+                                        <div style="font-size: 11px; font-weight: 800; color: #4ade80; margin-top: 2px;">${formatBigNumber(liq.volumeUSD)}</div>
+                                        <div style="font-size: 8px; color: var(--text-muted);">@ $${formatPrice(liq.liqPrice)}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div style="font-size: 10px; color: #ef4444; font-weight: 700; margin-bottom: 6px;">▼ Shorts a serem liquidados se SUBIR</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                                ${indicators.realLiquidations.pendingLevels.filter(l => l.type === 'SHORT').map(liq => `
+                                    <div style="padding: 8px; background: rgba(239, 68, 68, 0.08); border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.15);">
+                                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                                            <span style="font-size: 10px; color: #ef4444; font-weight: 700;">${liq.leverage}x</span>
+                                            <span style="font-size: 9px; color: var(--text-muted);">+${liq.distPct}%</span>
+                                        </div>
+                                        <div style="font-size: 11px; font-weight: 800; color: #f87171; margin-top: 2px;">${formatBigNumber(liq.volumeUSD)}</div>
+                                        <div style="font-size: 8px; color: var(--text-muted);">@ $${formatPrice(liq.liqPrice)}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        ` : indicators.realLiquidations.liquidationLevels?.length > 0 ? `
                         <div style="margin-top: 12px; background: var(--bg-tertiary); border-radius: 10px; padding: 12px;">
                             <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">
                                 <i class="fas fa-layer-group" style="margin-right: 6px;"></i>Níveis por Alavancagem

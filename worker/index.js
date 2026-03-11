@@ -639,7 +639,7 @@ export default {
             }
         }
 
-        // GET /liquidations?symbol=BTCUSDT — Liquidações agregadas 12h via Binance
+        // GET /liquidations?symbol=BTCUSDT — Liquidações agregadas 12h via Binance + pendentes reais via OI
         if (path === '/liquidations') {
             const symbol = (url.searchParams.get('symbol') || 'BTCUSDT').toUpperCase();
             if (!/^[A-Z0-9]{4,20}$/.test(symbol)) {
@@ -660,44 +660,133 @@ export default {
                     });
                 }
 
-                // Buscar últimas 1000 forceOrders (máximo da Binance) e filtrar 12h
-                const binRes = await fetch(
-                    `https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${symbol}&limit=1000`,
-                    { cf: { cacheTtl: 60 } }
-                );
-                if (!binRes.ok) throw new Error(`Binance ${binRes.status}`);
-                const orders = await binRes.json();
+                // Fetch em paralelo: forceOrders + OI + L/S ratios + preço atual
+                const [binRes, oiRes, lsAccountRes, lsPositionRes, tickerRes] = await Promise.all([
+                    fetch(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${symbol}&limit=1000`),
+                    fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`),
+                    fetch(`https://fapi.binance.com/futures/data/topLongShortAccountRatio?symbol=${symbol}&period=5m&limit=1`),
+                    fetch(`https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=${symbol}&period=5m&limit=1`),
+                    fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`)
+                ]);
 
+                const orders = binRes.ok ? await binRes.json() : [];
+                const oiData = oiRes.ok ? await oiRes.json() : {};
+                const lsAccount = lsAccountRes.ok ? await lsAccountRes.json() : [];
+                const lsPosition = lsPositionRes.ok ? await lsPositionRes.json() : [];
+                const tickerData = tickerRes.ok ? await tickerRes.json() : {};
+
+                const currentPrice = parseFloat(tickerData.price || 0);
+                const oiQty = parseFloat(oiData.openInterest || 0);
+                const oiValueUSD = oiQty * currentPrice;
+
+                // L/S ratios
+                const accountRatio = parseFloat(lsAccount[0]?.longShortRatio || 1);
+                const positionRatio = parseFloat(lsPosition[0]?.longShortRatio || 1);
+                // Combined ratio: weighted average of account (40%) and position (60%) ratios
+                const combinedRatio = accountRatio * 0.4 + positionRatio * 0.6;
+                const longPct = combinedRatio / (1 + combinedRatio);
+                const shortPct = 1 - longPct;
+                const longOI = oiValueUSD * longPct;
+                const shortOI = oiValueUSD * shortPct;
+
+                // ─── Liquidações históricas reais (12h) ───
                 const now = Date.now();
                 const window12h = 12 * 60 * 60 * 1000;
+
+                // Mesclar com dados acumulados do KV (cron acumula a cada 5 min)
+                const accumKey = `liq_accum_${symbol}`;
+                let accumData = null;
+                if (env.CALENDAR_KV) {
+                    accumData = await env.CALENDAR_KV.get(accumKey, 'json');
+                }
+                const existingOrders = (accumData && Array.isArray(accumData.orders)) ? accumData.orders : [];
+
+                // Mesclar: ordens existentes + novas, deduplicar por time+price
+                const orderMap = new Map();
+                [...existingOrders, ...(Array.isArray(orders) ? orders : [])].forEach(o => {
+                    const key = `${o.time}_${o.price}_${o.side}`;
+                    if (!orderMap.has(key)) orderMap.set(key, o);
+                });
+                // Filtrar janela de 12h
+                const allOrders12h = [...orderMap.values()].filter(o => now - parseInt(o.time || 0) < window12h);
+
                 let longVol = 0, shortVol = 0, longCount = 0, shortCount = 0;
                 const levels = [];
 
-                (Array.isArray(orders) ? orders : []).forEach(o => {
-                    const t = parseInt(o.time || 0);
-                    if (now - t > window12h) return;
+                allOrders12h.forEach(o => {
                     const price = parseFloat(o.averagePrice || o.price);
                     const qty = parseFloat(o.executedQty || o.origQty);
                     const vol = price * qty;
                     const isLong = o.side === 'SELL';
                     if (isLong) { longVol += vol; longCount++; }
                     else { shortVol += vol; shortCount++; }
-                    levels.push({ price, vol, side: isLong ? 'LONG' : 'SHORT', time: t });
+                    levels.push({ price, vol, side: isLong ? 'LONG' : 'SHORT', time: parseInt(o.time || 0) });
                 });
 
                 levels.sort((a, b) => b.vol - a.vol);
 
+                // Salvar acumulado no KV para próxima chamada
+                if (env.CALENDAR_KV) {
+                    await env.CALENDAR_KV.put(accumKey, JSON.stringify({
+                        orders: allOrders12h.slice(0, 5000), // limitar tamanho
+                        ts: now
+                    }), { expirationTtl: 43200 }); // 12h TTL
+                }
+
+                // ─── Liquidações pendentes (estimadas com base em OI real) ───
+                // Distribuição de alavancagem estimada para o mercado crypto
+                const leverageDist = [
+                    { lev: 2, pct: 0.05 },
+                    { lev: 3, pct: 0.08 },
+                    { lev: 5, pct: 0.15 },
+                    { lev: 10, pct: 0.30 },
+                    { lev: 20, pct: 0.22 },
+                    { lev: 25, pct: 0.10 },
+                    { lev: 50, pct: 0.07 },
+                    { lev: 100, pct: 0.03 }
+                ];
+
+                const pendingLevels = [];
+                leverageDist.forEach(({ lev, pct }) => {
+                    const longLiqPrice = currentPrice * (1 - (0.9 / lev));
+                    const shortLiqPrice = currentPrice * (1 + (0.9 / lev));
+                    const longAtRisk = longOI * pct;
+                    const shortAtRisk = shortOI * pct;
+                    pendingLevels.push({
+                        leverage: lev, type: 'LONG',
+                        liqPrice: Math.round(longLiqPrice * 100) / 100,
+                        distPct: ((currentPrice - longLiqPrice) / currentPrice * 100).toFixed(2),
+                        volumeUSD: Math.round(longAtRisk)
+                    });
+                    pendingLevels.push({
+                        leverage: lev, type: 'SHORT',
+                        liqPrice: Math.round(shortLiqPrice * 100) / 100,
+                        distPct: ((shortLiqPrice - currentPrice) / currentPrice * 100).toFixed(2),
+                        volumeUSD: Math.round(shortAtRisk)
+                    });
+                });
+
                 const result = {
-                    symbol, ts: now,
+                    symbol, ts: now, currentPrice,
                     longVol, shortVol, longCount, shortCount,
                     totalVol: longVol + shortVol,
                     totalCount: longCount + shortCount,
                     ratio: shortVol > 0 ? longVol / shortVol : 0,
                     topLevels: levels.slice(0, 30),
+                    // Dados reais de OI
+                    openInterestUSD: Math.round(oiValueUSD),
+                    longOI: Math.round(longOI),
+                    shortOI: Math.round(shortOI),
+                    longPct: Math.round(longPct * 1000) / 10,
+                    shortPct: Math.round(shortPct * 1000) / 10,
+                    // Liquidações pendentes com valores reais de OI
+                    pendingLevels,
+                    totalPendingLong: Math.round(longOI),
+                    totalPendingShort: Math.round(shortOI),
                 };
 
                 if (env.CALENDAR_KV) {
-                    await env.CALENDAR_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 600 });
+                    await env.CALENDAR_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 300 });
                 }
 
                 return new Response(JSON.stringify({ success: true, ...result, source: 'fresh' }), {
@@ -766,7 +855,49 @@ export default {
 
             console.log(`Calendar refreshed: ${events.length} events, ${seriesIds.length} history series cached`);
         } catch (e) {
-            console.error('Cron error:', e);
+            console.error('Cron error (calendar):', e);
+        }
+
+        // ─── Accumulate liquidation data for top symbols ───
+        try {
+            const topSymbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
+            for (const sym of topSymbols) {
+                try {
+                    const binRes = await fetch(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${sym}&limit=1000`);
+                    if (!binRes.ok) continue;
+                    const orders = await binRes.json();
+                    if (!Array.isArray(orders) || orders.length === 0) continue;
+
+                    const now = Date.now();
+                    const window12h = 12 * 60 * 60 * 1000;
+                    const accumKey = `liq_accum_${sym}`;
+                    let existing = null;
+                    if (env.CALENDAR_KV) {
+                        existing = await env.CALENDAR_KV.get(accumKey, 'json');
+                    }
+                    const existingOrders = (existing && Array.isArray(existing.orders)) ? existing.orders : [];
+
+                    // Merge and deduplicate
+                    const orderMap = new Map();
+                    [...existingOrders, ...orders].forEach(o => {
+                        const key = `${o.time}_${o.price}_${o.side}`;
+                        if (!orderMap.has(key)) orderMap.set(key, o);
+                    });
+                    const merged = [...orderMap.values()].filter(o => now - parseInt(o.time || 0) < window12h);
+
+                    if (env.CALENDAR_KV) {
+                        await env.CALENDAR_KV.put(accumKey, JSON.stringify({
+                            orders: merged.slice(0, 5000),
+                            ts: now
+                        }), { expirationTtl: 43200 });
+                    }
+                } catch (symErr) {
+                    console.warn(`Liq accumulate ${sym}:`, symErr.message);
+                }
+            }
+            console.log('Liquidation accumulation complete');
+        } catch (e) {
+            console.error('Cron error (liquidations):', e);
         }
     },
 };
