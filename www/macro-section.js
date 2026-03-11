@@ -3863,7 +3863,6 @@
                     <div class="calendar-title">${e.title}${officialBadge}</div>
                     <div class="calendar-country">${e.country} • ${e.time}${e.estimate ? ` • Est: ${e.estimate}` : ''}${prevInfo}</div>
                 </div>
-                <div class="calendar-impact ${e.impact}">${e.impact === 'high' ? 'ALTO' : 'MÉDIO'}</div>
                 <i class="fas fa-chevron-right" style="color: var(--text-muted); font-size: 12px; margin-left: 8px;"></i>
             </div>
         `}).join('') || '<p style="color: var(--text-muted); text-align: center;">Nenhum evento</p>';
