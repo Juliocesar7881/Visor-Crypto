@@ -588,6 +588,50 @@
             return GLOBAL_TRASH_KEYWORDS.some(keyword => titleLower.includes(keyword.toLowerCase()));
         }
 
+        async function fetchFeedText(url, timeout = 8000) {
+            const headers = {
+                'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+            };
+
+            try {
+                if (window.Capacitor?.Plugins?.CapacitorHttp?.request) {
+                    const resp = await window.Capacitor.Plugins.CapacitorHttp.request({
+                        url,
+                        method: 'GET',
+                        headers,
+                        connectTimeout: timeout,
+                        readTimeout: timeout
+                    });
+                    if (resp.status >= 200 && resp.status < 300) {
+                        if (typeof resp.data === 'string') return resp.data;
+                        if (resp.data == null) return '';
+                        return JSON.stringify(resp.data);
+                    }
+                }
+            } catch (_) {}
+
+            try {
+                if (window.CapacitorHttp?.request) {
+                    const resp = await window.CapacitorHttp.request({
+                        url,
+                        method: 'GET',
+                        headers,
+                        connectTimeout: timeout,
+                        readTimeout: timeout
+                    });
+                    if (resp.status >= 200 && resp.status < 300) {
+                        if (typeof resp.data === 'string') return resp.data;
+                        if (resp.data == null) return '';
+                        return JSON.stringify(resp.data);
+                    }
+                }
+            } catch (_) {}
+
+            const response = await fetchWithTimeout(url, { headers }, timeout);
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return await response.text();
+        }
+
         async function fetchNews() {
             const container = document.getElementById('news-container');
             
@@ -657,22 +701,19 @@
             const rssResults = await Promise.allSettled(
                 rssFeeds.map(async (feed) => {
                     try {
-                        const response = await fetchWithTimeout(feed.url, {}, 10000);
-                        if (response.ok) {
-                            const text = await response.text();
-                            const items = parseRSSText(text, feed.source);
-                            return items.filter(item => !isTrashNews(item.title)).map(item => {
-                                const hotCheck = isHotNews(item.title);
-                                item.sentiment = analyzeSentiment(item.title);
-                                item.relevance = categorizeRelevance(item.title);
-                                item.isHotNews = hotCheck.isHot;
-                                if (hotCheck.isHot) {
-                                    item.hotCategory = hotCheck.category;
-                                    item.hotKeyword = hotCheck.keyword;
-                                }
-                                return item;
-                            });
-                        }
+                        const text = await fetchFeedText(feed.url, 10000);
+                        const items = parseRSSText(text, feed.source);
+                        return items.filter(item => !isTrashNews(item.title)).map(item => {
+                            const hotCheck = isHotNews(item.title);
+                            item.sentiment = analyzeSentiment(item.title);
+                            item.relevance = categorizeRelevance(item.title);
+                            item.isHotNews = hotCheck.isHot;
+                            if (hotCheck.isHot) {
+                                item.hotCategory = hotCheck.category;
+                                item.hotKeyword = hotCheck.keyword;
+                            }
+                            return item;
+                        });
                     } catch(e) {}
                     return [];
                 })
@@ -794,23 +835,20 @@
             
             for (const feed of extraFeeds) {
                 try {
-                    const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}&count=50`);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.items && data.items.length > 0) {
-                            // Apply trash filter to RSS feed results
-                            const filteredItems = data.items.filter(item => !isTrashNews(item.title));
-                            const newItems = filteredItems.map(item => ({
-                                title: item.title,
-                                url: item.link,
-                                source: data.feed?.title || 'Crypto News',
-                                published: item.pubDate || new Date().toISOString(),
-                                sentiment: analyzeSentiment(item.title),
-                                relevance: categorizeRelevance(item.title),
-                                image: item.thumbnail || null
-                            }));
-                            mergeNews(newItems);
-                        }
+                    const text = await fetchFeedText(feed.url, 8000);
+                    const items = parseRSSText(text, feed.source);
+                    if (items.length > 0) {
+                        const filteredItems = items.filter(item => !isTrashNews(item.title));
+                        const newItems = filteredItems.map(item => ({
+                            title: item.title,
+                            url: item.url,
+                            source: item.source || feed.source,
+                            published: item.published || new Date().toISOString(),
+                            sentiment: analyzeSentiment(item.title),
+                            relevance: categorizeRelevance(item.title),
+                            image: item.image || null
+                        }));
+                        mergeNews(newItems);
                     }
                 } catch (e) {
                 }
@@ -1144,26 +1182,21 @@
             
             const rssFetchPromises = rssFeeds.map(async (feed) => {
                 try {
-                    // Capacitor 8 native HTTP = sem CORS, fetch direto
-                    const response = await fetchWithTimeout(feed.url, {}, 6000);
+                    const text = await fetchFeedText(feed.url, 6000);
+                    const items = parseRSSText(text, feed.source);
+                    const hotItems = [];
                     
-                    if (response.ok) {
-                        const text = await response.text();
-                        const items = parseRSSText(text, feed.source);
-                        const hotItems = [];
-                        
-                        for (const item of items) {
-                            const hotCheck = isHotNews(item.title);
-                            if (hotCheck.isHot) {
-                                item.hotCategory = hotCheck.category;
-                                item.hotKeyword = hotCheck.keyword;
-                                item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
-                                item.isHotNews = true;
-                                hotItems.push(item);
-                            }
+                    for (const item of items) {
+                        const hotCheck = isHotNews(item.title);
+                        if (hotCheck.isHot) {
+                            item.hotCategory = hotCheck.category;
+                            item.hotKeyword = hotCheck.keyword;
+                            item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
+                            item.isHotNews = true;
+                            hotItems.push(item);
                         }
-                        return hotItems;
                     }
+                    return hotItems;
                 } catch (e) {}
                 return [];
             });
@@ -1199,7 +1232,7 @@
             hotNewsFetchInProgress = (async () => {
                 const hotNews = [];
                 
-                // 1. RSS Feeds de notícias globais via proxy - PARALELO para velocidade
+                // 1. RSS feeds globais em paralelo
                 // EXPANDIDO: mais feeds para capturar mais notícias importantes
                 const rssFeeds = [
                     { url: 'https://feeds.reuters.com/reuters/businessNews', source: 'Reuters' },
@@ -1217,25 +1250,20 @@
             // Executar todas as requisições RSS em paralelo para maior velocidade
             const rssFetchPromises = rssFeeds.map(async (feed) => {
                 try {
-                    // Capacitor 8 native HTTP = sem CORS, fetch direto
-                    const response = await fetchWithTimeout(feed.url, {}, 6000);
+                    const text = await fetchFeedText(feed.url, 6000);
+                    const items = parseRSSText(text, feed.source);
+                    const hotItems = [];
                     
-                    if (response.ok) {
-                        const text = await response.text();
-                        const items = parseRSSText(text, feed.source);
-                        const hotItems = [];
-                        
-                        for (const item of items) {
-                            const hotCheck = isHotNews(item.title);
-                            if (hotCheck.isHot) {
-                                item.hotCategory = hotCheck.category;
-                                item.hotKeyword = hotCheck.keyword;
-                                item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
-                                hotItems.push(item);
-                            }
+                    for (const item of items) {
+                        const hotCheck = isHotNews(item.title);
+                        if (hotCheck.isHot) {
+                            item.hotCategory = hotCheck.category;
+                            item.hotKeyword = hotCheck.keyword;
+                            item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
+                            hotItems.push(item);
                         }
-                        return hotItems;
                     }
+                    return hotItems;
                 } catch (e) {
                 }
                 return [];
@@ -1269,27 +1297,22 @@
                 for (const account of twitterAccounts) {
                     nitterPromises.push((async () => {
                         try {
-                            // Capacitor 8 native HTTP = sem CORS
-                            const proxyUrl = `https://${instance}/${account}/rss`;
-                            const response = await fetchWithTimeout(proxyUrl, {}, 2500);
+                            const feedUrl = `https://${instance}/${account}/rss`;
+                            const text = await fetchFeedText(feedUrl, 2500);
+                            const items = parseRSSText(text, `@${account}`);
+                            const hotItems = [];
                             
-                            if (response.ok) {
-                                const text = await response.text();
-                                const items = parseRSSText(text, `@${account}`);
-                                const hotItems = [];
-                                
-                                for (const item of items) {
-                                    const hotCheck = isHotNews(item.title);
-                                    if (hotCheck.isHot) {
-                                        item.hotCategory = hotCheck.category;
-                                        item.hotKeyword = hotCheck.keyword;
-                                        item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
-                                        item.isTwitter = true;
-                                        hotItems.push(item);
-                                    }
+                            for (const item of items) {
+                                const hotCheck = isHotNews(item.title);
+                                if (hotCheck.isHot) {
+                                    item.hotCategory = hotCheck.category;
+                                    item.hotKeyword = hotCheck.keyword;
+                                    item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
+                                    item.isTwitter = true;
+                                    hotItems.push(item);
                                 }
-                                return hotItems;
                             }
+                            return hotItems;
                         } catch (e) {
                             // Skip silently
                         }
