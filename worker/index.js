@@ -676,30 +676,31 @@ export default {
                     });
                 }
 
-                // Fetch em paralelo: forceOrders + OI + L/S ratios + preço atual
-                const [binRes, oiRes, lsAccountRes, lsPositionRes, tickerRes] = await Promise.all([
+                // Fetch em paralelo: forceOrders + OI + L/S ratios (global) + taker ratio + preço atual
+                const [binRes, oiRes, globalLSRes, takerLSRes, tickerRes] = await Promise.all([
                     fetch(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${symbol}&limit=1000`),
                     fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`),
-                    fetch(`https://fapi.binance.com/futures/data/topLongShortAccountRatio?symbol=${symbol}&period=5m&limit=1`),
-                    fetch(`https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=${symbol}&period=5m&limit=1`),
+                    fetch(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=5m&limit=1`),
+                    fetch(`https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=${symbol}&period=1h&limit=1`),
                     fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`)
                 ]);
 
                 const orders = binRes.ok ? await binRes.json() : [];
                 const oiData = oiRes.ok ? await oiRes.json() : {};
-                const lsAccount = lsAccountRes.ok ? await lsAccountRes.json() : [];
-                const lsPosition = lsPositionRes.ok ? await lsPositionRes.json() : [];
+                const globalLS = globalLSRes.ok ? await globalLSRes.json() : [];
+                const takerLS = takerLSRes.ok ? await takerLSRes.json() : [];
                 const tickerData = tickerRes.ok ? await tickerRes.json() : {};
 
                 const currentPrice = parseFloat(tickerData.price || 0);
                 const oiQty = parseFloat(oiData.openInterest || 0);
                 const oiValueUSD = oiQty * currentPrice;
 
-                // L/S ratios
-                const accountRatio = parseFloat(lsAccount[0]?.longShortRatio || 1);
-                const positionRatio = parseFloat(lsPosition[0]?.longShortRatio || 1);
-                // Combined ratio: weighted average of account (40%) and position (60%) ratios
-                const combinedRatio = accountRatio * 0.4 + positionRatio * 0.6;
+                // Global L/S ratio (ALL accounts, not just top traders)
+                const globalRatio = parseFloat(globalLS[0]?.longShortRatio || 1);
+                // Taker buy/sell ratio (actual market aggression)
+                const takerRatio = parseFloat(takerLS[0]?.buySellRatio || 1);
+                // Blend: 60% global account ratio + 40% taker ratio for more realistic distribution
+                const combinedRatio = globalRatio * 0.6 + takerRatio * 0.4;
                 const longPct = combinedRatio / (1 + combinedRatio);
                 const shortPct = 1 - longPct;
                 const longOI = oiValueUSD * longPct;
@@ -795,6 +796,9 @@ export default {
                     shortOI: Math.round(shortOI),
                     longPct: Math.round(longPct * 1000) / 10,
                     shortPct: Math.round(shortPct * 1000) / 10,
+                    // Ratios brutos para o frontend
+                    globalLSRatio: Math.round(globalRatio * 1000) / 1000,
+                    takerBuySellRatio: Math.round(takerRatio * 1000) / 1000,
                     // Liquidações pendentes com valores reais de OI
                     pendingLevels,
                     totalPendingLong: Math.round(longOI),

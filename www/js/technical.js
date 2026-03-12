@@ -576,29 +576,45 @@
             // ============================================
             const workerLiqData = data.workerLiqData || null;
             const realLiquidations = workerLiqData
-                ? {
-                    hasData: true, isRealData: true,
-                    dataSource: `Binance Futures (${workerLiqData.totalCount} liquidações 12h)`,
-                    longLiqVolume: workerLiqData.longVol, shortLiqVolume: workerLiqData.shortVol,
-                    longLiqCount: workerLiqData.longCount, shortLiqCount: workerLiqData.shortCount,
-                    riskRatio: workerLiqData.ratio,
-                    dominantRisk: workerLiqData.ratio > 1.5 ? 'LONGS MAIS LIQUIDADOS' : workerLiqData.ratio < 0.67 ? 'SHORTS MAIS LIQUIDADOS' : 'EQUILIBRADO',
-                    currentPrice, recentLiquidations: [],
-                    liquidationLevels: (workerLiqData.topLevels || []).map(l => ({
-                        type: l.side, price: l.price, volume: l.vol, distance: Math.abs((l.price - currentPrice) / currentPrice * 100),
-                        side: l.price < currentPrice ? 'ABAIXO' : 'ACIMA', time: l.time, isRecent: true, intensity: Math.min(l.vol / 10000, 100)
-                    })),
-                    lastUpdate: new Date().toLocaleTimeString('pt-BR'),
-                    // Enhanced: Real OI-based pending liquidation data
-                    openInterestUSD: workerLiqData.openInterestUSD || 0,
-                    longOI: workerLiqData.longOI || 0,
-                    shortOI: workerLiqData.shortOI || 0,
-                    longPct: workerLiqData.longPct || 50,
-                    shortPct: workerLiqData.shortPct || 50,
-                    pendingLevels: workerLiqData.pendingLevels || [],
-                    totalPendingLong: workerLiqData.totalPendingLong || 0,
-                    totalPendingShort: workerLiqData.totalPendingShort || 0
-                  }
+                ? (() => {
+                    const lPct = workerLiqData.longPct || 50;
+                    const sPct = workerLiqData.shortPct || 50;
+                    // Determine dominant risk from real data: prefer liquidation volumes if available, else use OI distribution
+                    let dominantRisk;
+                    const totalLiqVol = (workerLiqData.longVol || 0) + (workerLiqData.shortVol || 0);
+                    if (totalLiqVol > 1000) {
+                        // Use real liquidation ratio
+                        const r = workerLiqData.ratio || 1;
+                        dominantRisk = r > 1.5 ? 'LONGS MAIS LIQUIDADOS' : r < 0.67 ? 'SHORTS MAIS LIQUIDADOS' : 'EQUILIBRADO';
+                    } else {
+                        // Use OI-based position distribution
+                        dominantRisk = lPct > 55 ? 'LONGS EM RISCO' : sPct > 55 ? 'SHORTS EM RISCO' : 'EQUILIBRADO';
+                    }
+                    return {
+                        hasData: true, isRealData: true,
+                        dataSource: `Binance Futures (${workerLiqData.totalCount} liquidações 12h)`,
+                        longLiqVolume: workerLiqData.longVol, shortLiqVolume: workerLiqData.shortVol,
+                        longLiqCount: workerLiqData.longCount, shortLiqCount: workerLiqData.shortCount,
+                        riskRatio: workerLiqData.ratio,
+                        dominantRisk,
+                        currentPrice, recentLiquidations: [],
+                        liquidationLevels: (workerLiqData.topLevels || []).map(l => ({
+                            type: l.side, price: l.price, volume: l.vol, distance: Math.abs((l.price - currentPrice) / currentPrice * 100),
+                            side: l.price < currentPrice ? 'ABAIXO' : 'ACIMA', time: l.time, isRecent: true, intensity: Math.min(l.vol / 10000, 100)
+                        })),
+                        lastUpdate: new Date().toLocaleTimeString('pt-BR'),
+                        openInterestUSD: workerLiqData.openInterestUSD || 0,
+                        longOI: workerLiqData.longOI || 0,
+                        shortOI: workerLiqData.shortOI || 0,
+                        longPct: lPct,
+                        shortPct: sPct,
+                        globalLSRatio: workerLiqData.globalLSRatio,
+                        takerBuySellRatio: workerLiqData.takerBuySellRatio,
+                        pendingLevels: workerLiqData.pendingLevels || [],
+                        totalPendingLong: workerLiqData.totalPendingLong || 0,
+                        totalPendingShort: workerLiqData.totalPendingShort || 0
+                    };
+                  })()
                 : analyzeRealLiquidations(forceOrders, currentPrice, openInterest, null);
             
             // Manter heatmap estimado para referência
@@ -2678,13 +2694,18 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
                 contextualAdjustments: (analysis.contextualAdjustments || []).map(a => a.reason).slice(0, 5)
             };
 
+            const realConf = dataPayload.confidence;
+            const signalEmoji = dataPayload.signalType === 'long' ? '📈 LONG' : dataPayload.signalType === 'short' ? '📉 SHORT' : '⏳ NEUTRO';
             const systemPrompt = `Você é um analista quantitativo sênior de criptomoedas. Gere um relatório técnico conciso em português brasileiro (PT-BR) com base nos dados fornecidos.
+
+IMPORTANTE: O sinal é ${signalEmoji} com confiança de ${realConf}%. Comece OBRIGATORIAMENTE com:
+${signalEmoji} | Confiança: ${realConf}%
 
 Regras:
 - Máximo 800 caracteres
 - Não use markdown, apenas texto limpo com emojis para seções
-- Comece com o sinal (📈 LONG / 📉 SHORT / ⏳ NEUTRO) e a confiança
-- A confiança DEVE ser EXATAMENTE ${dataPayload.confidence}% — este valor já foi calculado pelo motor de confluência, NÃO calcule nem invente outro valor
+- A primeira linha DEVE ser exatamente: ${signalEmoji} | Confiança: ${realConf}%
+- NUNCA escreva outro número de porcentagem de confiança. O valor ${realConf}% é ABSOLUTO e IMUTÁVEL
 - Analise: regime de mercado, volume profile, order flow (CVD, funding), microestrutura, sentimento
 - Dê uma conclusão objetiva: operar ou não, e por quê
 - Se NEUTRO, explique o que esperar para entrar
@@ -2704,7 +2725,7 @@ Regras:
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: `Dados da análise técnica de ${crypto} (${symbol}):\n${JSON.stringify(dataPayload)}` }
                         ],
-                        temperature: 0.4,
+                        temperature: 0.05,
                         max_tokens: 500,
                         stream: false
                     })
@@ -2713,26 +2734,30 @@ Regras:
                 const data = await resp.json();
                 let aiText = data.choices?.[0]?.message?.content?.trim();
                 if (aiText) {
-                    // Post-process: force the correct confidence % from the engine
-                    // The LLM often invents its own %, so we replace any percentage
-                    // that appears near confidence-related words with the real value
-                    const realConf = dataPayload.confidence;
+                    // Aggressive post-process: force correct confidence everywhere
                     if (realConf != null) {
-                        // Replace patterns like "confiança: 73%" or "Confiança de 73%" or just "73% de confiança"
+                        // 1. Force first line to be exactly the signal + confidence
+                        const firstLineEnd = aiText.indexOf('\n');
+                        const firstLine = firstLineEnd > 0 ? aiText.substring(0, firstLineEnd) : aiText;
+                        const rest = firstLineEnd > 0 ? aiText.substring(firstLineEnd) : '';
+                        // Replace ALL percentages in first line with real confidence
+                        const fixedFirstLine = firstLine.replace(/\b\d{1,3}%/g, `${realConf}%`);
+                        aiText = fixedFirstLine + rest;
+                        
+                        // 2. Replace any percentage near confidence-related words anywhere
                         aiText = aiText.replace(
-                            /(confian[çc]a[:\s]+(?:de\s+)?)(\d{1,3})(%)/gi,
+                            /(confian[çc]a[^\d]{0,15})(\d{1,3})(%)/gi,
                             `$1${realConf}$3`
                         );
-                        // Also replace the first standalone percentage at the start (e.g., "📈 LONG | 73%")
+                        // 3. Replace "X% de confiança" pattern
                         aiText = aiText.replace(
-                            /^([^\n]{0,60}?)\b(\d{1,3})(%\s)/m,
-                            (match, prefix, num, suffix) => {
-                                // Only replace if it looks like the main signal line confidence
-                                if (Math.abs(parseInt(num) - realConf) > 2) {
-                                    return `${prefix}${realConf}${suffix}`;
-                                }
-                                return match;
-                            }
+                            /(\b)(\d{1,3})(% de confian[çc]a)/gi,
+                            `$1${realConf}$3`
+                        );
+                        // 4. Replace probability-related percentages
+                        aiText = aiText.replace(
+                            /(probabilidade[^\d]{0,15})(\d{1,3})(%)/gi,
+                            `$1${realConf}$3`
                         );
                     }
                     _aiSummaryCache[cacheKey] = aiText;
@@ -3796,32 +3821,32 @@ Regras:
                             </div>
                         </div>
                         
-                        <!-- Barra de dominância -->
+                        <!-- Barra de dominância (usa dados reais de OI) -->
                         <div style="background: var(--bg-tertiary); border-radius: 10px; padding: 12px; margin-bottom: 12px;">
-                            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase;">Distribuição de Posições</div>
+                            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase;">Distribuição de Posições (Open Interest)</div>
                             <div style="display: flex; height: 24px; border-radius: 6px; overflow: hidden;">
-                                <div style="width: ${((indicators.realLiquidations.longLiqVolume || 0) / ((indicators.realLiquidations.longLiqVolume || 0) + (indicators.realLiquidations.shortLiqVolume || 0) + 0.001) * 100).toFixed(0)}%; background: linear-gradient(90deg, #22c55e, #4ade80); display: flex; align-items: center; justify-content: center;">
-                                    <span style="font-size: 10px; font-weight: 700; color: white; white-space: nowrap;">${((indicators.realLiquidations.longLiqVolume || 0) / ((indicators.realLiquidations.longLiqVolume || 0) + (indicators.realLiquidations.shortLiqVolume || 0) + 0.001) * 100).toFixed(0)}% LONG</span>
+                                <div style="width: ${indicators.realLiquidations.longPct || 50}%; background: linear-gradient(90deg, #22c55e, #4ade80); display: flex; align-items: center; justify-content: center;">
+                                    <span style="font-size: 10px; font-weight: 700; color: white; white-space: nowrap;">${(indicators.realLiquidations.longPct || 50).toFixed ? indicators.realLiquidations.longPct.toFixed(1) : indicators.realLiquidations.longPct}% LONG</span>
                                 </div>
-                                <div style="width: ${((indicators.realLiquidations.shortLiqVolume || 0) / ((indicators.realLiquidations.longLiqVolume || 0) + (indicators.realLiquidations.shortLiqVolume || 0) + 0.001) * 100).toFixed(0)}%; background: linear-gradient(90deg, #ef4444, #f87171); display: flex; align-items: center; justify-content: center;">
-                                    <span style="font-size: 10px; font-weight: 700; color: white; white-space: nowrap;">${((indicators.realLiquidations.shortLiqVolume || 0) / ((indicators.realLiquidations.longLiqVolume || 0) + (indicators.realLiquidations.shortLiqVolume || 0) + 0.001) * 100).toFixed(0)}% SHORT</span>
+                                <div style="width: ${indicators.realLiquidations.shortPct || 50}%; background: linear-gradient(90deg, #ef4444, #f87171); display: flex; align-items: center; justify-content: center;">
+                                    <span style="font-size: 10px; font-weight: 700; color: white; white-space: nowrap;">${(indicators.realLiquidations.shortPct || 50).toFixed ? indicators.realLiquidations.shortPct.toFixed(1) : indicators.realLiquidations.shortPct}% SHORT</span>
                                 </div>
                             </div>
                         </div>
                         
                         <!-- Análise -->
-                        <div style="padding: 14px; background: ${indicators.realLiquidations.dominantRisk === 'LONGS EM RISCO' ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, transparent 100%)' : indicators.realLiquidations.dominantRisk === 'SHORTS EM RISCO' ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, transparent 100%)' : 'var(--bg-tertiary)'}; border-radius: 12px;">
+                        <div style="padding: 14px; background: ${indicators.realLiquidations.dominantRisk.includes('LONG') ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, transparent 100%)' : indicators.realLiquidations.dominantRisk.includes('SHORT') ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, transparent 100%)' : 'var(--bg-tertiary)'}; border-radius: 12px;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <div>
                                     <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Status</div>
-                                    <div style="font-size: 14px; font-weight: 800; white-space: nowrap; color: ${indicators.realLiquidations.dominantRisk === 'LONGS EM RISCO' ? '#ef4444' : indicators.realLiquidations.dominantRisk === 'SHORTS EM RISCO' ? '#22c55e' : '#f59e0b'};">
+                                    <div style="font-size: 14px; font-weight: 800; white-space: nowrap; color: ${indicators.realLiquidations.dominantRisk.includes('LONG') ? '#ef4444' : indicators.realLiquidations.dominantRisk.includes('SHORT') ? '#22c55e' : '#f59e0b'};">
                                         ${indicators.realLiquidations.dominantRisk}
                                     </div>
                                 </div>
                                 <div style="text-align: right;">
                                     <div style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">Implicação</div>
-                                    <div style="font-size: 11px; font-weight: 600; white-space: nowrap; color: ${indicators.realLiquidations.dominantRisk === 'LONGS EM RISCO' ? '#ef4444' : indicators.realLiquidations.dominantRisk === 'SHORTS EM RISCO' ? '#22c55e' : '#94a3b8'};">
-                                        ${indicators.realLiquidations.dominantRisk === 'LONGS EM RISCO' ? '▼ Pressão de queda' : indicators.realLiquidations.dominantRisk === 'SHORTS EM RISCO' ? '▲ Possível squeeze' : '⚖️ Equilíbrio'}
+                                    <div style="font-size: 11px; font-weight: 600; white-space: nowrap; color: ${indicators.realLiquidations.dominantRisk.includes('LONG') ? '#ef4444' : indicators.realLiquidations.dominantRisk.includes('SHORT') ? '#22c55e' : '#94a3b8'};">
+                                        ${indicators.realLiquidations.dominantRisk.includes('LONG') ? '▼ Pressão de queda' : indicators.realLiquidations.dominantRisk.includes('SHORT') ? '▲ Possível squeeze' : '⚖️ Equilíbrio'}
                                     </div>
                                 </div>
                             </div>
@@ -3836,8 +3861,8 @@ Regras:
                             ${indicators.realLiquidations.openInterestUSD ? `
                             <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 10px; padding: 6px 8px; background: rgba(139,92,246,0.1); border-radius: 6px;">
                                 Open Interest: <strong style="color: #a78bfa;">${formatBigNumber(indicators.realLiquidations.openInterestUSD)}</strong> — 
-                                Longs: <strong style="color: #22c55e;">${indicators.realLiquidations.longPct || 50}%</strong> | 
-                                Shorts: <strong style="color: #ef4444;">${indicators.realLiquidations.shortPct || 50}%</strong>
+                                Longs: <strong style="color: #22c55e;">${indicators.realLiquidations.longPct}%</strong> | 
+                                Shorts: <strong style="color: #ef4444;">${indicators.realLiquidations.shortPct}%</strong>
                             </div>` : ''}
                             <div style="font-size: 10px; color: #22c55e; font-weight: 700; margin-bottom: 6px;">▲ Longs a serem liquidados se CAIR</div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
