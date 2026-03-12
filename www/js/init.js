@@ -126,8 +126,11 @@
             }
             
             // Pause auto-refresh when app/tab is hidden to save CPU & network
+            let _visibilityDebounce = null;
             document.addEventListener('visibilitychange', () => {
+                if (_visibilityDebounce) { clearTimeout(_visibilityDebounce); _visibilityDebounce = null; }
                 if (document.hidden) {
+                    // Stop immediately when going to background
                     _stopAllAutoRefresh();
                     // Disconnect all OrderFlow and CVD WebSockets when backgrounded
                     if (window.TAEngineV4 && window.TAEngineV4.disconnectAllOrderFlowWS) {
@@ -137,7 +140,13 @@
                         try { window.RealtimeCVD.disconnectAll(); } catch(e) {}
                     }
                 } else if (!window._autoRefreshPaused) {
-                    _startAllAutoRefresh();
+                    // Debounce resume — prevent rapid minimize/restore from stacking
+                    _visibilityDebounce = setTimeout(() => {
+                        _visibilityDebounce = null;
+                        if (!document.hidden && !window._autoRefreshPaused) {
+                            _startAllAutoRefresh();
+                        }
+                    }, 1500);
                 }
             });
         });

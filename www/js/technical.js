@@ -3404,7 +3404,7 @@ Regras:
                             ${macroNews.macroEvents.slice(0, 5).map(e => `
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg-card); border-radius: 6px; margin-bottom: 4px; border-left: 3px solid ${e.isCritical ? '#ef4444' : '#f59e0b'}; gap: 6px;">
                                 <div style="min-width: 0; flex: 1; overflow: hidden;">
-                                    <div style="font-size: 11px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${e.event?.substring(0, 40)}</div>
+                                    <div style="font-size: 11px; font-weight: 600; color: var(--text-primary); word-wrap: break-word;">${e.event?.substring(0, 40)}</div>
                                     <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${e.country || ''} • ${new Date(e.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
                                 </div>
                                 <span style="font-size: 9px; padding: 2px 6px; background: ${e.isCritical ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}; color: ${e.isCritical ? '#ef4444' : '#f59e0b'}; border-radius: 4px; font-weight: 600; white-space: nowrap; flex-shrink: 0;">${e.isCritical ? 'CRÍTICO' : 'ALTO'}</span>
@@ -3474,7 +3474,7 @@ Regras:
                         <div style="display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;">
                             ${bigTechMacro.indices.map(idx => `
                             <div style="flex: 1 1 28%; min-width: 0; background: var(--bg-card); border-radius: 10px; padding: 8px; border-left: 3px solid ${idx.changePercent > 0 ? '#22c55e' : idx.changePercent < 0 ? '#ef4444' : '#94a3b8'};">
-                                <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${idx.icon} ${idx.name}</div>
+                                <div style="font-size: 9px; color: var(--text-muted); margin-bottom: 2px; white-space: normal; word-wrap: break-word;">${idx.icon} ${idx.name}</div>
                                 <div style="font-size: 12px; font-weight: 800; color: var(--text-primary); white-space: nowrap;">${(idx.price || 0) >= 100 ? (idx.price || 0).toLocaleString('en-US', {maximumFractionDigits: 0}) : (idx.price || 0).toFixed(2)}</div>
                                 <div style="font-size: 10px; font-weight: 700; white-space: nowrap; color: ${idx.changePercent > 0 ? '#22c55e' : idx.changePercent < 0 ? '#ef4444' : '#94a3b8'};">
                                     ${idx.changePercent > 0 ? '+' : ''}${(idx.changePercent || 0).toFixed(1)}%
@@ -3493,7 +3493,7 @@ Regras:
                             </div>
                             <div style="min-width: 0; overflow: hidden;">
                                 <div style="font-size: 13px; font-weight: 700; color: ${bigTechMacro.fearGreed.color}; white-space: nowrap;">${bigTechMacro.fearGreed.icon} ${bigTechMacro.fearGreed.classification}</div>
-                                <div style="font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${bigTechMacro.fearGreed.implication}</div>
+                                <div style="font-size: 11px; color: var(--text-muted); word-wrap: break-word;">${bigTechMacro.fearGreed.implication}</div>
                             </div>
                         </div>
                         ` : ''}
@@ -3539,7 +3539,7 @@ Regras:
                                 <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; overflow: hidden;">
                                     <span style="font-size: 16px; flex-shrink: 0;">${m.icon}</span>
                                     <div style="min-width: 0; overflow: hidden;">
-                                        <div style="font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${m.name}</div>
+                                        <div style="font-size: 12px; font-weight: 600; color: var(--text-primary); word-wrap: break-word;">${m.name}</div>
                                         <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${m.note || (m.date ? new Date(m.date).toLocaleDateString('pt-BR') : '')}</div>
                                     </div>
                                 </div>
@@ -3888,42 +3888,42 @@ Regras:
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px;">
                         <div style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, transparent 100%); padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: #3b82f6; font-weight: 700;">EMA 9 <span style="font-size:8px;color:var(--text-muted);">(15m)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.ema9 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.ema9 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema9 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema9 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, transparent 100%); padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(34, 197, 94, 0.3); text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: #22c55e; font-weight: 700;">EMA 21 <span style="font-size:8px;color:var(--text-muted);">(1h)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.ema21 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.ema21 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema21 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema21 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, transparent 100%); padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(249, 115, 22, 0.3); text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: #f97316; font-weight: 700;">EMA 50 <span style="font-size:8px;color:var(--text-muted);">(1h)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.ema50 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.ema50 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema50 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema50 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: var(--bg-tertiary); padding: 10px 8px; border-radius: 10px; text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 50 <span style="font-size:8px;">(4h)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.sma50 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.sma50 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma50 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma50 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: var(--bg-tertiary); padding: 10px 8px; border-radius: 10px; text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 99 <span style="font-size:8px;">(4h)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.sma99 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.sma99 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma99 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma99 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: var(--bg-tertiary); padding: 10px 8px; border-radius: 10px; text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 200 <span style="font-size:8px;">(1d)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">$${formatPrice(parseFloat(indicators.movingAverages?.sma200 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.sma200 || 0))}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma200 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma200 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
@@ -4305,26 +4305,26 @@ Regras:
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; min-width: 0;">
-                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Tamanho</div>
+                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0;">
+                            <div style="font-size: 9px; color: var(--text-muted);">Tamanho</div>
                             <div style="font-size: 14px; font-weight: 800; color: var(--text-primary);">${(analysis.riskEngine.positionSizePct || 0).toFixed(1)}%</div>
                         </div>
-                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Alavancagem</div>
+                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0;">
+                            <div style="font-size: 9px; color: var(--text-muted);">Alavancagem</div>
                             <div style="font-size: 14px; font-weight: 800; color: ${(analysis.riskEngine.leverage || 1) > 5 ? '#ef4444' : '#f59e0b'};">${analysis.riskEngine.leverage || 1}×</div>
                         </div>
-                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Risco</div>
+                        <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0;">
+                            <div style="font-size: 9px; color: var(--text-muted);">Risco</div>
                             <div style="font-size: 12px; font-weight: 700; color: ${analysis.riskEngine.riskLevel === 'LOW' ? '#22c55e' : analysis.riskEngine.riskLevel === 'MEDIUM' ? '#f59e0b' : '#ef4444'};">${analysis.riskEngine.riskLevel === 'LOW' ? 'Baixo' : analysis.riskEngine.riskLevel === 'MEDIUM' ? 'Médio' : analysis.riskEngine.riskLevel === 'HIGH' ? 'Alto' : 'N/A'}</div>
                         </div>
                     </div>
                     <div style="margin-top: 8px; display: flex; gap: 8px; min-width: 0;">
-                        <div style="flex: 1; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">DD Diário</div>
+                        <div style="flex: 1; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px; min-width: 0;">
+                            <div style="font-size: 9px; color: var(--text-muted);">DD Diário</div>
                             <div style="font-size: 11px; font-weight: 700; color: ${(analysis.riskEngine.dailyDrawdown || 0) > 2 ? '#ef4444' : 'var(--text-primary)'};">${(analysis.riskEngine.dailyDrawdown || 0).toFixed(1)}% / ${(analysis.riskEngine.maxDailyDrawdown || 3).toFixed(0)}%</div>
                         </div>
-                        <div style="flex: 1; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px; min-width: 0; overflow: hidden;">
-                            <div style="font-size: 9px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">DD Semanal</div>
+                        <div style="flex: 1; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px; min-width: 0;">
+                            <div style="font-size: 9px; color: var(--text-muted);">DD Semanal</div>
                             <div style="font-size: 11px; font-weight: 700; color: ${(analysis.riskEngine.weeklyDrawdown || 0) > 5 ? '#ef4444' : 'var(--text-primary)'};">${(analysis.riskEngine.weeklyDrawdown || 0).toFixed(1)}% / ${(analysis.riskEngine.maxWeeklyDrawdown || 7).toFixed(0)}%</div>
                         </div>
                     </div>

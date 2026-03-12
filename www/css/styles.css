@@ -1184,19 +1184,15 @@
             font-size: 13px;
             font-weight: 700;
             color: var(--text-primary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
             letter-spacing: 0.1px;
+            word-wrap: break-word;
         }
 
         .ta-section-subtitle {
             font-size: 10px;
             color: var(--text-muted);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
             margin-top: 1px;
+            word-wrap: break-word;
         }
 
         /* Indicator Items */
@@ -1226,7 +1222,7 @@
             justify-content: space-between;
             margin-bottom: 8px;
             gap: 4px;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
         }
 
         .ta-indicator-name {
@@ -1235,10 +1231,7 @@
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.4px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            min-width: 0;
+            word-wrap: break-word;
         }
 
         .ta-indicator-signal {
@@ -1273,17 +1266,13 @@
             font-weight: 800;
             color: var(--text-primary);
             margin-bottom: 4px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            word-wrap: break-word;
         }
 
         .ta-indicator-change {
             font-size: 11px;
             color: var(--text-secondary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            word-wrap: break-word;
         }
 
         /* AI Summary */
