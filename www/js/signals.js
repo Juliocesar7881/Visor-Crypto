@@ -259,7 +259,7 @@
             
             // Atualizar título
             const titleEl = document.querySelector('.ta-modal-header-title');
-            if (titleEl) titleEl.textContent = `Análise Técnica - ${crypto.short}`;
+            if (titleEl) titleEl.textContent = `Análise Técnica - ${crypto.name}`;
             
             // Mostrar loading
             body.innerHTML = `
@@ -1095,8 +1095,18 @@
         const DASH_HISTORY_KEY = 'vc_call_history';
         const DASH_MAX_HISTORY = 100;
         let dashHistoryFilter = 'all';
+        let _sharedCallsCache = null;
+        let _sharedCallsCacheTs = 0;
+
+        function _getWorkerUrl() {
+            return (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
+        }
 
         function dashGetHistory() {
+            // Return cached shared calls if available, otherwise fallback to localStorage
+            if (_sharedCallsCache && (Date.now() - _sharedCallsCacheTs < 60000)) {
+                return _sharedCallsCache;
+            }
             try { return JSON.parse(localStorage.getItem(DASH_HISTORY_KEY)) || []; } catch { return []; }
         }
         function dashSaveHistory(arr) {
@@ -1104,26 +1114,70 @@
         }
 
         /**
+         * Fetch shared call history from server.
+         * Updates local cache and localStorage fallback.
+         */
+        async function dashFetchSharedHistory() {
+            const workerUrl = _getWorkerUrl();
+            if (!workerUrl) return dashGetHistory();
+            try {
+                const resp = await fetch(`${workerUrl}/calls?limit=100`, { signal: AbortSignal.timeout(5000) });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (data.success && Array.isArray(data.calls)) {
+                    _sharedCallsCache = data.calls;
+                    _sharedCallsCacheTs = Date.now();
+                    // Also save to localStorage as fallback
+                    dashSaveHistory(data.calls);
+                    return data.calls;
+                }
+            } catch (e) {
+                console.warn('[Calls] Failed to fetch shared history:', e.message);
+            }
+            return dashGetHistory();
+        }
+
+        /**
          * Record a new call signal in the history.
          * Called from runAutoScan when a CONFIRMED signal fires.
+         * Sends to shared database and also saves locally as fallback.
          */
         function dashRecordCall(symbol, direction, confidence, gates, price, reason) {
-            const history = dashGetHistory();
             const crypto = (typeof CRYPTO_DATABASE !== 'undefined' && CRYPTO_DATABASE[symbol]) || {};
-            history.unshift({
+            const callData = {
                 id: Date.now(),
                 symbol: symbol,
                 name: crypto.name || symbol,
                 short: crypto.short || symbol.replace('USDT',''),
                 img: crypto.img || '',
-                direction: direction, // 'LONG' or 'SHORT'
+                direction: direction,
                 confidence: confidence,
                 gates: gates || '',
                 price: price || '',
                 reason: reason || '',
                 time: Date.now()
-            });
+            };
+
+            // Save locally as immediate fallback
+            const history = dashGetHistory();
+            history.unshift(callData);
             dashSaveHistory(history);
+
+            // Send to shared database (fire and forget)
+            const workerUrl = _getWorkerUrl();
+            if (workerUrl) {
+                fetch(`${workerUrl}/calls`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(callData),
+                    signal: AbortSignal.timeout(5000)
+                }).then(resp => resp.json()).then(data => {
+                    if (data.success && !data.duplicate) {
+                        // Invalidate cache so next render fetches fresh
+                        _sharedCallsCacheTs = 0;
+                    }
+                }).catch(e => console.warn('[Calls] Failed to sync call:', e.message));
+            }
         }
 
         /**
@@ -1530,7 +1584,20 @@
             const container = document.getElementById('dash-history-list');
             if (!container) return;
 
-            let history = dashGetHistory();
+            // Show local data immediately, then refresh from server
+            _dashRenderHistoryFromData(dashGetHistory());
+
+            // Fetch shared history async and re-render
+            dashFetchSharedHistory().then(calls => {
+                _dashRenderHistoryFromData(calls);
+            });
+        }
+
+        function _dashRenderHistoryFromData(rawHistory) {
+            const container = document.getElementById('dash-history-list');
+            if (!container) return;
+
+            let history = rawHistory;
             if (dashHistoryFilter === 'long') history = history.filter(h => h.direction === 'LONG');
             else if (dashHistoryFilter === 'short') history = history.filter(h => h.direction === 'SHORT');
 

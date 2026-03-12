@@ -2711,8 +2711,30 @@ Regras:
                 });
                 if (!resp.ok) throw new Error(`Groq API ${resp.status}`);
                 const data = await resp.json();
-                const aiText = data.choices?.[0]?.message?.content?.trim();
+                let aiText = data.choices?.[0]?.message?.content?.trim();
                 if (aiText) {
+                    // Post-process: force the correct confidence % from the engine
+                    // The LLM often invents its own %, so we replace any percentage
+                    // that appears near confidence-related words with the real value
+                    const realConf = dataPayload.confidence;
+                    if (realConf != null) {
+                        // Replace patterns like "confiança: 73%" or "Confiança de 73%" or just "73% de confiança"
+                        aiText = aiText.replace(
+                            /(confian[çc]a[:\s]+(?:de\s+)?)(\d{1,3})(%)/gi,
+                            `$1${realConf}$3`
+                        );
+                        // Also replace the first standalone percentage at the start (e.g., "📈 LONG | 73%")
+                        aiText = aiText.replace(
+                            /^([^\n]{0,60}?)\b(\d{1,3})(%\s)/m,
+                            (match, prefix, num, suffix) => {
+                                // Only replace if it looks like the main signal line confidence
+                                if (Math.abs(parseInt(num) - realConf) > 2) {
+                                    return `${prefix}${realConf}${suffix}`;
+                                }
+                                return match;
+                            }
+                        );
+                    }
                     _aiSummaryCache[cacheKey] = aiText;
                     return aiText;
                 }

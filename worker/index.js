@@ -508,7 +508,7 @@ export default {
         // CORS headers
         const corsHeaders = {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type',
             'Cache-Control': 'public, max-age=1800',
         };
@@ -807,6 +807,113 @@ export default {
 
                 return new Response(JSON.stringify({ success: true, ...result, source: 'fresh' }), {
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            } catch (e) {
+                return new Response(JSON.stringify({ success: false, error: e.message }), {
+                    status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            }
+        }
+
+        // ═══ CALL HISTORY — Shared across all users ═══
+
+        // POST /calls — Record a new call signal
+        if (path === '/calls' && request.method === 'POST') {
+            try {
+                const body = await request.json();
+                const { symbol, direction, confidence, gates, price, name, short: shortName, img } = body;
+
+                // Validate required fields
+                if (!symbol || !direction || confidence == null) {
+                    return new Response(JSON.stringify({ success: false, error: 'Missing required fields' }), {
+                        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                // Validate direction
+                if (direction !== 'LONG' && direction !== 'SHORT') {
+                    return new Response(JSON.stringify({ success: false, error: 'Invalid direction' }), {
+                        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                // Load existing calls
+                const CALLS_KEY = 'shared_call_history_v1';
+                const MAX_CALLS = 500;
+                let calls = [];
+                if (env.CALENDAR_KV) {
+                    calls = await env.CALENDAR_KV.get(CALLS_KEY, 'json') || [];
+                }
+
+                // Dedup: same symbol + direction within 30 minutes = duplicate
+                const now = Date.now();
+                const DEDUP_WINDOW = 30 * 60 * 1000; // 30 min
+                const isDuplicate = calls.some(c =>
+                    c.symbol === symbol &&
+                    c.direction === direction &&
+                    (now - c.time) < DEDUP_WINDOW
+                );
+
+                if (isDuplicate) {
+                    return new Response(JSON.stringify({ success: true, duplicate: true, message: 'Call already recorded' }), {
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                // Add new call
+                const newCall = {
+                    id: now,
+                    symbol: String(symbol).slice(0, 20),
+                    name: String(name || '').slice(0, 50),
+                    short: String(shortName || symbol.replace('USDT', '')).slice(0, 10),
+                    img: String(img || '').slice(0, 200),
+                    direction,
+                    confidence: Math.round(Number(confidence)),
+                    gates: String(gates || '').slice(0, 20),
+                    price: String(price || '').slice(0, 20),
+                    time: now
+                };
+
+                calls.unshift(newCall);
+                calls = calls.slice(0, MAX_CALLS); // Keep last 500
+
+                if (env.CALENDAR_KV) {
+                    await env.CALENDAR_KV.put(CALLS_KEY, JSON.stringify(calls), {
+                        expirationTtl: 30 * 24 * 60 * 60 // 30 days
+                    });
+                }
+
+                return new Response(JSON.stringify({ success: true, call: newCall }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            } catch (e) {
+                return new Response(JSON.stringify({ success: false, error: e.message }), {
+                    status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            }
+        }
+
+        // GET /calls — Fetch shared call history
+        if (path === '/calls' && request.method === 'GET') {
+            try {
+                const CALLS_KEY = 'shared_call_history_v1';
+                let calls = [];
+                if (env.CALENDAR_KV) {
+                    calls = await env.CALENDAR_KV.get(CALLS_KEY, 'json') || [];
+                }
+
+                // Optional filter by direction
+                const filterDir = url.searchParams.get('direction');
+                if (filterDir === 'LONG' || filterDir === 'SHORT') {
+                    calls = calls.filter(c => c.direction === filterDir);
+                }
+
+                // Limit
+                const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500);
+                calls = calls.slice(0, limit);
+
+                return new Response(JSON.stringify({ success: true, calls, total: calls.length }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' },
                 });
             } catch (e) {
                 return new Response(JSON.stringify({ success: false, error: e.message }), {
