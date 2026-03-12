@@ -5,7 +5,7 @@ compatibility_date = "2024-01-01"
 # KV namespace for caching calendar data
 [[kv_namespaces]]
 binding = "CALENDAR_KV"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "8e2cc438aee541088ec5ca2da3496947"
 
 # Cron trigger - runs every 5 minutes for liquidation accumulation + every 3h for calendar
 [triggers]
