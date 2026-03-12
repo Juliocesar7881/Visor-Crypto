@@ -500,6 +500,57 @@
             return false;
         }
 
+        const GENERAL_RSS_FEEDS = [
+            { url: 'https://cointelegraph.com/rss', source: 'Cointelegraph' },
+            { url: 'https://cryptoslate.com/feed/', source: 'CryptoSlate' },
+            { url: 'https://decrypt.co/feed', source: 'Decrypt' },
+            { url: 'https://cryptonews.com/news/feed/', source: 'CryptoNews' },
+            { url: 'https://bitcoinmagazine.com/.rss/full/', source: 'Bitcoin Magazine' },
+            { url: 'https://thedefiant.io/feed', source: 'The Defiant' },
+            { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
+            { url: 'https://beincrypto.com/feed/', source: 'BeInCrypto' }
+        ];
+
+        async function fetchGeneralNewsFromRSS(limit = 120) {
+            const rssPromises = GENERAL_RSS_FEEDS.map(async (feed) => {
+                try {
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`;
+                    const response = await fetchWithTimeout(proxyUrl, {}, 6000);
+                    if (!response.ok) return [];
+                    const text = await response.text();
+                    const items = parseRSSText(text, feed.source);
+                    return items
+                        .filter(item => item?.title && item?.url && !isTrashNews(item.title))
+                        .map(item => {
+                            const hotCheck = isHotNews(item.title);
+                            return {
+                                ...item,
+                                sentiment: analyzeSentiment(item.title),
+                                relevance: categorizeRelevance(item.title),
+                                isHotNews: hotCheck.isHot,
+                                hotCategory: hotCheck.isHot ? hotCheck.category : null,
+                                hotKeyword: hotCheck.isHot ? hotCheck.keyword : null
+                            };
+                        });
+                } catch (e) {
+                    return [];
+                }
+            });
+
+            const results = await Promise.allSettled(rssPromises);
+            const collected = [];
+            results.forEach(result => {
+                if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+                    collected.push(...result.value);
+                }
+            });
+
+            if (collected.length > 0) {
+                mergeNews(collected.slice(0, limit));
+            }
+            return collected.length;
+        }
+
         // ============================================
         // FILTRO DE NOTÍCIAS IRRELEVANTES (aplicado a TODAS as fontes)
         // Remove previsões de preço, clickbait, spam, etc.
@@ -588,59 +639,16 @@
             return GLOBAL_TRASH_KEYWORDS.some(keyword => titleLower.includes(keyword.toLowerCase()));
         }
 
-        async function fetchFeedText(url, timeout = 8000) {
-            const headers = {
-                'Accept': 'application/rss+xml, application/xml, text/xml, */*'
-            };
-
-            try {
-                if (window.Capacitor?.Plugins?.CapacitorHttp?.request) {
-                    const resp = await window.Capacitor.Plugins.CapacitorHttp.request({
-                        url,
-                        method: 'GET',
-                        headers,
-                        connectTimeout: timeout,
-                        readTimeout: timeout
-                    });
-                    if (resp.status >= 200 && resp.status < 300) {
-                        if (typeof resp.data === 'string') return resp.data;
-                        if (resp.data == null) return '';
-                        return JSON.stringify(resp.data);
-                    }
-                }
-            } catch (_) {}
-
-            try {
-                if (window.CapacitorHttp?.request) {
-                    const resp = await window.CapacitorHttp.request({
-                        url,
-                        method: 'GET',
-                        headers,
-                        connectTimeout: timeout,
-                        readTimeout: timeout
-                    });
-                    if (resp.status >= 200 && resp.status < 300) {
-                        if (typeof resp.data === 'string') return resp.data;
-                        if (resp.data == null) return '';
-                        return JSON.stringify(resp.data);
-                    }
-                }
-            } catch (_) {}
-
-            const response = await fetchWithTimeout(url, { headers }, timeout);
-            if (!response.ok) throw new Error('HTTP ' + response.status);
-            return await response.text();
-        }
-
         async function fetchNews() {
             const container = document.getElementById('news-container');
             
             // Se estiver no filtro "hot", não mexer no container (hot news tem seu próprio sistema)
             const isHotFilter = newsFilter === 'hot';
             
-            // v8: Global timeout 20s (RSS feeds em paralelo são rápidos)
+            // v7.1: Global timeout for entire fetch cycle (15s)
             const fetchTimeout = setTimeout(() => {
                 if (!newsLoaded && allNews.length === 0) {
+                    // Try localStorage cache fallback
                     try {
                         const cached = localStorage.getItem('vc4_news_cache');
                         if (cached) {
@@ -663,14 +671,15 @@
                         </div>
                     `;
                 }
-            }, 20000);
+            }, 15000);
             
             try {
             
-            // Se já tem notícias carregadas, manter conteúdo atual enquanto atualiza em background
+            // Se já tem notícias carregadas, mostrar loading discreto
             if (newsLoaded && allNews.length > 0) {
-                // Background refresh silencioso
+                // Não mostrar loading, manter conteúdo atual enquanto atualiza em background
             } else if (!isHotFilter) {
+                // Primeira vez - mostrar skeleton loading bonito
                 container.innerHTML = Array.from({length: 6}, () => `
                     <div class="news-skeleton">
                         <div class="news-skeleton-thumb"></div>
@@ -683,61 +692,134 @@
                 `).join('');
             }
             
-            // ==========================================
-            // V8: RSS DIRETO como fonte PRIMÁRIA
-            // Capacitor 8 native HTTP = sem CORS, sem proxy
-            // ==========================================
-            const rssFeeds = [
-                { url: 'https://cointelegraph.com/rss', source: 'Cointelegraph' },
-                { url: 'https://cryptoslate.com/feed/', source: 'CryptoSlate' },
-                { url: 'https://decrypt.co/feed', source: 'Decrypt' },
-                { url: 'https://cryptonews.com/news/feed/', source: 'CryptoNews' },
-                { url: 'https://bitcoinmagazine.com/.rss/full/', source: 'Bitcoin Magazine' },
-                { url: 'https://thedefiant.io/feed', source: 'The Defiant' },
-                { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', source: 'CoinDesk' },
-                { url: 'https://beincrypto.com/feed/', source: 'BeInCrypto' }
-            ];
-            
-            const rssResults = await Promise.allSettled(
-                rssFeeds.map(async (feed) => {
-                    try {
-                        const text = await fetchFeedText(feed.url, 10000);
-                        const items = parseRSSText(text, feed.source);
-                        return items.filter(item => !isTrashNews(item.title)).map(item => {
-                            const hotCheck = isHotNews(item.title);
-                            item.sentiment = analyzeSentiment(item.title);
-                            item.relevance = categorizeRelevance(item.title);
-                            item.isHotNews = hotCheck.isHot;
-                            if (hotCheck.isHot) {
-                                item.hotCategory = hotCheck.category;
-                                item.hotKeyword = hotCheck.keyword;
-                            }
-                            return item;
-                        });
-                    } catch(e) {}
-                    return [];
-                })
-            );
-            
             let totalFetched = 0;
-            rssResults.forEach(result => {
-                if (result.status === 'fulfilled' && result.value && result.value.length > 0) {
-                    mergeNews(result.value);
-                    totalFetched += result.value.length;
-                }
-            });
+            let successfulSources = 0;
             
-            // Backend AI-filtered como bônus em background (não bloqueia)
-            fetchAINews(null, 0).then(ok => {
-                if (ok && newsFilter !== 'hot') renderNews();
-            }).catch(() => {});
+            // ==========================================
+            // V7: TRY BACKEND AI-FILTERED NEWS FIRST
+            // ==========================================
+            const backendOk = await fetchAINews(null, 0);
+            if (backendOk) {
+                successfulSources++;
+                totalFetched += aiClassifiedNews.length;
+            }
+
+            // ==========================================
+            // FALLBACK: CryptoCompare (if backend unavailable)
+            // ==========================================
+            if (!backendOk) {
+            try {
+                const ccResponse = await fetchWithTimeout(
+                    'https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=latest',
+                    {},
+                    15000
+                );
+                
+                if (ccResponse.ok) {
+                    const ccData = await ccResponse.json();
+                    if (ccData.Data && ccData.Data.length > 0) {
+                        // Usar filtro global de notícias irrelevantes (só título, body é muito agressivo)
+                        const filteredData = ccData.Data.filter(item => {
+                            return !isTrashNews(item.title);
+                        });
+                        const newItems = filteredData.slice(0, 100).map(item => {
+                            // MARCAR HOT IMEDIATAMENTE ao criar a notícia
+                            const hotCheck = isHotNews(item.title);
+                            const newsItem = {
+                                title: item.title,
+                                url: item.url,
+                                source: item.source_info?.name || item.source || 'CryptoCompare',
+                                published: new Date(item.published_on * 1000).toISOString(),
+                                sentiment: analyzeSentiment(item.title + ' ' + (item.body || '')),
+                                relevance: categorizeRelevance(item.title),
+                                image: item.imageurl || null,
+                                body: item.body ? item.body.substring(0, 300) : null,
+                                categories: item.categories || '',
+                                isHotNews: hotCheck.isHot,
+                                hotCategory: hotCheck.isHot ? hotCheck.category : null,
+                                hotKeyword: hotCheck.isHot ? hotCheck.keyword : null
+                            };
+                            return newsItem;
+                        });
+                        mergeNews(newItems);
+                        totalFetched += newItems.length;
+                        successfulSources++;
+                    }
+                }
+            } catch (e) {
+            }
+            
+            // ==========================================
+            // FONTE 2: CryptoPanic via Proxy (backup)
+            // ==========================================
+            if (allNews.length < 50) {
+                const corsProxies = [
+                    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
+                ];
+                
+                const cryptoUrl = 'https://cryptopanic.com/api/free/v1/posts/?public=true&kind=news';
+                
+                for (const proxyFn of corsProxies) {
+                    try {
+                        const url = proxyFn(cryptoUrl);
+                        const response = await fetchWithTimeout(url, {}, 8000);
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.results && data.results.length > 0) {
+                                // Apply trash filter to CryptoPanic results
+                                const filteredResults = data.results.filter(item => !isTrashNews(item.title));
+                                const newItems = filteredResults.map(item => {
+                                    // MARCAR HOT IMEDIATAMENTE ao criar a notícia
+                                    const hotCheck = isHotNews(item.title);
+                                    return {
+                                        title: item.title,
+                                        url: item.url,
+                                        source: item.source?.title || 'CryptoPanic',
+                                        published: item.published_at || new Date().toISOString(),
+                                        sentiment: item.votes?.positive > item.votes?.negative ? 'positive' : 
+                                                   item.votes?.negative > item.votes?.positive ? 'negative' : 'neutral',
+                                        relevance: categorizeRelevance(item.title),
+                                        image: null,
+                                        isHotNews: hotCheck.isHot,
+                                        hotCategory: hotCheck.isHot ? hotCheck.category : null,
+                                        hotKeyword: hotCheck.isHot ? hotCheck.keyword : null
+                                    };
+                                });
+                                mergeNews(newItems);
+                                totalFetched += newItems.length;
+                                successfulSources++;
+                                break;
+                            }
+                        }
+                    } catch (e) {
+                        // Tentar próximo proxy
+                    }
+                }
+            }
+            } // end if (!backendOk)
+
+            // ==========================================
+            // FALLBACK FINAL: RSS feeds via proxy
+            // ==========================================
+            if (allNews.length < 20) {
+                try {
+                    const rssFetched = await fetchGeneralNewsFromRSS(120);
+                    if (rssFetched > 0) {
+                        totalFetched += rssFetched;
+                        successfulSources++;
+                    }
+                } catch (e) {
+                }
+            }
 
             if (allNews.length > 0) {
-                newsRetryCount = 0;
-                newsLastFetch = Date.now();
-                newsLoaded = true;
+                newsRetryCount = 0; // Reset contador de retentativas
+                newsLastFetch = Date.now(); // Marcar timestamp da última busca
+                newsLoaded = true; // Marcar que notícias foram carregadas
                 
                 // TRADUZIR PRIMEIRO as notícias antes de renderizar
+                // Isso evita que apareçam em inglês e depois mudem
                 if (newsFilter !== 'hot') {
                     container.innerHTML = Array.from({length: 6}, () => `
                         <div class="news-skeleton">
@@ -750,15 +832,20 @@
                         </div>
                     `).join('');
                     
+                    // Traduzir as primeiras 30 notícias ANTES de renderizar
                     await translateNewsBeforeRender(30);
+                    
+                    // Agora renderizar com as traduções prontas
                     renderNews();
                 }
                 
-                // Merge hot RSS news em background
+                // BLOCO 4: Merge hot RSS news into allNews em background
+                // Isso unifica "Todas" e "Relevantes" no mesmo array
                 fetchHotNewsRSS().then(hotRssNews => {
                     if (hotRssNews.length > 0) {
                         let merged = 0;
                         for (const hot of hotRssNews) {
+                            // Deduplicar: não adicionar se título muito similar já existe
                             const isDuplicate = allNews.some(existing => 
                                 titleSimilarity(existing.title, hot.title) > 0.6 ||
                                 (existing.url && hot.url && existing.url === hot.url)
@@ -770,13 +857,14 @@
                             }
                         }
                         if (merged > 0 && newsFilter === 'hot') {
-                            renderNews();
+                            renderNews(); // Re-renderizar se o usuário está na aba Relevantes
                         }
                     }
                 }).catch(() => {});
             } else {
                 newsRetryCount++;
                 if (newsRetryCount <= MAX_NEWS_RETRIES) {
+                    // Tentar novamente com delay progressivo
                     container.innerHTML = `
                         <div style="text-align: center; padding: 30px;">
                             <i class="fas fa-sync fa-spin" style="font-size: 40px; color: var(--accent-blue); margin-bottom: 16px;"></i>
@@ -784,8 +872,9 @@
                             <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">Tentativa ${newsRetryCount}/${MAX_NEWS_RETRIES} - Conectando às fontes</p>
                         </div>
                     `;
-                    setTimeout(fetchNews, 2000 * newsRetryCount);
+                    setTimeout(fetchNews, 2000 * newsRetryCount); // Delay progressivo
                 } else {
+                    // Mostrar erro após várias tentativas
                     container.innerHTML = `
                         <div style="text-align: center; padding: 30px;">
                             <i class="fas fa-exclamation-triangle" style="font-size: 40px; color: var(--accent-yellow); margin-bottom: 16px;"></i>
@@ -799,7 +888,7 @@
                 }
             }
 
-            // Cache news para fallback offline
+            // v7.1: Cache news to localStorage for offline fallback
             if (allNews.length > 0) {
                 try {
                     localStorage.setItem('vc4_news_cache', JSON.stringify({
@@ -810,6 +899,7 @@
             }
 
             } catch (fetchErr) {
+                // Try cache fallback
                 try {
                     const cached = localStorage.getItem('vc4_news_cache');
                     if (cached) {
@@ -835,20 +925,23 @@
             
             for (const feed of extraFeeds) {
                 try {
-                    const text = await fetchFeedText(feed.url, 8000);
-                    const items = parseRSSText(text, feed.source);
-                    if (items.length > 0) {
-                        const filteredItems = items.filter(item => !isTrashNews(item.title));
-                        const newItems = filteredItems.map(item => ({
-                            title: item.title,
-                            url: item.url,
-                            source: item.source || feed.source,
-                            published: item.published || new Date().toISOString(),
-                            sentiment: analyzeSentiment(item.title),
-                            relevance: categorizeRelevance(item.title),
-                            image: item.image || null
-                        }));
-                        mergeNews(newItems);
+                    const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}&count=50`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.items && data.items.length > 0) {
+                            // Apply trash filter to RSS feed results
+                            const filteredItems = data.items.filter(item => !isTrashNews(item.title));
+                            const newItems = filteredItems.map(item => ({
+                                title: item.title,
+                                url: item.link,
+                                source: data.feed?.title || 'Crypto News',
+                                published: item.pubDate || new Date().toISOString(),
+                                sentiment: analyzeSentiment(item.title),
+                                relevance: categorizeRelevance(item.title),
+                                image: item.thumbnail || null
+                            }));
+                            mergeNews(newItems);
+                        }
                     }
                 } catch (e) {
                 }
@@ -1182,21 +1275,26 @@
             
             const rssFetchPromises = rssFeeds.map(async (feed) => {
                 try {
-                    const text = await fetchFeedText(feed.url, 6000);
-                    const items = parseRSSText(text, feed.source);
-                    const hotItems = [];
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`;
+                    const response = await fetchWithTimeout(proxyUrl, {}, 4000);
                     
-                    for (const item of items) {
-                        const hotCheck = isHotNews(item.title);
-                        if (hotCheck.isHot) {
-                            item.hotCategory = hotCheck.category;
-                            item.hotKeyword = hotCheck.keyword;
-                            item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
-                            item.isHotNews = true;
-                            hotItems.push(item);
+                    if (response.ok) {
+                        const text = await response.text();
+                        const items = parseRSSText(text, feed.source);
+                        const hotItems = [];
+                        
+                        for (const item of items) {
+                            const hotCheck = isHotNews(item.title);
+                            if (hotCheck.isHot) {
+                                item.hotCategory = hotCheck.category;
+                                item.hotKeyword = hotCheck.keyword;
+                                item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
+                                item.isHotNews = true;
+                                hotItems.push(item);
+                            }
                         }
+                        return hotItems;
                     }
-                    return hotItems;
                 } catch (e) {}
                 return [];
             });
@@ -1232,7 +1330,7 @@
             hotNewsFetchInProgress = (async () => {
                 const hotNews = [];
                 
-                // 1. RSS feeds globais em paralelo
+                // 1. RSS Feeds de notícias globais via proxy - PARALELO para velocidade
                 // EXPANDIDO: mais feeds para capturar mais notícias importantes
                 const rssFeeds = [
                     { url: 'https://feeds.reuters.com/reuters/businessNews', source: 'Reuters' },
@@ -1250,20 +1348,25 @@
             // Executar todas as requisições RSS em paralelo para maior velocidade
             const rssFetchPromises = rssFeeds.map(async (feed) => {
                 try {
-                    const text = await fetchFeedText(feed.url, 6000);
-                    const items = parseRSSText(text, feed.source);
-                    const hotItems = [];
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`;
+                    const response = await fetchWithTimeout(proxyUrl, {}, 4000);
                     
-                    for (const item of items) {
-                        const hotCheck = isHotNews(item.title);
-                        if (hotCheck.isHot) {
-                            item.hotCategory = hotCheck.category;
-                            item.hotKeyword = hotCheck.keyword;
-                            item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
-                            hotItems.push(item);
+                    if (response.ok) {
+                        const text = await response.text();
+                        const items = parseRSSText(text, feed.source);
+                        const hotItems = [];
+                        
+                        for (const item of items) {
+                            const hotCheck = isHotNews(item.title);
+                            if (hotCheck.isHot) {
+                                item.hotCategory = hotCheck.category;
+                                item.hotKeyword = hotCheck.keyword;
+                                item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
+                                hotItems.push(item);
+                            }
                         }
+                        return hotItems;
                     }
-                    return hotItems;
                 } catch (e) {
                 }
                 return [];
@@ -1297,22 +1400,26 @@
                 for (const account of twitterAccounts) {
                     nitterPromises.push((async () => {
                         try {
-                            const feedUrl = `https://${instance}/${account}/rss`;
-                            const text = await fetchFeedText(feedUrl, 2500);
-                            const items = parseRSSText(text, `@${account}`);
-                            const hotItems = [];
+                            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://${instance}/${account}/rss`)}`;
+                            const response = await fetchWithTimeout(proxyUrl, {}, 2500);
                             
-                            for (const item of items) {
-                                const hotCheck = isHotNews(item.title);
-                                if (hotCheck.isHot) {
-                                    item.hotCategory = hotCheck.category;
-                                    item.hotKeyword = hotCheck.keyword;
-                                    item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
-                                    item.isTwitter = true;
-                                    hotItems.push(item);
+                            if (response.ok) {
+                                const text = await response.text();
+                                const items = parseRSSText(text, `@${account}`);
+                                const hotItems = [];
+                                
+                                for (const item of items) {
+                                    const hotCheck = isHotNews(item.title);
+                                    if (hotCheck.isHot) {
+                                        item.hotCategory = hotCheck.category;
+                                        item.hotKeyword = hotCheck.keyword;
+                                        item.sentiment = analyzeSentimentForHot(item.title, hotCheck.category);
+                                        item.isTwitter = true;
+                                        hotItems.push(item);
+                                    }
                                 }
+                                return hotItems;
                             }
-                            return hotItems;
                         } catch (e) {
                             // Skip silently
                         }
