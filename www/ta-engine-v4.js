@@ -3542,8 +3542,8 @@
             };
         }
 
-        // Connect Real CVD WebSocket (se disponível)
-        if (window.RealtimeCVD) {
+        // Connect Real CVD WebSocket (se disponível) — skip in scan context
+        if (window.RealtimeCVD && !window._taScanContext) {
             try { window.RealtimeCVD.connect(symbol); } catch (e) {}
         }
 
@@ -3660,8 +3660,8 @@
         const signalTTL = checkSignalTTL(symbol, v4Result.v4Signal);
         const liquidationZones = estimateLiquidationZones(rawData, currentPrice);
 
-        // Connect order flow WebSocket (first call only)
-        connectOrderFlowWS(symbol);
+        // Connect order flow WebSocket (first call only) — skip in scan context
+        if (!window._taScanContext) connectOrderFlowWS(symbol);
         const orderFlow = getOrderFlowAnalysis(symbol);
 
         // ─── SOFT: Hidden divergence bonus ───

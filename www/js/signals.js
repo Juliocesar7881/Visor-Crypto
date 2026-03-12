@@ -922,6 +922,7 @@
             if (!prefs.masterEnabled) return;
 
             isScanning = true;
+            window._taScanContext = true;
             const lastResults = getScanLastResults();
             const now = Date.now();
             const enabledCryptos = Object.keys(CRYPTO_DATABASE).filter(sym => {
@@ -1019,6 +1020,11 @@
 
             saveScanLastResults(lastResults);
             isScanning = false;
+            window._taScanContext = false;
+
+            // Disconnect all WebSockets opened during scan to prevent memory leak
+            try { if (window.TAEngineV4 && window.TAEngineV4.disconnectAllOrderFlowWS) window.TAEngineV4.disconnectAllOrderFlowWS(); } catch(e) {}
+            try { if (window.RealtimeCVD && window.RealtimeCVD.disconnectAll) window.RealtimeCVD.disconnectAll(); } catch(e) {}
 
             // Refresh dashboard confidence grid if it's visible
             if (typeof dashRenderConfidenceGrid === 'function') {
@@ -1320,6 +1326,7 @@
             if (_dashScanRunning) return;
             _dashScanRunning = true;
             _dashScanAbort = false;
+            window._taScanContext = true;
 
             const cryptos = Object.entries(typeof CRYPTO_DATABASE !== 'undefined' ? CRYPTO_DATABASE : {});
             const dashResults = _getDashTAResults();
@@ -1460,6 +1467,11 @@
             }
 
             _dashScanRunning = false;
+            window._taScanContext = false;
+
+            // Disconnect all WebSockets opened during scan to prevent memory leak
+            try { if (window.TAEngineV4 && window.TAEngineV4.disconnectAllOrderFlowWS) window.TAEngineV4.disconnectAllOrderFlowWS(); } catch(e) {}
+            try { if (window.RealtimeCVD && window.RealtimeCVD.disconnectAll) window.RealtimeCVD.disconnectAll(); } catch(e) {}
 
             // Final update
             if (updatedEl) {
@@ -1478,6 +1490,7 @@
             _dashScanAbort = true; // abort current if running
             setTimeout(() => {
                 _dashScanRunning = false;
+                window._taScanContext = false;
                 dashRenderConfidenceGrid();
                 dashRenderActiveSignals();
             }, 200);
@@ -1506,7 +1519,11 @@
         // Abort scan when leaving dashboard section
         function dashAbortScan() {
             _dashScanAbort = true;
+            window._taScanContext = false;
             dashStopConfAutoRefresh();
+            // Cleanup any WebSockets opened during scan
+            try { if (window.TAEngineV4 && window.TAEngineV4.disconnectAllOrderFlowWS) window.TAEngineV4.disconnectAllOrderFlowWS(); } catch(e) {}
+            try { if (window.RealtimeCVD && window.RealtimeCVD.disconnectAll) window.RealtimeCVD.disconnectAll(); } catch(e) {}
         }
 
         function dashRenderHistory() {
