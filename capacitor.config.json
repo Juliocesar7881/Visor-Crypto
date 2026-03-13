@@ -1,3 +1,4 @@
+{
   "appId": "com.visorcrypto.app",
   "appName": "Visor Crypto",
   "webDir": "www",
@@ -17,26 +18,13 @@
       "https://api.mymemory.translated.net",
       "https://api.groq.com",
       "https://api.twelvedata.com",
-      "https://cointelegraph.com",
-      "https://cryptoslate.com",
-      "https://decrypt.co",
-      "https://cryptonews.com",
-      "https://bitcoinmagazine.com",
-      "https://thedefiant.io",
-      "https://www.coindesk.com",
-      "https://beincrypto.com",
-      "https://www.theblock.co",
-      "https://feeds.reuters.com",
-      "https://feeds.bbci.co.uk",
-      "https://nitter.privacydev.net",
-      "https://nitter.poast.org",
       "wss://stream.binance.com"
     ]
   },
   "android": {
     "allowMixedContent": false,
     "captureInput": true,
-    "webContentsDebuggingEnabled": true
+    "webContentsDebuggingEnabled": false
   },
   "plugins": {
     "AdMob": {

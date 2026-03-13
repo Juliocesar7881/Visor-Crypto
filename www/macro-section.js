@@ -9,19 +9,25 @@
 
     const BACKEND_PROXY = 'https://visor-crypto-api.onrender.com/api/proxy';
     
-    // API keys - used as fallback when backend proxy is unavailable
-    // In production APK these are compiled into the WebView bundle (not publicly exposed)
-    const FINNHUB_API_KEY = 'd5j4209r01qh37ui6ehgd5j4209r01qh37ui6ei0';
+    // API keys from config (do not hardcode secrets in source)
+    const APP_CONFIG = window.APP_CONFIG || {};
+    const FINNHUB_API_KEY = APP_CONFIG.FINNHUB_API_KEY || '';
     const FINNHUB_WS_URL = null; // Finnhub WS disabled (use REST proxy);
-    // Twelve Data - 3 chaves = 2400 créditos/dia (800 cada)
-    const TWELVE_DATA_API_KEYS = ['f3eee307545843abb139dc2e68932f16', '07a47c138e344323add83b5e97bb2bd6', '8449b7e97a8641a7a2126f0ccd7cea2d'];
+    // Twelve Data keys can be passed as array or comma-separated string in APP_CONFIG
+    const TWELVE_DATA_API_KEYS = Array.isArray(APP_CONFIG.TWELVE_DATA_API_KEYS)
+        ? APP_CONFIG.TWELVE_DATA_API_KEYS.filter(Boolean)
+        : String(APP_CONFIG.TWELVE_DATA_API_KEYS || '')
+            .split(',')
+            .map(k => k.trim())
+            .filter(Boolean);
     let currentTwelveDataKeyIndex = 0;
-    const FMP_API_KEY = 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
-    const FRED_API_KEY = '289c022214958a3eb611142e8dc34f6b';
-    const ALPHA_VANTAGE_KEY = 'G5QZWN5KBTAEORIT';
+    const FMP_API_KEY = APP_CONFIG.FMP_API_KEY || '';
+    const FRED_API_KEY = APP_CONFIG.FRED_KEY || '';
+    const ALPHA_VANTAGE_KEY = APP_CONFIG.ALPHA_VANTAGE_KEY || '';
     
     // Função para alternar chaves Twelve Data
     function getTwelveDataKey() {
+        if (TWELVE_DATA_API_KEYS.length === 0) return '';
         const key = TWELVE_DATA_API_KEYS[currentTwelveDataKeyIndex];
         currentTwelveDataKeyIndex = (currentTwelveDataKeyIndex + 1) % TWELVE_DATA_API_KEYS.length;
         return key;

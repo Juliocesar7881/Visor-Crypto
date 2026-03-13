@@ -165,7 +165,9 @@
                 
                 // 2. Buscar taxa atual do FRED (direto, sem proxy)
                 try {
-                    const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=FEDFUNDS&sort_order=desc&limit=3&api_key=289c022214958a3eb611142e8dc34f6b&file_type=json`;
+                    const fredKey = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
+                    if (!fredKey) throw new Error('FRED key not configured');
+                    const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=FEDFUNDS&sort_order=desc&limit=3&api_key=${fredKey}&file_type=json`;
                     
                     const fredRes = await fetchWithTimeout(directUrl, {}, 10000);
                     if (fredRes.ok) {
@@ -286,7 +288,8 @@
             
             try {
                 // Buscar últimas 400 observações do DFEDTARU para encontrar mudanças
-                const FRED_KEY_HIST = '289c022214958a3eb611142e8dc34f6b';
+                const FRED_KEY_HIST = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
+                if (!FRED_KEY_HIST) throw new Error('FRED key not configured');
                 const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&sort_order=desc&limit=400&api_key=${FRED_KEY_HIST}&file_type=json`;
                 
                 let response = null;
@@ -452,7 +455,7 @@
                 }
                 
                 // Fallback: FRED direto
-                if (!historyData) {
+                if (!historyData && FRED_API_KEY_CALENDAR) {
                     try {
                         const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=12&api_key=${FRED_API_KEY_CALENDAR}&file_type=json`;
                         const fredRes = await fetchWithTimeout(fredUrl, {}, 8000);
@@ -670,7 +673,7 @@
         const CALENDAR_WORKER_URL = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
         
         // FRED API key - hardcoded como fallback (mesma do macro-section.js)
-        const FRED_API_KEY_CALENDAR = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '289c022214958a3eb611142e8dc34f6b';
+        const FRED_API_KEY_CALENDAR = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
         
         // FRED series IDs para dados históricos dos eventos
         const FRED_SERIES_MAP = {
@@ -839,52 +842,54 @@
                 const startStr = `${startDate.getFullYear()}-${pad(startDate.getMonth()+1)}-${pad(startDate.getDate())}`;
                 const endStr = `${endDate.getFullYear()}-${pad(endDate.getMonth()+1)}-${pad(endDate.getDate())}`;
                 
-                const fredUrl = `https://api.stlouisfed.org/fred/releases/dates?realtime_start=${startStr}&realtime_end=${endStr}&api_key=${FRED_API_KEY_CALENDAR}&file_type=json&include_release_dates_with_no_data=true&sort_order=asc`;
-                
-                try {
-                    const res = await fetchWithTimeout(fredUrl, {}, 12000);
-                    if (res.ok) {
-                        const data = await res.json();
-                        if (data.release_dates && data.release_dates.length > 0) {
-                            const seen = new Set();
-                            const months = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-                            
-                            for (const rel of data.release_dates) {
-                                const name = rel.release_name || '';
+                if (FRED_API_KEY_CALENDAR) {
+                    const fredUrl = `https://api.stlouisfed.org/fred/releases/dates?realtime_start=${startStr}&realtime_end=${endStr}&api_key=${FRED_API_KEY_CALENDAR}&file_type=json&include_release_dates_with_no_data=true&sort_order=asc`;
+                    
+                    try {
+                        const res = await fetchWithTimeout(fredUrl, {}, 12000);
+                        if (res.ok) {
+                            const data = await res.json();
+                            if (data.release_dates && data.release_dates.length > 0) {
+                                const seen = new Set();
+                                const months = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
                                 
-                                for (const mapping of FRED_RELEASE_MAP) {
-                                    if (mapping.match.test(name)) {
-                                        if (mapping.impact !== 'high') break;
-                                        
-                                        const key = `${mapping.title}_${rel.date}`;
-                                        if (seen.has(key)) break;
-                                        seen.add(key);
-                                        
-                                        const parts = rel.date.split('-');
-                                        const year = parseInt(parts[0]);
-                                        const month = parseInt(parts[1]);
-                                        const day = parseInt(parts[2]);
-                                        
-                                        events.push({
-                                            day: day,
-                                            month: months[month - 1],
-                                            year: year,
-                                            time: mapping.time,
-                                            title: mapping.title,
-                                            country: '\uD83C\uDDFA\uD83C\uDDF8 EUA',
-                                            description: name,
-                                            isoDate: rel.date,
-                                            source: 'fred',
-                                            fredSeriesId: mapping.series,
-                                            history: []
-                                        });
-                                        break;
+                                for (const rel of data.release_dates) {
+                                    const name = rel.release_name || '';
+                                    
+                                    for (const mapping of FRED_RELEASE_MAP) {
+                                        if (mapping.match.test(name)) {
+                                            if (mapping.impact !== 'high') break;
+                                            
+                                            const key = `${mapping.title}_${rel.date}`;
+                                            if (seen.has(key)) break;
+                                            seen.add(key);
+                                            
+                                            const parts = rel.date.split('-');
+                                            const year = parseInt(parts[0]);
+                                            const month = parseInt(parts[1]);
+                                            const day = parseInt(parts[2]);
+                                            
+                                            events.push({
+                                                day: day,
+                                                month: months[month - 1],
+                                                year: year,
+                                                time: mapping.time,
+                                                title: mapping.title,
+                                                country: '\uD83C\uDDFA\uD83C\uDDF8 EUA',
+                                                description: name,
+                                                isoDate: rel.date,
+                                                source: 'fred',
+                                                fredSeriesId: mapping.series,
+                                                history: []
+                                            });
+                                            break;
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                } catch(e) {}
+                    } catch(e) {}
+                }
                 
                 // Adicionar reuniões FOMC do array hardcoded
                 const startMs = startDate.getTime();

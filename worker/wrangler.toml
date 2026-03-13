@@ -2,10 +2,14 @@ name = "visor-crypto-calendar"
 main = "index.js"
 compatibility_date = "2024-01-01"
 
+# Secrets required (configure via CLI, do not commit values):
+# wrangler secret put FMP_API_KEY
+# wrangler secret put FRED_API_KEY
+
 # KV namespace for caching calendar data
 [[kv_namespaces]]
 binding = "CALENDAR_KV"
-id = "8e2cc438aee541088ec5ca2da3496947"
+id = "YOUR_KV_NAMESPACE_ID"
 
 # Cron trigger - runs every 5 minutes for liquidation accumulation + every 3h for calendar
 [triggers]

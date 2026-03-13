@@ -813,8 +813,13 @@
                 return null;
             }
             
-            const FRED_KEY = '289c022214958a3eb611142e8dc34f6b';
-            const fredFetch = (seriesId) => fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=1&api_key=${FRED_KEY}&file_type=json`, { signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : null).catch(() => null);
+            const FRED_KEY = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
+            const fredFetch = (seriesId) => {
+                if (!FRED_KEY) return Promise.resolve(null);
+                return fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=1&api_key=${FRED_KEY}&file_type=json`, { signal: AbortSignal.timeout(8000) })
+                    .then(r => r.ok ? r.json() : null)
+                    .catch(() => null);
+            };
             
             const [yhRes, fgiRes, wbCpiRes, wbUnempRes, fredCpi, fredPce, fredUnemp, fredIsm] = await Promise.all([
                 fetchYahoo(),

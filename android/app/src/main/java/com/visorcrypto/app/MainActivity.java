@@ -3,6 +3,7 @@ package com.visorcrypto.app;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Build;
+import android.content.pm.ApplicationInfo;
 import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
 
@@ -17,10 +18,10 @@ public class MainActivity extends BridgeActivity {
         
         super.onCreate(savedInstanceState);
         
-        // WebView debugging habilitado temporariamente para diagnóstico AdMob
-        // DESABILITAR antes de publicar na Play Store:
+        // WebView debugging only in debug builds.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            WebView.setWebContentsDebuggingEnabled(true);
+            boolean isDebuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+            WebView.setWebContentsDebuggingEnabled(isDebuggable);
         }
 
         // Check if launched from signal notification

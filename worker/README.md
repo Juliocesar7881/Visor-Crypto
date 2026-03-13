@@ -75,6 +75,16 @@ cd worker
 wrangler deploy
 ```
 
+### 4.1 Configurar segredos (obrigatorio)
+Nao deixe chaves no codigo. Configure via Wrangler Secrets:
+
+```bash
+wrangler secret put FMP_API_KEY
+wrangler secret put FRED_API_KEY
+```
+
+Sem esses segredos, o worker continua online, mas fontes que dependem dessas APIs ficam limitadas.
+
 ### 5. Configurar URL no App
 Após o deploy, o Wrangler mostrará a URL (ex: `https://visor-crypto-calendar.SEU_USER.workers.dev`).
 
@@ -101,3 +111,9 @@ const CALENDAR_WORKER_URL = 'https://visor-crypto-calendar.SEU_USER.workers.dev'
 - **Cron**: Atualiza dados 1x a cada 3h, independente de quantos usuários
 - **Cache-first**: 99%+ dos requests servidos do cache em <5ms
 - **Sem estado**: Escala infinitamente sem servidor dedicado
+
+## Seguranca
+
+- Chaves FMP/FRED lidas de secrets do Cloudflare (nao hardcoded).
+- Endpoints de `calls` com validacao e rate limiting por IP.
+- Erros internos nao expoem detalhes sensiveis ao cliente.

@@ -16,12 +16,49 @@
 // ============================================
 // CONFIGURAÇÃO
 // ============================================
-const FMP_API_KEY = 'yTzpl8eGbfIStxlI6xBjQoiHycAb4PhZ';
-const FRED_API_KEY = '289c022214958a3eb611142e8dc34f6b';
-
 const CACHE_KEY_CALENDAR = 'calendar_events_v1';
 const CACHE_KEY_HISTORY = 'event_history_v1';
 const CACHE_TTL_SECONDS = 3 * 60 * 60; // 3 horas
+
+function getSecret(env, keyName) {
+    return String(env?.[keyName] || '').trim();
+}
+
+function getClientIp(request) {
+    return (
+        request.headers.get('CF-Connecting-IP') ||
+        request.headers.get('x-forwarded-for') ||
+        request.headers.get('x-real-ip') ||
+        'unknown'
+    ).split(',')[0].trim();
+}
+
+async function checkRateLimit(env, key, limit, windowSeconds) {
+    if (!env?.CALENDAR_KV) return { allowed: true, remaining: limit };
+
+    const now = Date.now();
+    const current = await env.CALENDAR_KV.get(key, 'json');
+    const count = (current && typeof current.count === 'number') ? current.count : 0;
+    const resetAt = (current && typeof current.resetAt === 'number') ? current.resetAt : 0;
+
+    if (!current || now > resetAt) {
+        await env.CALENDAR_KV.put(key, JSON.stringify({ count: 1, resetAt: now + (windowSeconds * 1000) }), {
+            expirationTtl: windowSeconds
+        });
+        return { allowed: true, remaining: limit - 1 };
+    }
+
+    if (count >= limit) {
+        return { allowed: false, remaining: 0 };
+    }
+
+    const nextCount = count + 1;
+    await env.CALENDAR_KV.put(key, JSON.stringify({ count: nextCount, resetAt }), {
+        expirationTtl: Math.max(1, Math.ceil((resetAt - now) / 1000))
+    });
+
+    return { allowed: true, remaining: Math.max(0, limit - nextCount) };
+}
 
 // Apenas eventos de ALTA importância dos EUA
 const HIGH_IMPACT_EVENTS = [
@@ -238,8 +275,9 @@ function formatEconomicValue(val, eventTitle) {
 // ============================================
 // FONTE 1: FMP API (server-side, limpo)
 // ============================================
-async function fetchFromFMP(fromDate, toDate) {
-    const url = `https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_API_KEY}`;
+async function fetchFromFMP(fromDate, toDate, fmpApiKey) {
+    if (!fmpApiKey) return [];
+    const url = `https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${fmpApiKey}`;
     try {
         const res = await fetch(url, { cf: { cacheTtl: 3600 } });
         if (!res.ok) return [];
@@ -284,8 +322,9 @@ async function fetchFromForexFactory() {
 // ============================================
 // DADOS HISTÓRICOS VIA FRED API
 // ============================================
-async function fetchHistoryFromFRED(seriesId, limit = 6) {
-    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=${limit}&api_key=${FRED_API_KEY}&file_type=json`;
+async function fetchHistoryFromFRED(seriesId, limit = 6, fredApiKey = '') {
+    if (!fredApiKey) return [];
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=${limit}&api_key=${fredApiKey}&file_type=json`;
     try {
         const res = await fetch(url, { cf: { cacheTtl: 86400 } });
         if (!res.ok) return [];
@@ -307,7 +346,7 @@ async function fetchHistoryFromFRED(seriesId, limit = 6) {
 // ============================================
 // PIPELINE PRINCIPAL: MERGE + DEDUP + CLEAN
 // ============================================
-async function buildCalendar() {
+async function buildCalendar(fmpApiKey = '') {
     const now = new Date();
     const fromDate = formatDate(now);
     const toDate = formatDate(new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000));
@@ -315,7 +354,7 @@ async function buildCalendar() {
 
     // Buscar de ambas as fontes em paralelo
     const [fmpData, ffData] = await Promise.all([
-        fetchFromFMP(fromDate, toDate),
+        fetchFromFMP(fromDate, toDate, fmpApiKey),
         fetchFromForexFactory(),
     ]);
 
@@ -477,7 +516,7 @@ async function buildCalendar() {
 // ============================================
 // BUSCAR HISTÓRICO FRED PARA TODOS OS EVENTOS
 // ============================================
-async function buildHistory(events) {
+async function buildHistory(events, fredApiKey = '') {
     const seriesIds = [...new Set(events.map(e => e.fredSeriesId).filter(Boolean))];
     const historyMap = {};
 
@@ -486,7 +525,7 @@ async function buildHistory(events) {
     for (let i = 0; i < seriesIds.length; i += batchSize) {
         const batch = seriesIds.slice(i, i + batchSize);
         const results = await Promise.all(
-            batch.map(id => fetchHistoryFromFRED(id, 12))
+            batch.map(id => fetchHistoryFromFRED(id, 12, fredApiKey))
         );
         batch.forEach((id, idx) => {
             historyMap[id] = results[idx];
@@ -504,6 +543,8 @@ export default {
     async fetch(request, env) {
         const url = new URL(request.url);
         const path = url.pathname;
+        const FMP_API_KEY = getSecret(env, 'FMP_API_KEY');
+        const FRED_API_KEY = getSecret(env, 'FRED_API_KEY');
 
         // CORS headers
         const corsHeaders = {
@@ -539,7 +580,7 @@ export default {
                 }
 
                 // Cache miss - buscar dados frescos
-                const events = await buildCalendar();
+                const events = await buildCalendar(FMP_API_KEY);
                 const now = new Date();
                 const cacheData = {
                     events,
@@ -566,10 +607,10 @@ export default {
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             } catch (e) {
+                console.error('Calendar endpoint error:', e);
                 return new Response(JSON.stringify({
                     success: false,
                     error: 'Failed to fetch calendar data',
-                    detail: e.message,
                 }), {
                     status: 500,
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -609,7 +650,7 @@ export default {
                     });
                 }
 
-                const data = await fetchHistoryFromFRED(seriesId, 12);
+                const data = await fetchHistoryFromFRED(seriesId, 12, FRED_API_KEY);
 
                 if (env.CALENDAR_KV) {
                     await env.CALENDAR_KV.put(
@@ -628,10 +669,10 @@ export default {
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             } catch (e) {
+                console.error('History endpoint error:', e);
                 return new Response(JSON.stringify({
                     success: false,
                     error: 'Failed to fetch history',
-                    detail: e.message,
                 }), {
                     status: 500,
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -676,31 +717,30 @@ export default {
                     });
                 }
 
-                // Fetch em paralelo: forceOrders + OI + L/S ratios (global) + taker ratio + preço atual
-                const [binRes, oiRes, globalLSRes, takerLSRes, tickerRes] = await Promise.all([
+                // Fetch em paralelo: forceOrders + OI + L/S ratios + preço atual
+                const [binRes, oiRes, lsAccountRes, lsPositionRes, tickerRes] = await Promise.all([
                     fetch(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${symbol}&limit=1000`),
                     fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`),
-                    fetch(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=5m&limit=1`),
-                    fetch(`https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=${symbol}&period=1h&limit=1`),
+                    fetch(`https://fapi.binance.com/futures/data/topLongShortAccountRatio?symbol=${symbol}&period=5m&limit=1`),
+                    fetch(`https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol=${symbol}&period=5m&limit=1`),
                     fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${symbol}`)
                 ]);
 
                 const orders = binRes.ok ? await binRes.json() : [];
                 const oiData = oiRes.ok ? await oiRes.json() : {};
-                const globalLS = globalLSRes.ok ? await globalLSRes.json() : [];
-                const takerLS = takerLSRes.ok ? await takerLSRes.json() : [];
+                const lsAccount = lsAccountRes.ok ? await lsAccountRes.json() : [];
+                const lsPosition = lsPositionRes.ok ? await lsPositionRes.json() : [];
                 const tickerData = tickerRes.ok ? await tickerRes.json() : {};
 
                 const currentPrice = parseFloat(tickerData.price || 0);
                 const oiQty = parseFloat(oiData.openInterest || 0);
                 const oiValueUSD = oiQty * currentPrice;
 
-                // Global L/S ratio (ALL accounts, not just top traders)
-                const globalRatio = parseFloat(globalLS[0]?.longShortRatio || 1);
-                // Taker buy/sell ratio (actual market aggression)
-                const takerRatio = parseFloat(takerLS[0]?.buySellRatio || 1);
-                // Blend: 60% global account ratio + 40% taker ratio for more realistic distribution
-                const combinedRatio = globalRatio * 0.6 + takerRatio * 0.4;
+                // L/S ratios
+                const accountRatio = parseFloat(lsAccount[0]?.longShortRatio || 1);
+                const positionRatio = parseFloat(lsPosition[0]?.longShortRatio || 1);
+                // Combined ratio: weighted average of account (40%) and position (60%) ratios
+                const combinedRatio = accountRatio * 0.4 + positionRatio * 0.6;
                 const longPct = combinedRatio / (1 + combinedRatio);
                 const shortPct = 1 - longPct;
                 const longOI = oiValueUSD * longPct;
@@ -796,9 +836,6 @@ export default {
                     shortOI: Math.round(shortOI),
                     longPct: Math.round(longPct * 1000) / 10,
                     shortPct: Math.round(shortPct * 1000) / 10,
-                    // Ratios brutos para o frontend
-                    globalLSRatio: Math.round(globalRatio * 1000) / 1000,
-                    takerBuySellRatio: Math.round(takerRatio * 1000) / 1000,
                     // Liquidações pendentes com valores reais de OI
                     pendingLevels,
                     totalPendingLong: Math.round(longOI),
@@ -813,7 +850,8 @@ export default {
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             } catch (e) {
-                return new Response(JSON.stringify({ success: false, error: e.message }), {
+                console.error('Liquidations endpoint error:', e);
+                return new Response(JSON.stringify({ success: false, error: 'Failed to fetch liquidations' }), {
                     status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             }
@@ -824,19 +862,54 @@ export default {
         // POST /calls — Record a new call signal
         if (path === '/calls' && request.method === 'POST') {
             try {
+                const clientIp = getClientIp(request);
+                const rl = await checkRateLimit(env, `rl_calls_post_${clientIp}`, 30, 60);
+                if (!rl.allowed) {
+                    return new Response(JSON.stringify({ success: false, error: 'Rate limit exceeded' }), {
+                        status: 429,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
                 const body = await request.json();
-                const { symbol, direction, confidence, gates, price, name, short: shortName, img } = body;
+                const {
+                    symbol,
+                    direction,
+                    confidence,
+                    gates,
+                    price,
+                    name,
+                    short: shortName,
+                    img,
+                    reason
+                } = body;
+
+                const safeSymbol = String(symbol || '').toUpperCase().trim();
+                const safeDirection = String(direction || '').toUpperCase().trim();
+                const safeConfidence = Number(confidence);
 
                 // Validate required fields
-                if (!symbol || !direction || confidence == null) {
+                if (!safeSymbol || !safeDirection || confidence == null) {
                     return new Response(JSON.stringify({ success: false, error: 'Missing required fields' }), {
                         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                     });
                 }
 
-                // Validate direction
-                if (direction !== 'LONG' && direction !== 'SHORT') {
+                // Validate symbol and direction
+                if (!/^[A-Z0-9]{4,20}$/.test(safeSymbol)) {
+                    return new Response(JSON.stringify({ success: false, error: 'Invalid symbol' }), {
+                        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                if (safeDirection !== 'LONG' && safeDirection !== 'SHORT') {
                     return new Response(JSON.stringify({ success: false, error: 'Invalid direction' }), {
+                        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                if (!Number.isFinite(safeConfidence) || safeConfidence < 0 || safeConfidence > 100) {
+                    return new Response(JSON.stringify({ success: false, error: 'Invalid confidence' }), {
                         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                     });
                 }
@@ -853,8 +926,8 @@ export default {
                 const now = Date.now();
                 const DEDUP_WINDOW = 30 * 60 * 1000; // 30 min
                 const isDuplicate = calls.some(c =>
-                    c.symbol === symbol &&
-                    c.direction === direction &&
+                    c.symbol === safeSymbol &&
+                    c.direction === safeDirection &&
                     (now - c.time) < DEDUP_WINDOW
                 );
 
@@ -867,14 +940,15 @@ export default {
                 // Add new call
                 const newCall = {
                     id: now,
-                    symbol: String(symbol).slice(0, 20),
+                    symbol: safeSymbol,
                     name: String(name || '').slice(0, 50),
-                    short: String(shortName || symbol.replace('USDT', '')).slice(0, 10),
+                    short: String(shortName || safeSymbol.replace('USDT', '')).slice(0, 10),
                     img: String(img || '').slice(0, 200),
-                    direction,
-                    confidence: Math.round(Number(confidence)),
+                    direction: safeDirection,
+                    confidence: Math.round(safeConfidence),
                     gates: String(gates || '').slice(0, 20),
                     price: String(price || '').slice(0, 20),
+                    reason: String(reason || '').slice(0, 180),
                     time: now
                 };
 
@@ -891,7 +965,8 @@ export default {
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             } catch (e) {
-                return new Response(JSON.stringify({ success: false, error: e.message }), {
+                console.error('Calls POST error:', e);
+                return new Response(JSON.stringify({ success: false, error: 'Failed to record call' }), {
                     status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             }
@@ -900,6 +975,15 @@ export default {
         // GET /calls — Fetch shared call history
         if (path === '/calls' && request.method === 'GET') {
             try {
+                const clientIp = getClientIp(request);
+                const rl = await checkRateLimit(env, `rl_calls_get_${clientIp}`, 120, 60);
+                if (!rl.allowed) {
+                    return new Response(JSON.stringify({ success: false, error: 'Rate limit exceeded' }), {
+                        status: 429,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
                 const CALLS_KEY = 'shared_call_history_v1';
                 let calls = [];
                 if (env.CALENDAR_KV) {
@@ -920,7 +1004,8 @@ export default {
                     headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' },
                 });
             } catch (e) {
-                return new Response(JSON.stringify({ success: false, error: e.message }), {
+                console.error('Calls GET error:', e);
+                return new Response(JSON.stringify({ success: false, error: 'Failed to fetch calls' }), {
                     status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             }
@@ -945,6 +1030,8 @@ export default {
     // Calendário: atualiza a cada 3 horas (verifica lastUpdate)
     async scheduled(event, env, ctx) {
         console.log('Cron triggered:', new Date().toISOString());
+        const FMP_API_KEY = getSecret(env, 'FMP_API_KEY');
+        const FRED_API_KEY = getSecret(env, 'FRED_API_KEY');
 
         // ─── CALENDÁRIO: só atualiza a cada 3 horas ───
         try {
@@ -960,7 +1047,7 @@ export default {
             }
 
             if (shouldRefreshCalendar) {
-                const events = await buildCalendar();
+                const events = await buildCalendar(FMP_API_KEY);
                 const now = new Date();
                 if (env.CALENDAR_KV) {
                     await env.CALENDAR_KV.put(
@@ -977,7 +1064,7 @@ export default {
                 for (let i = 0; i < seriesIds.length; i += 4) {
                     const batch = seriesIds.slice(i, i + 4);
                     const results = await Promise.all(
-                        batch.map(id => fetchHistoryFromFRED(id, 12))
+                        batch.map(id => fetchHistoryFromFRED(id, 12, FRED_API_KEY))
                     );
                     if (env.CALENDAR_KV) {
                         await Promise.all(batch.map((id, idx) =>
