@@ -519,7 +519,11 @@
             ]);
             
             let workerLiqData = null;
-            if (workerLiqRaw && workerLiqRaw.success && workerLiqRaw.totalCount > 0) {
+            if (workerLiqRaw && workerLiqRaw.success && (
+                workerLiqRaw.totalCount > 0 ||
+                workerLiqRaw.openInterestUSD > 0 ||
+                (Array.isArray(workerLiqRaw.pendingLevels) && workerLiqRaw.pendingLevels.length > 0)
+            )) {
                 workerLiqData = workerLiqRaw;
             }
 
@@ -575,6 +579,12 @@
             // HEATMAP DE LIQUIDAÇÕES (estilo Coinglass)
             // ============================================
             const workerLiqData = data.workerLiqData || null;
+            const fallbackLSRatio = (() => {
+                if (!Array.isArray(takerBuySellVol) || takerBuySellVol.length === 0) return { longShortRatio: 1 };
+                const buyVol = takerBuySellVol.reduce((s, v) => s + parseFloat(v.buyVol || 0), 0);
+                const sellVol = takerBuySellVol.reduce((s, v) => s + parseFloat(v.sellVol || 0), 0);
+                return { longShortRatio: buyVol / Math.max(sellVol, 1) };
+            })();
             const realLiquidations = workerLiqData
                 ? {
                     hasData: true, isRealData: true,
@@ -599,7 +609,9 @@
                     totalPendingLong: workerLiqData.totalPendingLong || 0,
                     totalPendingShort: workerLiqData.totalPendingShort || 0
                   }
-                : analyzeRealLiquidations(forceOrders, currentPrice, openInterest, null);
+                                : analyzeRealLiquidations(forceOrders, currentPrice, openInterest, fallbackLSRatio);
+
+                        const liquidationRiskMap = buildLiquidationRiskMap(realLiquidations, currentPrice);
             
             // Manter heatmap estimado para referência
             const liquidationHeatmap = calculateLiquidationHeatmap(currentPrice, openInterest, orderBook, takerBuySellVol);
@@ -771,65 +783,54 @@
             }
             
             // ============================================
-            // LIQUIDAÇÕES ESTIMADAS (peso 1) - Baseado em OI + L/S Ratio
+            // MAPA DE RISCO DE LIQUIDAÇÃO PENDENTE (peso variável até 2.2)
             // ============================================
-            if (realLiquidations.hasData) {
-                const longLiqVol = realLiquidations.longLiqVolume || 0;
-                const shortLiqVol = realLiquidations.shortLiqVolume || 0;
-                const longPct = longLiqVol / (longLiqVol + shortLiqVol + 0.001) * 100;
-                const shortPct = 100 - longPct;
-                
-                // Enhanced: 1.2x ratio for directional bias
-                if (shortLiqVol > longLiqVol * 1.2) {
-                    // Significativamente mais shorts liquidados = bullish bias
-                    confluenceScore += 1.5;
-                    confluenceDetails.push({ 
-                        name: 'Mapa Liquidações', 
-                        value: `${shortPct.toFixed(0)}% Short liq`, 
-                        signal: 'LONG', 
-                        weight: 1.5, 
+            if (liquidationRiskMap.hasData) {
+                const liqImpact = Math.abs(liquidationRiskMap.confluenceImpact || 0);
+                const liqWeight = Math.max(0.8, Math.min(2.2, liqImpact));
+
+                if (liquidationRiskMap.signal === 'LONG') {
+                    confluenceScore += liqWeight;
+                    confluenceDetails.push({
+                        name: 'Mapa Liquidações',
+                        value: `${liquidationRiskMap.shortPct.toFixed(0)}% shorts em risco`,
+                        signal: 'LONG',
+                        weight: liqWeight,
                         color: '#22c55e',
-                        isEstimate: false 
+                        isEstimate: true
                     });
-                } else if (longLiqVol > shortLiqVol * 1.2) {
-                    // Significativamente mais longs liquidados = bearish bias
-                    confluenceScore -= 1.5;
-                    confluenceDetails.push({ 
-                        name: 'Mapa Liquidações', 
-                        value: `${longPct.toFixed(0)}% Long liq`, 
-                        signal: 'SHORT', 
-                        weight: 1.5, 
+                } else if (liquidationRiskMap.signal === 'SHORT') {
+                    confluenceScore -= liqWeight;
+                    confluenceDetails.push({
+                        name: 'Mapa Liquidações',
+                        value: `${liquidationRiskMap.longPct.toFixed(0)}% longs em risco`,
+                        signal: 'SHORT',
+                        weight: liqWeight,
                         color: '#ef4444',
-                        isEstimate: false 
-                    });
-                } else if (longPct > 55) {
-                    confluenceScore -= 1;
-                    confluenceDetails.push({ 
-                        name: 'Mapa Liquidações', 
-                        value: `${longPct.toFixed(0)}% Long liq`, 
-                        signal: 'SHORT', 
-                        weight: 1, 
-                        color: '#ef4444',
-                        isEstimate: false 
-                    });
-                } else if (shortPct > 55) {
-                    confluenceScore += 1;
-                    confluenceDetails.push({ 
-                        name: 'Mapa Liquidações', 
-                        value: `${shortPct.toFixed(0)}% Short liq`, 
-                        signal: 'LONG', 
-                        weight: 1, 
-                        color: '#22c55e',
-                        isEstimate: false 
+                        isEstimate: true
                     });
                 } else {
-                    confluenceDetails.push({ 
-                        name: 'Mapa Liquidações', 
-                        value: 'Equilibrado', 
-                        signal: 'NEUTRO', 
-                        weight: 0, 
+                    confluenceDetails.push({
+                        name: 'Mapa Liquidações',
+                        value: `${liquidationRiskMap.shortPct.toFixed(0)}S / ${liquidationRiskMap.longPct.toFixed(0)}L`,
+                        signal: 'NEUTRO',
+                        weight: 0,
                         color: '#94a3b8',
-                        isEstimate: false 
+                        isEstimate: true
+                    });
+                }
+
+                // Concentração de risco próxima ao preço atual acelera o efeito de confluência
+                if (liquidationRiskMap.nearPct >= 30 && liquidationRiskMap.signal !== 'NEUTRO') {
+                    const nearWeight = Math.min(0.7, Math.max(0.25, liqWeight * 0.35));
+                    confluenceScore += liquidationRiskMap.signal === 'LONG' ? nearWeight : -nearWeight;
+                    confluenceDetails.push({
+                        name: 'Concentração Próxima',
+                        value: `${liquidationRiskMap.nearPct.toFixed(0)}% em até 3%`,
+                        signal: liquidationRiskMap.signal,
+                        weight: nearWeight,
+                        color: liquidationRiskMap.signal === 'LONG' ? '#22c55e' : '#ef4444',
+                        isEstimate: true
                     });
                 }
             }
@@ -1210,6 +1211,7 @@
                     },
                     chartAnalysis: chartAnalysis,
                     realLiquidations: realLiquidations,
+                    liquidationRiskMap: liquidationRiskMap,
                     liquidationHeatmap: liquidationHeatmap
                 },
                 aiSummary,
@@ -1925,6 +1927,166 @@
             }
             
             return result;
+        }
+
+        function buildLiquidationRiskMap(realLiquidations, currentPrice) {
+            const empty = {
+                hasData: false,
+                pendingLongUSD: 0,
+                pendingShortUSD: 0,
+                longPct: 50,
+                shortPct: 50,
+                nearLongUSD: 0,
+                nearShortUSD: 0,
+                nearPct: 0,
+                signal: 'NEUTRO',
+                dominantRisk: 'NEUTRO',
+                confluenceImpact: 0,
+                bucketData: [],
+                maxBucketUSD: 0,
+                mode: 'none',
+                insight: 'Sem dados suficientes'
+            };
+
+            if (!realLiquidations || !realLiquidations.hasData || !currentPrice || currentPrice <= 0) {
+                return empty;
+            }
+
+            const bucketDefs = [
+                { label: '0-1%', min: 0, max: 1 },
+                { label: '1-2%', min: 1, max: 2 },
+                { label: '2-3%', min: 2, max: 3 },
+                { label: '3-5%', min: 3, max: 5 },
+                { label: '5-8%', min: 5, max: 8 },
+                { label: '8-12%', min: 8, max: 12 },
+                { label: '12%+', min: 12, max: Number.POSITIVE_INFINITY }
+            ];
+
+            const normalizeType = (type) => String(type || '').toUpperCase();
+            const pendingLevels = Array.isArray(realLiquidations.pendingLevels)
+                ? realLiquidations.pendingLevels
+                    .map(level => {
+                        const type = normalizeType(level.type);
+                        if (type !== 'LONG' && type !== 'SHORT') return null;
+
+                        const volumeUSD = parseFloat(level.volumeUSD ?? level.volume ?? 0);
+                        const liqPrice = parseFloat(level.liqPrice ?? level.price ?? 0);
+                        const distFromPrice = level.distPct !== undefined && level.distPct !== null
+                            ? parseFloat(level.distPct)
+                            : (Number.isFinite(liqPrice) && liqPrice > 0
+                                ? Math.abs(((liqPrice - currentPrice) / currentPrice) * 100)
+                                : parseFloat(level.distance || 0));
+
+                        if (!Number.isFinite(volumeUSD) || volumeUSD <= 0 || !Number.isFinite(distFromPrice)) return null;
+
+                        return {
+                            type,
+                            volumeUSD,
+                            distPct: Math.abs(distFromPrice),
+                            liqPrice: Number.isFinite(liqPrice) && liqPrice > 0 ? liqPrice : null
+                        };
+                    })
+                    .filter(Boolean)
+                : [];
+
+            let pendingLongUSD = parseFloat(realLiquidations.totalPendingLong || 0);
+            let pendingShortUSD = parseFloat(realLiquidations.totalPendingShort || 0);
+
+            if ((pendingLongUSD <= 0 || pendingShortUSD <= 0) && pendingLevels.length > 0) {
+                const levelsLong = pendingLevels
+                    .filter(level => level.type === 'LONG')
+                    .reduce((sum, level) => sum + level.volumeUSD, 0);
+                const levelsShort = pendingLevels
+                    .filter(level => level.type === 'SHORT')
+                    .reduce((sum, level) => sum + level.volumeUSD, 0);
+
+                if (pendingLongUSD <= 0) pendingLongUSD = levelsLong;
+                if (pendingShortUSD <= 0) pendingShortUSD = levelsShort;
+            }
+
+            if (pendingLongUSD <= 0) pendingLongUSD = parseFloat(realLiquidations.longOI || realLiquidations.longLiqVolume || 0);
+            if (pendingShortUSD <= 0) pendingShortUSD = parseFloat(realLiquidations.shortOI || realLiquidations.shortLiqVolume || 0);
+
+            const totalPendingUSD = Math.max(0, pendingLongUSD + pendingShortUSD);
+            if (totalPendingUSD <= 0) return empty;
+
+            const buckets = bucketDefs.map(def => ({
+                label: def.label,
+                longUSD: 0,
+                shortUSD: 0,
+                totalUSD: 0
+            }));
+
+            if (pendingLevels.length > 0) {
+                pendingLevels.forEach(level => {
+                    const bucketIndex = bucketDefs.findIndex(def => level.distPct >= def.min && level.distPct < def.max);
+                    if (bucketIndex < 0) return;
+
+                    if (level.type === 'LONG') buckets[bucketIndex].longUSD += level.volumeUSD;
+                    if (level.type === 'SHORT') buckets[bucketIndex].shortUSD += level.volumeUSD;
+                    buckets[bucketIndex].totalUSD += level.volumeUSD;
+                });
+            } else {
+                // Distribuição sintética quando só temos agregados (sem níveis por distância)
+                const syntheticDist = [0.06, 0.10, 0.14, 0.24, 0.22, 0.14, 0.10];
+                buckets.forEach((bucket, idx) => {
+                    bucket.longUSD = pendingLongUSD * syntheticDist[idx];
+                    bucket.shortUSD = pendingShortUSD * syntheticDist[idx];
+                    bucket.totalUSD = bucket.longUSD + bucket.shortUSD;
+                });
+            }
+
+            const nearLongUSD = buckets.slice(0, 3).reduce((sum, bucket) => sum + bucket.longUSD, 0);
+            const nearShortUSD = buckets.slice(0, 3).reduce((sum, bucket) => sum + bucket.shortUSD, 0);
+            const nearTotalUSD = nearLongUSD + nearShortUSD;
+
+            const longPct = (pendingLongUSD / totalPendingUSD) * 100;
+            const shortPct = (pendingShortUSD / totalPendingUSD) * 100;
+            const nearPct = (nearTotalUSD / totalPendingUSD) * 100;
+
+            const pendingBias = (pendingShortUSD - pendingLongUSD) / totalPendingUSD;
+            const nearBias = nearTotalUSD > 0 ? (nearShortUSD - nearLongUSD) / nearTotalUSD : 0;
+            const proximityFactor = Math.max(0.55, Math.min(1.35, nearPct / 35));
+            const rawImpact = (pendingBias * 1.3) + (nearBias * 0.9 * proximityFactor);
+            const confluenceImpact = Math.max(-2.2, Math.min(2.2, rawImpact * 1.9));
+
+            let signal = 'NEUTRO';
+            if (confluenceImpact >= 0.35) signal = 'LONG';
+            if (confluenceImpact <= -0.35) signal = 'SHORT';
+
+            let dominantRisk = 'EQUILIBRADO';
+            if (signal === 'LONG') dominantRisk = 'SHORTS EM RISCO (SQUEEZE ACIMA)';
+            if (signal === 'SHORT') dominantRisk = 'LONGS EM RISCO (FLUSH ABAIXO)';
+
+            const strongestCluster = buckets.reduce((best, bucket) =>
+                bucket.totalUSD > best.totalUSD ? bucket : best,
+                { label: '-', totalUSD: 0, longUSD: 0, shortUSD: 0 }
+            );
+
+            let insight = `Maior concentração em ${strongestCluster.label}`;
+            if (signal === 'LONG') insight += ' com mais shorts vulneráveis';
+            if (signal === 'SHORT') insight += ' com mais longs vulneráveis';
+            if (signal === 'NEUTRO') insight += ' e distribuição equilibrada';
+
+            const maxBucketUSD = Math.max(1, ...buckets.map(bucket => Math.max(bucket.longUSD, bucket.shortUSD)));
+
+            return {
+                hasData: true,
+                mode: pendingLevels.length > 0 ? 'pending-levels' : 'aggregated',
+                pendingLongUSD,
+                pendingShortUSD,
+                longPct,
+                shortPct,
+                nearLongUSD,
+                nearShortUSD,
+                nearPct,
+                signal,
+                dominantRisk,
+                confluenceImpact,
+                bucketData: buckets,
+                maxBucketUSD,
+                insight
+            };
         }
         
         // Helper functions for calculations
@@ -2785,6 +2947,121 @@ Regras:
                     : '⚠️ IA indisponível — análise local:\n\n';
                 currentTextEl.textContent = prefix + localText;
             }
+        }
+
+        function renderLiquidationMapSection(realLiquidations, liquidationRiskMap, formatBigNumber, formatPrice) {
+            if (!realLiquidations?.hasData || !liquidationRiskMap?.hasData) {
+                return `
+                <div class="ta-section">
+                    <div class="ta-section-header">
+                        <div class="ta-section-icon" style="background: linear-gradient(135deg, #64748b 0%, #334155 100%);">
+                            <i class="fas fa-bolt"></i>
+                        </div>
+                        <div>
+                            <div class="ta-section-title">Mapa de Liquidações</div>
+                            <div class="ta-section-subtitle">Aguardando dados de risco pendente</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 12px; padding: 18px; background: var(--bg-tertiary); border-radius: 12px; text-align: center; color: var(--text-muted); font-size: 12px;">
+                        Sem dados suficientes no momento. Atualiza a cada ciclo da análise técnica (5 min).
+                    </div>
+                </div>
+                `;
+            }
+
+            const riskSignal = liquidationRiskMap.signal || 'NEUTRO';
+            const signalColor = riskSignal === 'LONG' ? '#22c55e' : riskSignal === 'SHORT' ? '#ef4444' : '#f59e0b';
+            const signalLabel = riskSignal === 'LONG'
+                ? 'Viés de alta (short squeeze)'
+                : riskSignal === 'SHORT'
+                    ? 'Viés de baixa (flush de longs)'
+                    : 'Sem dominância clara';
+
+            const impact = liquidationRiskMap.confluenceImpact || 0;
+            const impactLabel = `${impact >= 0 ? '+' : ''}${impact.toFixed(2)}`;
+            const riskSource = realLiquidations.dataSource || 'Dados de risco';
+            const modeLabel = liquidationRiskMap.mode === 'pending-levels'
+                ? 'Níveis reais por distância do preço'
+                : 'Distribuição agregada por Open Interest';
+
+            const bucketRows = (liquidationRiskMap.bucketData || []).map((bucket) => {
+                const maxBucket = Math.max(1, liquidationRiskMap.maxBucketUSD || 1);
+                const shortWidth = bucket.shortUSD > 0 ? Math.max(3, (bucket.shortUSD / maxBucket) * 100) : 0;
+                const longWidth = bucket.longUSD > 0 ? Math.max(3, (bucket.longUSD / maxBucket) * 100) : 0;
+
+                return `
+                <div style="display: grid; grid-template-columns: 56px 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 8px;">
+                    <div style="font-size: 10px; color: var(--text-muted); font-weight: 700;">${bucket.label}</div>
+                    <div style="background: rgba(239, 68, 68, 0.08); border-radius: 6px; padding: 4px 6px; border: 1px solid rgba(239, 68, 68, 0.18);">
+                        <div style="height: 8px; width: ${shortWidth.toFixed(1)}%; background: linear-gradient(90deg, #ef4444, #f87171); border-radius: 999px;"></div>
+                        <div style="font-size: 9px; color: #fca5a5; margin-top: 3px; white-space: nowrap;">${formatBigNumber(bucket.shortUSD || 0)}</div>
+                    </div>
+                    <div style="background: rgba(34, 197, 94, 0.08); border-radius: 6px; padding: 4px 6px; border: 1px solid rgba(34, 197, 94, 0.18);">
+                        <div style="height: 8px; width: ${longWidth.toFixed(1)}%; background: linear-gradient(90deg, #22c55e, #4ade80); border-radius: 999px;"></div>
+                        <div style="font-size: 9px; color: #86efac; margin-top: 3px; white-space: nowrap;">${formatBigNumber(bucket.longUSD || 0)}</div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="ta-section">
+                    <div class="ta-section-header">
+                        <div class="ta-section-icon" style="background: linear-gradient(135deg, ${signalColor} 0%, #0f172a 120%);">
+                            <i class="fas fa-crosshairs"></i>
+                        </div>
+                        <div>
+                            <div class="ta-section-title">Mapa de Liquidações (Risco Pendente)</div>
+                            <div class="ta-section-subtitle">${riskSource} | ${modeLabel}</div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;">
+                        <div style="padding: 12px; border-radius: 12px; background: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.25);">
+                            <div style="font-size: 10px; color: #f87171; text-transform: uppercase; font-weight: 700;">Shorts em risco (se subir)</div>
+                            <div style="font-size: 15px; font-weight: 800; color: #fecaca; margin-top: 4px;">${formatBigNumber(liquidationRiskMap.pendingShortUSD || 0)}</div>
+                            <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${(liquidationRiskMap.shortPct || 0).toFixed(1)}% do risco total</div>
+                        </div>
+                        <div style="padding: 12px; border-radius: 12px; background: rgba(34, 197, 94, 0.10); border: 1px solid rgba(34, 197, 94, 0.25);">
+                            <div style="font-size: 10px; color: #4ade80; text-transform: uppercase; font-weight: 700;">Longs em risco (se cair)</div>
+                            <div style="font-size: 15px; font-weight: 800; color: #bbf7d0; margin-top: 4px;">${formatBigNumber(liquidationRiskMap.pendingLongUSD || 0)}</div>
+                            <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${(liquidationRiskMap.longPct || 0).toFixed(1)}% do risco total</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 10px; padding: 12px; border-radius: 10px; background: var(--bg-tertiary); border: 1px solid rgba(148, 163, 184, 0.18);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                            <div>
+                                <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Leitura do Mapa</div>
+                                <div style="font-size: 13px; font-weight: 700; color: ${signalColor}; white-space: nowrap;">${signalLabel}</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Impacto Confluência</div>
+                                <div style="font-size: 13px; font-weight: 800; color: ${signalColor};">${impactLabel}</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 8px; font-size: 11px; color: var(--text-muted);">
+                            ${liquidationRiskMap.insight || 'Sem insight adicional'} | Concentração em até 3%: ${(liquidationRiskMap.nearPct || 0).toFixed(1)}%
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 12px; padding: 12px; border-radius: 10px; background: var(--bg-tertiary); border: 1px solid rgba(148, 163, 184, 0.18);">
+                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">
+                            Escada de risco por distância (% do preço atual: $${formatPrice(realLiquidations.currentPrice || 0)})
+                        </div>
+                        <div style="display: grid; grid-template-columns: 56px 1fr 1fr; gap: 8px; margin-bottom: 6px;">
+                            <div></div>
+                            <div style="font-size: 9px; color: #f87171; font-weight: 700; text-transform: uppercase;">Shorts</div>
+                            <div style="font-size: 9px; color: #4ade80; font-weight: 700; text-transform: uppercase;">Longs</div>
+                        </div>
+                        ${bucketRows}
+                    </div>
+
+                    <div style="margin-top: 10px; font-size: 10px; color: var(--text-muted);">
+                        Atualização: ${realLiquidations.lastUpdate || '-'} | Este mapa influencia confluência, confiança e probabilidade final.
+                    </div>
+                </div>
+            `;
         }
 
         function renderTechnicalAnalysis(analysis, crypto) {
@@ -3758,163 +4035,7 @@ Regras:
                         </div>
                     </div>
                 </div>
-                
-                                
-                                
-                <!-- HEATMAP DE LIQUIDAÇÕES — DADOS REAIS -->
-                <div class="ta-section">
-                    <div class="ta-section-header">
-                        <div class="ta-section-icon" style="background: linear-gradient(135deg, ${indicators.realLiquidations?.isRealData ? '#22c55e 0%, #16a34a' : '#a78bfa 0%, #7c3aed'} 100%);">
-                            <i class="fas ${indicators.realLiquidations?.isRealData ? 'fa-bolt' : 'fa-crosshairs'}"></i>
-                        </div>
-                        <div>
-                            <div class="ta-section-title">Mapa de Liquidações (12h)</div>
-                            <div class="ta-section-subtitle" style="color: ${indicators.realLiquidations?.isRealData ? '#22c55e' : '#a78bfa'};">${indicators.realLiquidations?.dataSource || 'Sem dados'}${indicators.realLiquidations?.openInterestUSD ? ' | OI: ' + formatBigNumber(indicators.realLiquidations.openInterestUSD) : ''}</div>
-                        </div>
-                    </div>
-                    ${indicators.realLiquidations?.hasData ? `
-                    <div style="margin-top: 12px;">
-                        <!-- Fonte de dados -->
-                        <div style="padding: 10px; background: rgba(${indicators.realLiquidations?.isRealData ? '34, 197, 94' : '139, 92, 246'}, 0.15); border: 1px solid rgba(${indicators.realLiquidations?.isRealData ? '34, 197, 94' : '139, 92, 246'}, 0.3); border-radius: 8px; margin-bottom: 12px;">
-                            <div style="font-size: 10px; color: ${indicators.realLiquidations?.isRealData ? '#22c55e' : '#a78bfa'}; text-align: center;">
-                                <i class="fas ${indicators.realLiquidations?.isRealData ? 'fa-check-circle' : 'fa-database'}" style="margin-right: 4px;"></i>
-                                ${indicators.realLiquidations?.isRealData 
-                                    ? `Dados reais de ${indicators.realLiquidations.longLiqCount + indicators.realLiquidations.shortLiqCount} liquidações + OI de ${formatBigNumber(indicators.realLiquidations.openInterestUSD || 0)}` 
-                                    : `Baseado em Open Interest real de ${formatBigNumber(indicators.realLiquidations.openInterestUSD || 0)} + distribuição de alavancagem`}
-                            </div>
-                        </div>
-                        
-                        <!-- Preço atual e última atualização -->
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
-                            <div>
-                                <div style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">Preço Atual</div>
-                                <div style="font-size: 16px; font-weight: 800; color: var(--text-primary); white-space: nowrap;">$${formatPrice(indicators.realLiquidations.currentPrice)}</div>
-                            </div>
-                            <div style="text-align: right;">
-                                <div style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">Atualização</div>
-                                <div style="font-size: 12px; color: #22c55e;"><i class="fas fa-sync-alt" style="margin-right: 4px;"></i>${indicators.realLiquidations.lastUpdate}</div>
-                            </div>
-                        </div>
-                        
-                        <!-- Volume liquidado (12h) / Volume pendente -->
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                            <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.05) 100%); padding: 16px; border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3);">
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                                    <i class="fas fa-arrow-up" style="color: #22c55e;"></i>
-                                    <div style="font-size: 11px; color: #22c55e; text-transform: uppercase; font-weight: 700; white-space: nowrap;">${indicators.realLiquidations.isRealData ? 'Longs Liquidados' : 'Longs em Risco'}</div>
-                                </div>
-                                <div style="font-size: 15px; font-weight: 800; color: #22c55e; white-space: nowrap;">${formatBigNumber(indicators.realLiquidations.longLiqVolume || 0)}</div>
-                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${indicators.realLiquidations.isRealData ? `${indicators.realLiquidations.longLiqCount || 0} liquidações (12h)` : 'Liquidam se CAIR'}</div>
-                            </div>
-                            <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.05) 100%); padding: 16px; border-radius: 12px; border: 1px solid rgba(239, 68, 68, 0.3);">
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                                    <i class="fas fa-arrow-down" style="color: #ef4444;"></i>
-                                    <div style="font-size: 11px; color: #ef4444; text-transform: uppercase; font-weight: 700; white-space: nowrap;">${indicators.realLiquidations.isRealData ? 'Shorts Liquidados' : 'Shorts em Risco'}</div>
-                                </div>
-                                <div style="font-size: 15px; font-weight: 800; color: #ef4444; white-space: nowrap;">${formatBigNumber(indicators.realLiquidations.shortLiqVolume || 0)}</div>
-                                <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">${indicators.realLiquidations.isRealData ? `${indicators.realLiquidations.shortLiqCount || 0} liquidações (12h)` : 'Liquidam se SUBIR'}</div>
-                            </div>
-                        </div>
-                        
-                        <!-- Barra de dominância -->
-                        <div style="background: var(--bg-tertiary); border-radius: 10px; padding: 12px; margin-bottom: 12px;">
-                            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase;">Distribuição de Posições</div>
-                            <div style="display: flex; height: 24px; border-radius: 6px; overflow: hidden;">
-                                <div style="width: ${((indicators.realLiquidations.longLiqVolume || 0) / ((indicators.realLiquidations.longLiqVolume || 0) + (indicators.realLiquidations.shortLiqVolume || 0) + 0.001) * 100).toFixed(0)}%; background: linear-gradient(90deg, #22c55e, #4ade80); display: flex; align-items: center; justify-content: center;">
-                                    <span style="font-size: 10px; font-weight: 700; color: white; white-space: nowrap;">${((indicators.realLiquidations.longLiqVolume || 0) / ((indicators.realLiquidations.longLiqVolume || 0) + (indicators.realLiquidations.shortLiqVolume || 0) + 0.001) * 100).toFixed(0)}% LONG</span>
-                                </div>
-                                <div style="width: ${((indicators.realLiquidations.shortLiqVolume || 0) / ((indicators.realLiquidations.longLiqVolume || 0) + (indicators.realLiquidations.shortLiqVolume || 0) + 0.001) * 100).toFixed(0)}%; background: linear-gradient(90deg, #ef4444, #f87171); display: flex; align-items: center; justify-content: center;">
-                                    <span style="font-size: 10px; font-weight: 700; color: white; white-space: nowrap;">${((indicators.realLiquidations.shortLiqVolume || 0) / ((indicators.realLiquidations.longLiqVolume || 0) + (indicators.realLiquidations.shortLiqVolume || 0) + 0.001) * 100).toFixed(0)}% SHORT</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Análise -->
-                        <div style="padding: 14px; background: ${indicators.realLiquidations.dominantRisk === 'LONGS EM RISCO' ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, transparent 100%)' : indicators.realLiquidations.dominantRisk === 'SHORTS EM RISCO' ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, transparent 100%)' : 'var(--bg-tertiary)'}; border-radius: 12px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Status</div>
-                                    <div style="font-size: 14px; font-weight: 800; white-space: nowrap; color: ${indicators.realLiquidations.dominantRisk === 'LONGS EM RISCO' ? '#ef4444' : indicators.realLiquidations.dominantRisk === 'SHORTS EM RISCO' ? '#22c55e' : '#f59e0b'};">
-                                        ${indicators.realLiquidations.dominantRisk}
-                                    </div>
-                                </div>
-                                <div style="text-align: right;">
-                                    <div style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">Implicação</div>
-                                    <div style="font-size: 11px; font-weight: 600; white-space: nowrap; color: ${indicators.realLiquidations.dominantRisk === 'LONGS EM RISCO' ? '#ef4444' : indicators.realLiquidations.dominantRisk === 'SHORTS EM RISCO' ? '#22c55e' : '#94a3b8'};">
-                                        ${indicators.realLiquidations.dominantRisk === 'LONGS EM RISCO' ? '▼ Pressão de queda' : indicators.realLiquidations.dominantRisk === 'SHORTS EM RISCO' ? '▲ Possível squeeze' : '⚖️ Equilíbrio'}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Níveis de liquidação por alavancagem -->
-                        ${indicators.realLiquidations.pendingLevels?.length > 0 ? `
-                        <div style="margin-top: 12px; background: var(--bg-tertiary); border-radius: 10px; padding: 12px;">
-                            <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; text-transform: uppercase;">
-                                <i class="fas fa-crosshairs" style="margin-right: 6px; color: #a78bfa;"></i>Liquidações Pendentes (OI Real)
-                            </div>
-                            ${indicators.realLiquidations.openInterestUSD ? `
-                            <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 10px; padding: 6px 8px; background: rgba(139,92,246,0.1); border-radius: 6px;">
-                                Open Interest: <strong style="color: #a78bfa;">${formatBigNumber(indicators.realLiquidations.openInterestUSD)}</strong> — 
-                                Longs: <strong style="color: #22c55e;">${indicators.realLiquidations.longPct || 50}%</strong> | 
-                                Shorts: <strong style="color: #ef4444;">${indicators.realLiquidations.shortPct || 50}%</strong>
-                            </div>` : ''}
-                            <div style="font-size: 10px; color: #22c55e; font-weight: 700; margin-bottom: 6px;">▲ Longs a serem liquidados se CAIR</div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
-                                ${indicators.realLiquidations.pendingLevels.filter(l => l.type === 'LONG').map(liq => `
-                                    <div style="padding: 8px; background: rgba(34, 197, 94, 0.08); border-radius: 6px; border: 1px solid rgba(34, 197, 94, 0.15);">
-                                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                                            <span style="font-size: 10px; color: #22c55e; font-weight: 700;">${liq.leverage}x</span>
-                                            <span style="font-size: 9px; color: var(--text-muted);">-${liq.distPct}%</span>
-                                        </div>
-                                        <div style="font-size: 11px; font-weight: 800; color: #4ade80; margin-top: 2px;">${formatBigNumber(liq.volumeUSD)}</div>
-                                        <div style="font-size: 8px; color: var(--text-muted);">@ $${formatPrice(liq.liqPrice)}</div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                            <div style="font-size: 10px; color: #ef4444; font-weight: 700; margin-bottom: 6px;">▼ Shorts a serem liquidados se SUBIR</div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                                ${indicators.realLiquidations.pendingLevels.filter(l => l.type === 'SHORT').map(liq => `
-                                    <div style="padding: 8px; background: rgba(239, 68, 68, 0.08); border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.15);">
-                                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                                            <span style="font-size: 10px; color: #ef4444; font-weight: 700;">${liq.leverage}x</span>
-                                            <span style="font-size: 9px; color: var(--text-muted);">+${liq.distPct}%</span>
-                                        </div>
-                                        <div style="font-size: 11px; font-weight: 800; color: #f87171; margin-top: 2px;">${formatBigNumber(liq.volumeUSD)}</div>
-                                        <div style="font-size: 8px; color: var(--text-muted);">@ $${formatPrice(liq.liqPrice)}</div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                        ` : indicators.realLiquidations.liquidationLevels?.length > 0 ? `
-                        <div style="margin-top: 12px; background: var(--bg-tertiary); border-radius: 10px; padding: 12px;">
-                            <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">
-                                <i class="fas fa-layer-group" style="margin-right: 6px;"></i>Níveis por Alavancagem
-                            </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                ${indicators.realLiquidations.liquidationLevels.filter(l => l.type === 'LONG').slice(0, 4).map(liq => `
-                                    <div style="padding: 8px; background: rgba(34, 197, 94, 0.1); border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
-                                        <span style="font-size: 10px; color: #22c55e; font-weight: 600; white-space: nowrap;">${liq.leverage}x LONG</span>
-                                        <span style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">-${liq.distance.toFixed(1)}%</span>
-                                    </div>
-                                `).join('')}
-                                ${indicators.realLiquidations.liquidationLevels.filter(l => l.type === 'SHORT').slice(0, 4).map(liq => `
-                                    <div style="padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
-                                        <span style="font-size: 10px; color: #ef4444; font-weight: 600; white-space: nowrap;">${liq.leverage}x SHORT</span>
-                                        <span style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">+${liq.distance.toFixed(1)}%</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                    ` : `
-                    <div style="margin-top: 12px; padding: 20px; background: var(--bg-tertiary); border-radius: 12px; text-align: center;">
-                        <div style="font-size: 24px; margin-bottom: 8px;">📊</div>
-                        <div style="color: var(--text-muted); font-size: 12px;">Carregando dados de liquidação...</div>
-                    </div>
-                    `}
-                </div>
+                ${renderLiquidationMapSection(indicators.realLiquidations, indicators.liquidationRiskMap, formatBigNumber, formatPrice)}
                 
                 <!-- Moving Averages Section -->
                 <div class="ta-section">
