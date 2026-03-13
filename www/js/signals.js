@@ -844,6 +844,7 @@
         const SCAN_LAST_RESULTS_KEY = 'vc_scan_last_results';
         const SCAN_DEDUP_MS = 30 * 60 * 1000; // 30 min dedup por crypto
         let autoScanTimer = null;
+        let autoScanBootTimeout = null;
         let isScanning = false;
 
         async function initLocalNotifications() {
@@ -1037,7 +1038,14 @@
             const prefs = getSignalPrefs();
             if (!prefs.masterEnabled) return;
             // Run first scan after 30 seconds (let app load first)
-            setTimeout(() => runAutoScan(), 30000);
+            if (autoScanBootTimeout) {
+                clearTimeout(autoScanBootTimeout);
+                autoScanBootTimeout = null;
+            }
+            autoScanBootTimeout = setTimeout(() => {
+                autoScanBootTimeout = null;
+                runAutoScan();
+            }, 30000);
             // Then repeat every 5 min
             autoScanTimer = setInterval(() => runAutoScan(), SCAN_INTERVAL_MS);
         }
@@ -1046,6 +1054,10 @@
             if (autoScanTimer) {
                 clearInterval(autoScanTimer);
                 autoScanTimer = null;
+            }
+            if (autoScanBootTimeout) {
+                clearTimeout(autoScanBootTimeout);
+                autoScanBootTimeout = null;
             }
         }
 

@@ -20,9 +20,17 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "BackgroundScan")
 public class BackgroundScanPlugin extends Plugin {
 
+    private static final String PREFS = "visor_scan";
+    private static final String PREF_SERVICE_ENABLED = "service_enabled";
+
     @PluginMethod()
     public void start(PluginCall call) {
         try {
+            getContext().getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_SERVICE_ENABLED, true)
+                .apply();
+
             Intent serviceIntent = new Intent(getContext(), ScanForegroundService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 getContext().startForegroundService(serviceIntent);
@@ -38,6 +46,11 @@ public class BackgroundScanPlugin extends Plugin {
     @PluginMethod()
     public void stop(PluginCall call) {
         try {
+            getContext().getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_SERVICE_ENABLED, false)
+                .apply();
+
             Intent serviceIntent = new Intent(getContext(), ScanForegroundService.class);
             serviceIntent.setAction("STOP");
             getContext().startService(serviceIntent);

@@ -11,6 +11,7 @@
     
     // API keys from config (do not hardcode secrets in source)
     const APP_CONFIG = window.APP_CONFIG || {};
+    const CALENDAR_WORKER_URL = String(APP_CONFIG.CALENDAR_WORKER_URL || '').trim().replace(/\/+$/, '');
     const FINNHUB_API_KEY = APP_CONFIG.FINNHUB_API_KEY || '';
     const FINNHUB_WS_URL = null; // Finnhub WS disabled (use REST proxy);
     // Twelve Data keys can be passed as array or comma-separated string in APP_CONFIG
@@ -61,6 +62,8 @@
     let indicatorChartType = 'line';
     let indicatorCandleData = null;
     let _chartRequestId = 0; // Race condition guard
+    let macroPriceFetchPromise = null;
+    let macroPriceFetchStartedAt = 0;
 
     function macroLog(msg, type = 'info') {
         const colors = { info: '#0af', error: '#f44', success: '#0f0', warn: '#fa0' };
@@ -88,13 +91,15 @@
     // ============================================
     const TWELVE_DATA_SYMBOLS = {
         'GC=F': 'XAU/USD',         // Ouro - Forex ✓
+        'SI=F': 'XAG/USD',         // Prata - Forex ✓
         'XLE': 'XLE',              // Energy ETF ✓
-        // Prata (SI=F) busca direto do Yahoo Finance
     };
+
+    const PRIORITY_TWELVE_SYMBOLS = ['GC=F', 'SI=F'];
     
     // Timestamp da última atualização
     let lastPriceUpdate = 0;
-    const PRICE_UPDATE_INTERVAL = 1 * 60 * 1000; // 1 minuto
+    const PRICE_UPDATE_INTERVAL = 3 * 60 * 1000; // 3 minutos
     
     // ============================================
     // CACHE DE PREÇOS - localStorage para load instantâneo
@@ -128,36 +133,53 @@
     }
     
     async function loadAllPricesInstant() {
-        macroLog('⚡ Carregando preços...', 'info');
-        
-        // 1. Carregar cache imediatamente para UI instantânea
-        const hadCache = loadCachedPrices();
-        if (hadCache) {
-            renderAllIndicators(); // Renderizar com cache enquanto busca novos
+        if (macroPriceFetchPromise) {
+            macroLog('⏳ Atualização de preços já em andamento, aguardando resultado...', 'info');
+            return macroPriceFetchPromise;
         }
-        
-        // 2. Buscar dados frescos em background
-        // Tentar Yahoo Finance v8 (chart endpoint - mais confiável)
-        macroLog('📊 Buscando via Yahoo Finance...', 'info');
-        const yahooSuccess = await loadPricesViaYahooV8();
-        
-        // Complementar com Twelve Data se necessário
-        if (yahooSuccess < 9) {
-            macroLog('📦 Complementando com Twelve Data...', 'info');
-            await loadPricesViaTwelveData();
-        }
-        
-        const total = Object.values(indicatorPrices).filter(p => p > 0).length;
-        
-        if (total >= 5) {
-            macroLog(`✅ Total: ${total}/9 indicadores carregados`, 'success');
-        } else {
-            macroLog(`⚠️ Apenas ${total}/9 indicadores disponíveis`, 'warn');
-        }
-        
-        lastPriceUpdate = Date.now();
-        savePriceCache(); // Salvar no cache
-        renderAllIndicators();
+
+        macroPriceFetchStartedAt = Date.now();
+        macroPriceFetchPromise = (async () => {
+            macroLog('⚡ Carregando preços...', 'info');
+            const totalIndicators = Object.keys(MARKET_INDICATORS).length;
+
+            // 1. Carregar cache imediatamente para UI instantânea
+            const hadCache = loadCachedPrices();
+            if (hadCache) {
+                renderAllIndicators(); // Renderizar com cache enquanto busca novos
+            }
+
+            // 2. Priorizar metais via Twelve Data para resposta mais rápida (ouro/prata)
+            await loadPricesViaTwelveData({ priorityOnly: true, fastMode: true });
+            renderAllIndicators();
+
+            // 3. Buscar dados frescos em background
+            macroLog('📊 Buscando via Yahoo Finance...', 'info');
+            const yahooSuccess = await loadPricesViaYahooV8();
+
+            // 4. Complementar com Twelve Data se necessário
+            if (yahooSuccess < totalIndicators) {
+                macroLog('📦 Complementando com Twelve Data...', 'info');
+                await loadPricesViaTwelveData();
+            }
+
+            const total = Object.values(indicatorPrices).filter(p => p > 0).length;
+            if (total >= 5) {
+                macroLog(`✅ Total: ${total}/${totalIndicators} indicadores carregados`, 'success');
+            } else {
+                macroLog(`⚠️ Apenas ${total}/${totalIndicators} indicadores disponíveis`, 'warn');
+            }
+
+            lastPriceUpdate = Date.now();
+            savePriceCache(); // Salvar no cache
+            renderAllIndicators();
+        })().finally(() => {
+            const elapsedMs = Date.now() - macroPriceFetchStartedAt;
+            macroLog(`🧹 Atualização finalizada (${Math.round(elapsedMs / 1000)}s)`, 'info');
+            macroPriceFetchPromise = null;
+        });
+
+        return macroPriceFetchPromise;
     }
     
     // ============================================
@@ -175,36 +197,38 @@
             }
             
             const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
-            const proxyUrls = [
+            const sourceUrls = [
+                yahooUrl,
                 `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
                 `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
             ];
-            
-            for (const url of proxyUrls) {
+
+            for (let idx = 0; idx < sourceUrls.length; idx++) {
+                const url = sourceUrls[idx];
                 try {
                     const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 5000);
-                    
+                    const timeout = setTimeout(() => controller.abort(), idx === 0 ? 3500 : 4000);
+
                     const response = await fetch(url, { signal: controller.signal });
                     clearTimeout(timeout);
-                    
+
                     if (!response.ok) continue;
-                    
+
                     const data = await response.json();
                     const result = data?.chart?.result?.[0];
-                    
+
                     if (result) {
                         const meta = result.meta;
                         const price = meta?.regularMarketPrice || 0;
                         const prevClose = meta?.previousClose || meta?.chartPreviousClose || price;
-                        
+
                         if (price > 0) {
                             const change = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
-                            
+
                             indicatorPrices[symbol] = price;
                             indicatorChanges[symbol] = change;
                             previousIndicatorPrices[symbol] = prevClose;
-                            
+
                             macroLog(`✅ ${MARKET_INDICATORS[symbol].name}: ${price.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}%)`, 'success');
                             return true;
                         }
@@ -215,10 +239,14 @@
             }
             return false;
         }
-        
-        // Buscar TODOS em paralelo (máxima velocidade)
-        const results = await Promise.all(symbols.map(s => fetchSymbol(s)));
-        successCount = results.filter(r => r).length;
+
+        // Buscar em lotes para reduzir pico de memória/requisições simultâneas
+        const BATCH_SIZE = 4;
+        for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+            const batch = symbols.slice(i, i + BATCH_SIZE);
+            const results = await Promise.all(batch.map(s => fetchSymbol(s)));
+            successCount += results.filter(r => r).length;
+        }
         
         return successCount;
     }
@@ -226,39 +254,47 @@
     // ============================================
     // TWELVE DATA - OURO, XLE (3 chaves = 2400 créditos/dia)
     // ============================================
-    async function loadPricesViaTwelveData() {
+    async function loadPricesViaTwelveData(options = {}) {
+        const { priorityOnly = false, fastMode = false } = options;
         let successCount = 0;
-        
-        for (const [internalSymbol, tdSymbol] of Object.entries(TWELVE_DATA_SYMBOLS)) {
+
+        const entries = Object.entries(TWELVE_DATA_SYMBOLS).filter(([internalSymbol]) => {
+            if (!priorityOnly) return true;
+            return PRIORITY_TWELVE_SYMBOLS.includes(internalSymbol);
+        });
+
+        for (const [internalSymbol, tdSymbol] of entries) {
             // Pular se já temos preço do Yahoo
             if (indicatorPrices[internalSymbol] && indicatorPrices[internalSymbol] > 0) {
                 continue;
             }
-            
+
             // Tentar com cada chave até funcionar
-            for (let attempt = 0; attempt < 3; attempt++) {
+            const maxAttempts = fastMode ? 2 : 3;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
                 const apiKey = getTwelveDataKey();
-                
+                if (!apiKey) break;
+
                 try {
                     const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(tdSymbol)}&apikey=${apiKey}`;
-                    const response = await _fetchWithTimeout(url, {}, 8000);
+                    const response = await _fetchWithTimeout(url, {}, fastMode ? 4500 : 8000);
                     const data = await response.json();
-                    
+
                     // Verificar se tem erro de créditos
                     if (data.code === 429 || (data.message && data.message.includes('API credits'))) {
                         continue; // Tenta próxima chave
                     }
-                    
+
                     if (data && !data.code && (data.close || data.price)) {
                         const price = parseFloat(data.close || data.price);
                         const prevClose = parseFloat(data.previous_close) || price;
                         const change = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
-                        
+
                         indicatorPrices[internalSymbol] = price;
                         indicatorChanges[internalSymbol] = change;
                         previousIndicatorPrices[internalSymbol] = prevClose;
                         successCount++;
-                        
+
                         macroLog(`✅ ${MARKET_INDICATORS[internalSymbol].name}: ${price.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}%)`, 'success');
                         break; // Sucesso, não precisa tentar mais chaves
                     }
@@ -266,7 +302,7 @@
                     // Continua tentando
                 }
                 
-                await new Promise(r => setTimeout(r, 150));
+                await new Promise(r => setTimeout(r, fastMode ? 80 : 150));
             }
         }
         
@@ -284,7 +320,7 @@
 
     // ============================================
     // WEBSOCKET TWELVE DATA - DESATIVADO (limite de créditos)
-    // Usando polling a cada 15 minutos
+    // Usando polling a cada 3 minutos
     // ============================================
     let twelveDataWs = null;
     
@@ -640,6 +676,7 @@
         let prefetchedData = null;
         const prefetchPromise = (async () => {
             try {
+                pruneChartCache();
                 const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
                 const cached = chartDataCache[cacheKey];
                 if (cached && (Date.now() - cached.timestamp) < CHART_CACHE_TTL) {
@@ -649,6 +686,7 @@
                 prefetchedData = await _fetchYahooChart(symbol, indicatorChartPeriod);
                 if (prefetchedData.length > 0) {
                     chartDataCache[getChartCacheKey(symbol, indicatorChartPeriod)] = { data: prefetchedData, timestamp: Date.now() };
+                    pruneChartCache();
                 }
             } catch(e) { macroLog('Prefetch error: ' + e.message, 'warn'); }
         })();
@@ -1431,9 +1469,29 @@
     // Cache de dados de gráfico para evitar re-fetch ao trocar timeframes
     const chartDataCache = {};
     const CHART_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+    const MAX_CHART_CACHE_ITEMS = 32;
     
     function getChartCacheKey(symbol, period) {
         return `${symbol}_${period}`;
+    }
+
+    function pruneChartCache() {
+        const now = Date.now();
+
+        Object.keys(chartDataCache).forEach((key) => {
+            const entry = chartDataCache[key];
+            if (!entry || !entry.timestamp || (now - entry.timestamp) > CHART_CACHE_TTL) {
+                delete chartDataCache[key];
+            }
+        });
+
+        const keys = Object.keys(chartDataCache);
+        if (keys.length <= MAX_CHART_CACHE_ITEMS) return;
+
+        keys
+            .sort((a, b) => (chartDataCache[a].timestamp || 0) - (chartDataCache[b].timestamp || 0))
+            .slice(0, keys.length - MAX_CHART_CACHE_ITEMS)
+            .forEach((key) => delete chartDataCache[key]);
     }
 
     // Mapa de período → Yahoo Finance interval/range
@@ -1548,6 +1606,7 @@
         if (loadingEl) { loadingEl.style.opacity = '1'; loadingEl.style.display = 'flex'; }
         
         // Verificar cache
+        pruneChartCache();
         const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
         const cached = chartDataCache[cacheKey];
         if (cached && (Date.now() - cached.timestamp) < CHART_CACHE_TTL) {
@@ -1601,6 +1660,7 @@
             
             // Salvar no cache
             chartDataCache[cacheKey] = { data: indicatorCandleData, timestamp: Date.now() };
+            pruneChartCache();
             
             // Esconder loading ANTES de desenhar (com fade)
             if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
@@ -2276,6 +2336,26 @@
     }
     
     // Cache para dados do Fed
+    const FED_CACHE_PERSIST_KEY = 'vc_macro_fed_cache_v2';
+
+    function _loadFedPersistedCache() {
+        try {
+            const raw = localStorage.getItem(FED_CACHE_PERSIST_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || !parsed.currentRate) return null;
+            return parsed;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function _saveFedPersistedCache(data) {
+        try {
+            localStorage.setItem(FED_CACHE_PERSIST_KEY, JSON.stringify(data));
+        } catch (_) {}
+    }
+
     let fedDataCache = {
         effectiveRate: null,  // DFF - Effective Federal Funds Rate
         targetUpper: null,    // DFEDTARU - Target Range Upper Limit
@@ -2287,6 +2367,11 @@
         lastUpdate: null,
         loading: false
     };
+
+    const _persistedFed = _loadFedPersistedCache();
+    if (_persistedFed) {
+        fedDataCache = { ...fedDataCache, ..._persistedFed };
+    }
     
     // Cache TTL: 30 minutos
     const FED_CACHE_TTL = 30 * 60 * 1000;
@@ -2343,9 +2428,102 @@
         }
     }
 
+    function parseFredCsvObservations(csvText, sortOrder = 'desc', limit = 10) {
+        if (!csvText || typeof csvText !== 'string') return [];
+        const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (lines.length <= 1) return [];
+
+        const obs = [];
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            const comma = line.indexOf(',');
+            if (comma <= 0) continue;
+            const date = line.slice(0, comma).trim();
+            const raw = line.slice(comma + 1).trim();
+            if (!date || !raw || raw === '.') continue;
+            const value = parseFloat(raw);
+            if (!Number.isFinite(value)) continue;
+            obs.push({ date, value: String(value) });
+        }
+
+        if (obs.length === 0) return [];
+        if (sortOrder === 'desc') obs.reverse();
+        return obs.slice(0, limit);
+    }
+
+    async function fetchFredCsvFallback(seriesId, sortOrder = 'desc', limit = 10) {
+        const csvUrl = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + encodeURIComponent(seriesId);
+        const urls = [
+            csvUrl,
+            CORS_PROXY + encodeURIComponent(csvUrl)
+        ];
+
+        for (const url of urls) {
+            try {
+                const res = await _fetchWithTimeout(url, {}, 8000);
+                if (!res.ok) continue;
+                const text = await res.text();
+                const observations = parseFredCsvObservations(text, sortOrder, limit);
+                if (observations.length > 0) {
+                    return { observations };
+                }
+            } catch (_) {}
+        }
+
+        return { observations: [] };
+    }
+
     // Fetch FRED series data — tries direct first, then CORS proxy as fallback
     async function fetchFredSmart(seriesId, opts = {}) {
         const { sortOrder = 'desc', limit = 10, units } = opts;
+
+        // Preferred path for scale/security: Worker with server-side FRED secret
+        if (CALENDAR_WORKER_URL) {
+            try {
+                const workerHistoryUrl = new URL(CALENDAR_WORKER_URL + '/history');
+                workerHistoryUrl.searchParams.set('series', seriesId);
+                workerHistoryUrl.searchParams.set('limit', String(limit));
+                workerHistoryUrl.searchParams.set('sort', sortOrder);
+                if (units) workerHistoryUrl.searchParams.set('units', units);
+
+                const workerRes = await _fetchWithTimeout(
+                    workerHistoryUrl.toString(),
+                    {},
+                    8000
+                );
+                if (workerRes.ok) {
+                    const workerJson = await workerRes.json();
+                    if (workerJson && workerJson.success && Array.isArray(workerJson.data) && workerJson.data.length > 0) {
+                        let observations = workerJson.data
+                            .map((o) => ({ date: o.date, value: String(o.value) }))
+                            .filter((o) => o.date && o.value !== '' && o.value !== '.');
+
+                        observations.sort((a, b) => {
+                            const da = new Date(a.date + 'T00:00:00').getTime();
+                            const db = new Date(b.date + 'T00:00:00').getTime();
+                            return db - da;
+                        });
+
+                        if (sortOrder === 'asc') observations = observations.slice().reverse();
+                        return { observations: observations.slice(0, limit) };
+                    }
+                }
+            } catch (e) {
+                macroLog('⚠️ Worker /history falhou (' + seriesId + '): ' + e.message, 'warn');
+            }
+        }
+
+        // Public fallback without API key (fredgraph CSV)
+        const csvFallback = await fetchFredCsvFallback(seriesId, sortOrder, limit);
+        if (Array.isArray(csvFallback.observations) && csvFallback.observations.length > 0) {
+            return csvFallback;
+        }
+
+        // Fallback: direct FRED (requires local key)
+        if (!FRED_API_KEY) {
+            return { observations: [] };
+        }
+
         let url = 'https://api.stlouisfed.org/fred/series/observations?series_id=' + seriesId + '&api_key=' + FRED_API_KEY + '&file_type=json&sort_order=' + sortOrder + '&limit=' + limit;
         if (units) url += '&units=' + units;
 
@@ -2361,7 +2539,7 @@
             return await nativeHttpGet(CORS_PROXY + encodeURIComponent(url));
         } catch (e2) {
             macroLog('❌ FRED proxy falhou (' + seriesId + '): ' + e2.message, 'error');
-            throw e2;
+            return { observations: [] };
         }
     }
     
@@ -2463,6 +2641,8 @@
                 dataSource: 'FRED',
                 obsDate: { dff: dffDate, cpi: cpiDate, unrate: unrateDate }
             };
+
+            _saveFedPersistedCache(fedDataCache);
             
             return fedDataCache;
             
@@ -2472,6 +2652,13 @@
             // Usar cache expirado se disponível, senão retornar null
             if (fedDataCache.effectiveRate) {
                 macroLog('⚠️ Usando cache expirado', 'warn');
+                return fedDataCache;
+            }
+
+            const persisted = _loadFedPersistedCache();
+            if (persisted) {
+                macroLog('⚠️ Usando cache persistido do dispositivo', 'warn');
+                fedDataCache = { ...fedDataCache, ...persisted };
                 return fedDataCache;
             }
             
@@ -2817,6 +3004,47 @@
     
     // Cache para histórico de eventos
     let ECONOMIC_HISTORY_CACHE = {};
+    const ECONOMIC_HISTORY_CACHE_TTL = 6 * 60 * 60 * 1000; // 6h
+    const ECONOMIC_HISTORY_MAX_KEYS = 40;
+
+    function getEconomicHistoryFromCache(eventTitle) {
+        const entry = ECONOMIC_HISTORY_CACHE[eventTitle];
+        if (!entry) return [];
+
+        // Compatibilidade com cache legado (array direto)
+        if (Array.isArray(entry)) return entry;
+
+        if (!entry.ts || !Array.isArray(entry.data)) {
+            delete ECONOMIC_HISTORY_CACHE[eventTitle];
+            return [];
+        }
+
+        if ((Date.now() - entry.ts) > ECONOMIC_HISTORY_CACHE_TTL) {
+            delete ECONOMIC_HISTORY_CACHE[eventTitle];
+            return [];
+        }
+
+        return entry.data;
+    }
+
+    function setEconomicHistoryCache(eventTitle, history) {
+        ECONOMIC_HISTORY_CACHE[eventTitle] = {
+            data: Array.isArray(history) ? history : [],
+            ts: Date.now()
+        };
+
+        const keys = Object.keys(ECONOMIC_HISTORY_CACHE);
+        if (keys.length <= ECONOMIC_HISTORY_MAX_KEYS) return;
+
+        keys
+            .sort((a, b) => {
+                const ta = ECONOMIC_HISTORY_CACHE[a]?.ts || 0;
+                const tb = ECONOMIC_HISTORY_CACHE[b]?.ts || 0;
+                return ta - tb;
+            })
+            .slice(0, keys.length - ECONOMIC_HISTORY_MAX_KEYS)
+            .forEach((key) => delete ECONOMIC_HISTORY_CACHE[key]);
+    }
     
     // Mapeamento de eventos para séries FRED (mais confiável)
     // Ordem importa: chaves mais específicas primeiro para evitar match errado
@@ -2948,12 +3176,18 @@
             } catch(e) { /* fallback below */ }
             
             if (!data || !data.observations) return [];
+
+            const sortedObs = data.observations.slice().sort((a, b) => {
+                const da = new Date((a.date || '') + 'T00:00:00').getTime();
+                const db = new Date((b.date || '') + 'T00:00:00').getTime();
+                return db - da;
+            });
             
             // Encontrar mudanças de taxa (dados em ordem DESC - mais recente primeiro)
             const decisions = [];
             let prevValue = null;
             
-            for (const obs of data.observations) {
+            for (const obs of sortedObs) {
                 const value = parseFloat(obs.value);
                 if (isNaN(value) || String(obs.value).trim() === '.') continue;
                 
@@ -2986,9 +3220,10 @@
     // Buscar histórico de eventos via FRED API (mais confiável que Alpha Vantage)
     async function fetchEconomicHistoryFromAI(eventTitle) {
         // Verificar cache local primeiro
-        if (ECONOMIC_HISTORY_CACHE[eventTitle] && ECONOMIC_HISTORY_CACHE[eventTitle].length > 0) {
+        const cachedHistory = getEconomicHistoryFromCache(eventTitle);
+        if (cachedHistory.length > 0) {
             macroLog(`📦 Histórico de ${eventTitle} do cache`, 'info');
-            return ECONOMIC_HISTORY_CACHE[eventTitle];
+            return cachedHistory;
         }
         
         const titleLower = eventTitle.toLowerCase();
@@ -3008,7 +3243,7 @@
                     impact: 'high',
                     action: d.action
                 }));
-                ECONOMIC_HISTORY_CACHE[eventTitle] = history;
+                setEconomicHistoryCache(eventTitle, history);
                 return history;
             }
             return [];
@@ -3036,7 +3271,6 @@
             const isPercentage = ['UNRATE', 'DFF', 'DFEDTARU', 'DFEDTARL', 'TCU', 'MICH'].includes(fredSeries);
             const needsYoY = ['CPIAUCSL', 'GDP', 'PCEPI', 'CPILFESL', 'PCEPILFE', 'PPIACO'].includes(fredSeries); // Variação YoY
             const needsMoM = ['RSXFS', 'CES0500000003'].includes(fredSeries); // Variação m/m
-            const units = needsYoY ? '&units=pc1' : (needsMoM ? '&units=pch' : '');
             
             // Para FOMC/Fed Rate, buscar mais dados e filtrar apenas mudanças
             const limit = fredSeries === 'DFEDTARU' ? 50 : 12;
@@ -3050,6 +3284,24 @@
             if (data.observations && data.observations.length > 0) {
                 // Filtrar valores válidos
                 let validObs = data.observations.filter(o => o.value !== '.');
+
+                // Normalizar ordenação para mais recente -> mais antigo
+                validObs.sort((a, b) => {
+                    const da = new Date((a.date || '') + 'T00:00:00').getTime();
+                    const db = new Date((b.date || '') + 'T00:00:00').getTime();
+                    return db - da;
+                });
+
+                // Garantir que o modal mostre sempre meses recentes (evitar dados muito antigos)
+                const cutoff = new Date();
+                cutoff.setMonth(cutoff.getMonth() - 18);
+                const recentObs = validObs.filter((o) => {
+                    const d = new Date((o.date || '') + 'T00:00:00');
+                    return !isNaN(d.getTime()) && d >= cutoff;
+                });
+                if (recentObs.length >= 3) {
+                    validObs = recentObs;
+                }
                 
                 // Para FOMC: filtrar apenas quando houve mudança na taxa
                 if (fredSeries === 'DFEDTARU') {
@@ -3078,7 +3330,7 @@
                     
                     // Para NFP mostrar variação em milhares
                     if (fredSeries === 'PAYEMS') {
-                        const change = previous ? actual - previous : 0;
+                        const change = previous !== null && previous !== undefined ? (actual - previous) : 0;
                         return {
                             date: item.date,
                             actual: `${change >= 0 ? '+' : ''}${Math.round(change)}K`,
@@ -3097,7 +3349,7 @@
                     };
                 });
                 
-                ECONOMIC_HISTORY_CACHE[eventTitle] = history;
+                setEconomicHistoryCache(eventTitle, history);
                 macroLog(`✅ Histórico de ${eventTitle}: ${history.length} registros via FRED`, 'success');
                 return history;
             }
@@ -3961,7 +4213,7 @@
         if (oldModal) oldModal.remove();
 
         // ── PRE-FETCH data BEFORE opening modal to avoid stutter ──
-        let history = ECONOMIC_HISTORY_CACHE[eventTitle] || [];
+        let history = getEconomicHistoryFromCache(eventTitle);
         let fetchPromise = null;
         if (history.length === 0) {
             // No cache: start fetching immediately (before building DOM)
@@ -4107,10 +4359,13 @@
                     ${history.map((h, idx) => {
                         const actualStr = String(h.actual);
                         const prevStr = String(h.previous);
+                        const forecastStr = String(h.forecast);
                         const actualNum = parseFloat(actualStr.replace(/[^0-9.-]/g, ''));
                         const prevNum = parseFloat(prevStr.replace(/[^0-9.-]/g, ''));
+                        const forecastNum = parseFloat(forecastStr.replace(/[^0-9.-]/g, ''));
                         let variacao = '';
                         let varColor = '#888';
+                        let actualColor = '#888';
                         
                         const isDeltaValue = (actualStr.startsWith('+') || actualStr.startsWith('-')) && (actualStr.includes('K') || actualStr.includes('M'));
                         const isPreviousTotal = prevStr.includes('(total)');
@@ -4128,6 +4383,13 @@
                                 variacao = diff >= 0 ? '+' + diffPct + '%' : diffPct + '%';
                             }
                             varColor = diff >= 0 ? '#22c55e' : '#ef4444';
+                            actualColor = varColor;
+                        } else if (!isNaN(actualNum) && !isNaN(forecastNum) && h.forecast !== '-') {
+                            actualColor = actualNum >= forecastNum ? '#22c55e' : '#ef4444';
+                        } else if (actualStr.startsWith('+')) {
+                            actualColor = '#22c55e';
+                        } else if (actualStr.startsWith('-')) {
+                            actualColor = '#ef4444';
                         }
                         
                         const hasUsefulData = h.forecast !== '-' || h.previous !== '-';
@@ -4138,7 +4400,7 @@
                                 '<span style="color: #888; font-size: 11px;">' + formatDateBR(h.date) + '</span>' +
                                 '<div style="display: flex; align-items: center; gap: 8px;">' +
                                     (showVariacao ? '<span style="font-size: 10px; color: ' + varColor + '; background: ' + varColor + '15; padding: 2px 6px; border-radius: 4px;">' + variacao + '</span>' : '') +
-                                    '<span style="font-size: 13px; font-weight: 600; color: ' + (String(h.actual).includes('+') || parseFloat(h.actual) > parseFloat(h.forecast) ? '#22c55e' : parseFloat(h.actual) < parseFloat(h.forecast) ? '#ef4444' : '#888') + ';">' + h.actual + '</span>' +
+                                    '<span style="font-size: 13px; font-weight: 600; color: ' + actualColor + ';">' + h.actual + '</span>' +
                                 '</div>' +
                             '</div>' +
                             (hasUsefulData ? 
@@ -4390,11 +4652,14 @@
         
         macroLog('=== MACRO v14.0 - FED WATCH DINÂMICO + CALENDÁRIO INTERATIVO ===', 'success');
         macroLoaded = true;
+
+        try { pruneChartCache(); } catch(e) {}
         
         try { renderAllIndicators(); } catch(e) { macroLog('Erro renderAllIndicators: ' + e.message, 'error'); }
+        try { loadCachedPrices(); } catch(e) {}
         try { updateFedWatch(); } catch(e) { macroLog('Erro updateFedWatch: ' + e.message, 'error'); }
         try { updateEconomicCalendar(); } catch(e) { macroLog('Erro updateEconomicCalendar: ' + e.message, 'error'); }
-        try { loadAllPricesInstant(); } catch(e) { macroLog('Erro loadAllPricesInstant: ' + e.message, 'error'); }
+        try { setTimeout(() => { loadAllPricesInstant().catch(() => {}); }, 300); } catch(e) { macroLog('Erro loadAllPricesInstant: ' + e.message, 'error'); }
         
         setTimeout(() => connectMacroWebSocket(), 1000);
         
@@ -4412,6 +4677,9 @@
         }
         Object.values(macroIntervals).forEach(i => clearInterval(i));
         macroIntervals = {};
+        macroPriceFetchPromise = null;
+        macroPriceFetchStartedAt = 0;
+        _chartRequestId++;
         macroLoaded = false;
     }
 
@@ -4436,30 +4704,8 @@
         updateEconomicCalendar
     };
 
-    // Pre-fetch do calendário ao carregar script (antes do usuário abrir MACRO)
-    // Isso preenche o cache para que quando o usuário abrir MACRO, o calendário apareça instantaneamente
-    (function prefetchCalendar() {
-        macroLog('🚀 Pre-fetching calendário econômico...', 'info');
-        fetchEconomicCalendarFromAPI().then(events => {
-            if (events && events.length > 0) {
-                macroLog(`✅ Calendário pré-carregado: ${events.length} eventos`, 'success');
-            }
-        }).catch(() => {});
-    })();
-
-    // Pre-fetch indicadores de mercado (cache + fetch em background)
-    (function prefetchIndicators() {
-        macroLog('🚀 Pre-fetching indicadores de mercado...', 'info');
-        // Primeiro carregar cache para render instantâneo
-        const hadCache = loadCachedPrices();
-        if (hadCache) {
-            macroLog('📦 Indicadores carregados do cache', 'success');
-        }
-        // Depois buscar dados frescos em background (com delay para não congestionar)
-        setTimeout(() => {
-            loadAllPricesInstant().catch(() => {});
-        }, 2000);
-    })();
+    // Startup mais leve: evitar prefetch pesado antes do usuário abrir a aba Macro.
+    try { loadCachedPrices(); } catch(_) {}
 
     macroLog('✓ macro-section.js v22.0 carregado! (IDs ÚNICOS)', 'success');
 })();

@@ -180,6 +180,9 @@
             
             if (sectionId === 'news') fetchNews();
             if (sectionId === 'macro' && window.loadMacroData) window.loadMacroData();
+            if (sectionId !== 'macro' && window.stopMacroUpdates) {
+                try { window.stopMacroUpdates(); } catch (e) {}
+            }
             if (sectionId === 'analysis') {
                 fetchOrderBook();
                 fetchFearGreed();

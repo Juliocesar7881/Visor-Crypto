@@ -2773,6 +2773,12 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         // GROQ AI — Relatório de IA real via Llama 3.3 70B
         // ═══════════════════════════════════════════════════════════
         const GROQ_API_KEY = (window.APP_CONFIG && window.APP_CONFIG.GROQ_API_KEY) || '';
+        const GROQ_REMOTE_ENABLED = !!(
+            GROQ_API_KEY &&
+            GROQ_API_KEY !== 'COLE_SUA_CHAVE_GROQ_AQUI' &&
+            GROQ_API_KEY !== 'YOUR_GROQ_API_KEY'
+        );
+        const AI_WORKER_URL = String((window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '').trim().replace(/\/+$/, '');
         const GROQ_MODEL = 'llama-3.3-70b-versatile';
         const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
         const _aiSummaryCache = {};
@@ -2792,7 +2798,7 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         }
 
         async function fetchAISummary(analysis, symbol) {
-            if (!GROQ_API_KEY || GROQ_API_KEY === 'COLE_SUA_CHAVE_GROQ_AQUI' || GROQ_API_KEY === 'YOUR_GROQ_API_KEY') return null;
+            if (!GROQ_REMOTE_ENABLED && !AI_WORKER_URL) return null;
             _cleanAISummaryCache();
             const cacheKey = `${symbol}_${Math.floor(Date.now() / 300000)}`;
             if (_aiSummaryCache[cacheKey]) return _aiSummaryCache[cacheKey];
@@ -2856,26 +2862,47 @@ Regras:
 - NÃO invente dados, use APENAS os fornecidos`;
 
             try {
-                const resp = await fetch(GROQ_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${GROQ_API_KEY}`
-                    },
-                    body: JSON.stringify({
-                        model: GROQ_MODEL,
-                        messages: [
-                            { role: 'system', content: systemPrompt },
-                            { role: 'user', content: `Dados da análise técnica de ${crypto} (${symbol}):\n${JSON.stringify(dataPayload)}` }
-                        ],
-                        temperature: 0.4,
-                        max_tokens: 500,
-                        stream: false
-                    })
-                });
-                if (!resp.ok) throw new Error(`Groq API ${resp.status}`);
-                const data = await resp.json();
-                let aiText = data.choices?.[0]?.message?.content?.trim();
+                const userPrompt = `Dados da análise técnica de ${crypto} (${symbol}):\n${JSON.stringify(dataPayload)}`;
+                let aiText = null;
+
+                if (GROQ_REMOTE_ENABLED) {
+                    const resp = await fetch(GROQ_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${GROQ_API_KEY}`
+                        },
+                        body: JSON.stringify({
+                            model: GROQ_MODEL,
+                            messages: [
+                                { role: 'system', content: systemPrompt },
+                                { role: 'user', content: userPrompt }
+                            ],
+                            temperature: 0.4,
+                            max_tokens: 500,
+                            stream: false
+                        })
+                    });
+                    if (!resp.ok) throw new Error(`Groq API ${resp.status}`);
+                    const data = await resp.json();
+                    aiText = data.choices?.[0]?.message?.content?.trim();
+                } else {
+                    const proxyResp = await fetch(`${AI_WORKER_URL}/ai-summary`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model: GROQ_MODEL,
+                            systemPrompt,
+                            userPrompt
+                        }),
+                        signal: AbortSignal.timeout(12000)
+                    });
+                    if (!proxyResp.ok) throw new Error(`AI proxy ${proxyResp.status}`);
+                    const proxyData = await proxyResp.json();
+                    if (!proxyData?.success) throw new Error(proxyData?.error || 'AI proxy failed');
+                    aiText = String(proxyData.content || '').trim();
+                }
+
                 if (aiText) {
                     // Post-process: force the correct confidence % from the engine
                     // The LLM often invents its own %, so we replace any percentage
@@ -2941,9 +2968,9 @@ Regras:
                     finalSigType, finalConf,
                     analysis.indicators || {}, symbol
                 );
-                const noKey = !GROQ_API_KEY || GROQ_API_KEY === 'COLE_SUA_CHAVE_GROQ_AQUI' || GROQ_API_KEY === 'YOUR_GROQ_API_KEY';
+                const noKey = !GROQ_REMOTE_ENABLED;
                 const prefix = noKey
-                    ? '⚠️ Chave Groq não configurada — usando análise local.\nConfigure GROQ_API_KEY em js/config.js (grátis em console.groq.com)\n\n'
+                    ? 'ℹ️ Relatório em modo local. Para IA remota via Groq, configure CALENDAR_WORKER_URL e GROQ_API_KEY no Worker.\n\n'
                     : '⚠️ IA indisponível — análise local:\n\n';
                 currentTextEl.textContent = prefix + localText;
             }

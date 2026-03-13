@@ -81,6 +81,15 @@ Nao deixe chaves no codigo. Configure via Wrangler Secrets:
 ```bash
 wrangler secret put FMP_API_KEY
 wrangler secret put FRED_API_KEY
+wrangler secret put GROQ_API_KEY
+```
+
+Ou use o helper PowerShell para evitar expor valores no terminal:
+
+```powershell
+./setup-secrets.ps1
+# opcional: pular o prompt de GROQ_API_KEY
+./setup-secrets.ps1 -SkipGroq
 ```
 
 Sem esses segredos, o worker continua online, mas fontes que dependem dessas APIs ficam limitadas.

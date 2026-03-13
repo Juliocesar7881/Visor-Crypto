@@ -26,22 +26,28 @@
                 }
             }, 2000);
             
-            // Carregar dados em background (não bloqueia UI)
+            // Carregar dados em background sem pico de carga (stagger por etapas)
             setTimeout(() => {
-                try { fetchNews(); } catch(e) { /* console.error('News error:', e); */ }
-                // NÃO chamar fetchHotNews aqui - ela interfere com o allNews
-                // Hot news são identificadas automaticamente pelo mergeNews via isHotNews()
-                try { fetchFearGreed(); } catch(e) { /* console.error('FearGreed error:', e); */ }
-                try { fetchAltseasonIndex(); } catch(e) { /* console.error('Altseason error:', e); */ }
-                try { fetchGlobalData(); } catch(e) { /* console.error('GlobalData error:', e); */ }
-                try { fetchOrderBook(); } catch(e) { /* console.error('OrderBook error:', e); */ }
-                try { fetchVolume(); } catch(e) { /* console.error('Volume error:', e); */ }
-                try { fetchCryptoStats(); } catch(e) { /* console.error('CryptoStats error:', e); */ }
-                try { fetchMovingAverages(); } catch(e) { /* console.error('MA error:', e); */ }
-                try { 
-                    fetchExchangeFlow('1h'); 
-                    startExchangeFlowAutoRefresh(); 
-                } catch(e) { /* console.error('ExchangeFlow error:', e); */ }
+                const startupTasks = [
+                    { delay: 0, fn: () => fetchFearGreed() },
+                    { delay: 500, fn: () => fetchAltseasonIndex() },
+                    { delay: 900, fn: () => fetchGlobalData() },
+                    { delay: 1300, fn: () => fetchVolume() },
+                    { delay: 1700, fn: () => fetchCryptoStats() },
+                    { delay: 2100, fn: () => fetchMovingAverages() },
+                    { delay: 2500, fn: () => fetchOrderBook() },
+                    { delay: 2900, fn: () => { fetchExchangeFlow('1h'); startExchangeFlowAutoRefresh(); } },
+                    { delay: 3600, fn: () => fetchNews() }
+                ];
+
+                startupTasks.forEach(task => {
+                    setTimeout(() => {
+                        try {
+                            if (document.hidden) return;
+                            task.fn();
+                        } catch (e) {}
+                    }, task.delay);
+                });
             }, 1000);
             
             // AI update every 30s (was 10s — reduces CPU & network load on mobile)

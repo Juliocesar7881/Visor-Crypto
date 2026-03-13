@@ -24,6 +24,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -40,6 +41,8 @@ public class ScanForegroundService extends Service {
     private static final String TAG = "VisorScan";
     private static final String CHANNEL_ID = "visor_crypto_scan";
     private static final String SIGNAL_CHANNEL_ID = "visor_signals";
+    private static final String PREFS = "visor_scan";
+    private static final String PREF_SERVICE_ENABLED = "service_enabled";
     private static final int NOTIFICATION_ID = 1001;
     private static final long SCAN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
     private static final long DEDUP_MS = 30 * 60 * 1000; // 30 min dedup
@@ -48,6 +51,7 @@ public class ScanForegroundService extends Service {
     private Handler handler;
     private boolean isRunning = false;
     private int scanCount = 0;
+    private final AtomicBoolean scanInProgress = new AtomicBoolean(false);
 
     // Symbols to scan
     private static final String[][] SCAN_SYMBOLS = {
@@ -92,7 +96,13 @@ public class ScanForegroundService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && "STOP".equals(intent.getAction())) {
+            getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_SERVICE_ENABLED, false)
+                .apply();
+
             isRunning = false;
+            scanInProgress.set(false);
             handler.removeCallbacks(scanRunnable);
             if (wakeLock != null && wakeLock.isHeld()) {
                 wakeLock.release();
@@ -149,6 +159,7 @@ public class ScanForegroundService extends Service {
     @Override
     public void onDestroy() {
         isRunning = false;
+        scanInProgress.set(false);
         handler.removeCallbacks(scanRunnable);
         if (wakeLock != null && wakeLock.isHeld()) {
             try { wakeLock.release(); } catch (Exception e) {}
@@ -160,6 +171,12 @@ public class ScanForegroundService extends Service {
     public void onTaskRemoved(Intent rootIntent) {
         // When user swipes app from recents, try to restart service
         try {
+            boolean enabledByUser = getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean(PREF_SERVICE_ENABLED, false);
+            if (!enabledByUser) {
+                return;
+            }
+
             Intent restartIntent = new Intent(getApplicationContext(), ScanForegroundService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 getApplicationContext().startForegroundService(restartIntent);
@@ -177,6 +194,11 @@ public class ScanForegroundService extends Service {
      * evaluates a simplified signal logic, and fires notifications.
      */
     private void performNativeScan() {
+        if (!scanInProgress.compareAndSet(false, true)) {
+            Log.w(TAG, "Previous native scan still running, skipping this cycle");
+            return;
+        }
+
         scanCount++;
         Log.d(TAG, "Starting native scan #" + scanCount);
 
@@ -245,6 +267,8 @@ public class ScanForegroundService extends Service {
             Log.d(TAG, "Scan #" + scanCount + " complete");
             } catch (Exception e) {
                 Log.e(TAG, "Scan thread error: " + e.getMessage());
+            } finally {
+                scanInProgress.set(false);
             }
         }).start();
     }

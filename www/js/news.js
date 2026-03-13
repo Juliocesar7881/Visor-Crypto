@@ -287,6 +287,7 @@
         // ============================================
         let newsRetryCount = 0;
         const MAX_NEWS_RETRIES = 5;
+        let newsFetchInProgress = false;
         
         function mergeNews(newItems) {
             // Criar um Set de URLs existentes para evitar duplicatas
@@ -511,28 +512,62 @@
             { url: 'https://beincrypto.com/feed/', source: 'BeInCrypto' }
         ];
 
+        function _decorateGeneralNewsItems(items) {
+            return items
+                .filter(item => item?.title && item?.url && !isTrashNews(item.title))
+                .map(item => {
+                    const hotCheck = isHotNews(item.title);
+                    return {
+                        ...item,
+                        sentiment: analyzeSentiment(item.title),
+                        relevance: categorizeRelevance(item.title),
+                        isHotNews: hotCheck.isHot,
+                        hotCategory: hotCheck.isHot ? hotCheck.category : null,
+                        hotKeyword: hotCheck.isHot ? hotCheck.keyword : null
+                    };
+                });
+        }
+
         async function fetchGeneralNewsFromRSS(limit = 120) {
             const rssPromises = GENERAL_RSS_FEEDS.map(async (feed) => {
+                const xmlCandidates = [
+                    { url: feed.url, timeout: 4000 },
+                    { url: `https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`, timeout: 5000 },
+                    { url: `https://corsproxy.io/?${encodeURIComponent(feed.url)}`, timeout: 5000 }
+                ];
+
+                // Try direct/proxy XML first (fastest on Capacitor native fetch)
+                for (const candidate of xmlCandidates) {
+                    try {
+                        const response = await fetchWithTimeout(candidate.url, {}, candidate.timeout);
+                        if (!response.ok) continue;
+                        const text = await response.text();
+                        const items = parseRSSText(text, feed.source);
+                        if (items.length > 0) {
+                            return _decorateGeneralNewsItems(items);
+                        }
+                    } catch (_) {}
+                }
+
+                // Fallback: rss2json (some feeds may reject direct XML)
                 try {
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`;
-                    const response = await fetchWithTimeout(proxyUrl, {}, 6000);
+                    const rss2jsonUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}&count=40`;
+                    const response = await fetchWithTimeout(rss2jsonUrl, {}, 4500);
                     if (!response.ok) return [];
-                    const text = await response.text();
-                    const items = parseRSSText(text, feed.source);
-                    return items
-                        .filter(item => item?.title && item?.url && !isTrashNews(item.title))
-                        .map(item => {
-                            const hotCheck = isHotNews(item.title);
-                            return {
-                                ...item,
-                                sentiment: analyzeSentiment(item.title),
-                                relevance: categorizeRelevance(item.title),
-                                isHotNews: hotCheck.isHot,
-                                hotCategory: hotCheck.isHot ? hotCheck.category : null,
-                                hotKeyword: hotCheck.isHot ? hotCheck.keyword : null
-                            };
-                        });
-                } catch (e) {
+                    const data = await response.json();
+                    if (!Array.isArray(data?.items) || data.items.length === 0) return [];
+
+                    const mapped = data.items.map(item => ({
+                        title: item.title || '',
+                        url: item.link || '',
+                        source: feed.source,
+                        published: item.pubDate || new Date().toISOString(),
+                        image: item.thumbnail || null,
+                        body: item.description || null
+                    }));
+
+                    return _decorateGeneralNewsItems(mapped);
+                } catch (_) {
                     return [];
                 }
             });
@@ -640,10 +675,37 @@
         }
 
         async function fetchNews() {
+            if (newsFetchInProgress) {
+                if (allNews.length > 0) {
+                    try { renderNews(); } catch (e) {}
+                }
+                return;
+            }
+            newsFetchInProgress = true;
+
             const container = document.getElementById('news-container');
+            if (!container) {
+                newsFetchInProgress = false;
+                return;
+            }
             
             // Se estiver no filtro "hot", não mexer no container (hot news tem seu próprio sistema)
             const isHotFilter = newsFilter === 'hot';
+
+            // Renderizar cache local imediatamente para reduzir tempo de tela vazia
+            if (!newsLoaded && allNews.length === 0) {
+                try {
+                    const cached = localStorage.getItem('vc4_news_cache');
+                    if (cached) {
+                        const parsed = JSON.parse(cached);
+                        if (Array.isArray(parsed?.articles) && parsed.articles.length > 0) {
+                            allNews = parsed.articles;
+                            newsLoaded = true;
+                            if (!isHotFilter) renderNews();
+                        }
+                    }
+                } catch (_) {}
+            }
             
             // v7.1: Global timeout for entire fetch cycle (15s)
             const fetchTimeout = setTimeout(() => {
@@ -696,23 +758,33 @@
             let successfulSources = 0;
             
             // ==========================================
-            // V7: TRY BACKEND AI-FILTERED NEWS FIRST
+            // V7: PRIORITY SOURCES IN PARALLEL (backend + RSS)
             // ==========================================
-            const backendOk = await fetchAINews(null, 0);
+            const [backendResult, rssResult] = await Promise.allSettled([
+                fetchAINews(null, 0),
+                fetchGeneralNewsFromRSS(120)
+            ]);
+
+            const backendOk = backendResult.status === 'fulfilled' && backendResult.value === true;
             if (backendOk) {
                 successfulSources++;
                 totalFetched += aiClassifiedNews.length;
             }
 
+            if (rssResult.status === 'fulfilled' && rssResult.value > 0) {
+                successfulSources++;
+                totalFetched += rssResult.value;
+            }
+
             // ==========================================
             // FALLBACK: CryptoCompare (if backend unavailable)
             // ==========================================
-            if (!backendOk) {
+            if (!backendOk && allNews.length < 20) {
             try {
                 const ccResponse = await fetchWithTimeout(
                     'https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=latest',
                     {},
-                    15000
+                    6000
                 );
                 
                 if (ccResponse.ok) {
@@ -752,7 +824,7 @@
             // ==========================================
             // FONTE 2: CryptoPanic via Proxy (backup)
             // ==========================================
-            if (allNews.length < 50) {
+            if (allNews.length < 20) {
                 const corsProxies = [
                     (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
                     (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
@@ -763,7 +835,7 @@
                 for (const proxyFn of corsProxies) {
                     try {
                         const url = proxyFn(cryptoUrl);
-                        const response = await fetchWithTimeout(url, {}, 8000);
+                        const response = await fetchWithTimeout(url, {}, 4000);
                         if (response.ok) {
                             const data = await response.json();
                             if (data.results && data.results.length > 0) {
@@ -802,7 +874,7 @@
             // ==========================================
             // FALLBACK FINAL: RSS feeds via proxy
             // ==========================================
-            if (allNews.length < 20) {
+            if (allNews.length < 10) {
                 try {
                     const rssFetched = await fetchGeneralNewsFromRSS(120);
                     if (rssFetched > 0) {
@@ -821,22 +893,12 @@
                 // TRADUZIR PRIMEIRO as notícias antes de renderizar
                 // Isso evita que apareçam em inglês e depois mudem
                 if (newsFilter !== 'hot') {
-                    container.innerHTML = Array.from({length: 6}, () => `
-                        <div class="news-skeleton">
-                            <div class="news-skeleton-thumb"></div>
-                            <div class="news-skeleton-content">
-                                <div class="news-skeleton-line"></div>
-                                <div class="news-skeleton-line"></div>
-                                <div class="news-skeleton-line"></div>
-                            </div>
-                        </div>
-                    `).join('');
-                    
-                    // Traduzir as primeiras 30 notícias ANTES de renderizar
-                    await translateNewsBeforeRender(30);
-                    
-                    // Agora renderizar com as traduções prontas
                     renderNews();
+
+                    // Tradução não deve bloquear o primeiro paint
+                    translateNewsBeforeRender(15)
+                        .then(() => { if (newsFilter !== 'hot') renderNews(); })
+                        .catch(() => {});
                 }
                 
                 // BLOCO 4: Merge hot RSS news into allNews em background
@@ -913,6 +975,7 @@
                 } catch(e) {}
             } finally {
                 clearTimeout(fetchTimeout);
+                newsFetchInProgress = false;
             }
         }
         

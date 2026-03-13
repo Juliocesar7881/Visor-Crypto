@@ -20,6 +20,16 @@ const CACHE_KEY_CALENDAR = 'calendar_events_v1';
 const CACHE_KEY_HISTORY = 'event_history_v1';
 const CACHE_TTL_SECONDS = 3 * 60 * 60; // 3 horas
 
+// Liquidations endpoint protection
+const LIQUIDATIONS_CACHE_SECONDS = 180;       // standard cache (freshness/perf balance)
+const LIQUIDATIONS_SHORT_CACHE_SECONDS = 60;  // burst cache for high-QPS spikes (KV minimum TTL)
+const LIQUIDATIONS_CACHE_MAX_AGE_MS = LIQUIDATIONS_CACHE_SECONDS * 1000;
+const LIQUIDATIONS_SHORT_CACHE_MAX_AGE_MS = LIQUIDATIONS_SHORT_CACHE_SECONDS * 1000;
+const LIQUIDATIONS_RATE_LIMIT = 120;          // requests per window per IP
+const LIQUIDATIONS_RATE_WINDOW_SECONDS = 60;
+const RATE_LIMIT_SYNC_INTERVAL_MS = 10 * 1000;
+const RATE_LIMIT_BUCKETS = globalThis.__visorRateLimitBuckets || (globalThis.__visorRateLimitBuckets = new Map());
+
 function getSecret(env, keyName) {
     return String(env?.[keyName] || '').trim();
 }
@@ -34,30 +44,58 @@ function getClientIp(request) {
 }
 
 async function checkRateLimit(env, key, limit, windowSeconds) {
-    if (!env?.CALENDAR_KV) return { allowed: true, remaining: limit };
-
     const now = Date.now();
-    const current = await env.CALENDAR_KV.get(key, 'json');
-    const count = (current && typeof current.count === 'number') ? current.count : 0;
-    const resetAt = (current && typeof current.resetAt === 'number') ? current.resetAt : 0;
+    const windowMs = windowSeconds * 1000;
 
-    if (!current || now > resetAt) {
-        await env.CALENDAR_KV.put(key, JSON.stringify({ count: 1, resetAt: now + (windowSeconds * 1000) }), {
-            expirationTtl: windowSeconds
-        });
-        return { allowed: true, remaining: limit - 1 };
+    let bucket = RATE_LIMIT_BUCKETS.get(key);
+
+    if (!bucket || typeof bucket.count !== 'number' || typeof bucket.resetAt !== 'number' || now > bucket.resetAt) {
+        let fromKv = null;
+        if (env?.CALENDAR_KV) {
+            try {
+                fromKv = await env.CALENDAR_KV.get(key, 'json');
+            } catch (kvReadErr) {
+                console.error('Rate-limit KV read failed:', kvReadErr);
+            }
+        }
+
+        if (fromKv && typeof fromKv.count === 'number' && typeof fromKv.resetAt === 'number' && now <= fromKv.resetAt) {
+            bucket = { count: fromKv.count, resetAt: fromKv.resetAt, lastSyncAt: now };
+        } else {
+            bucket = { count: 0, resetAt: now + windowMs, lastSyncAt: 0 };
+        }
     }
 
-    if (count >= limit) {
+    if (bucket.count >= limit) {
+        RATE_LIMIT_BUCKETS.set(key, bucket);
         return { allowed: false, remaining: 0 };
     }
 
-    const nextCount = count + 1;
-    await env.CALENDAR_KV.put(key, JSON.stringify({ count: nextCount, resetAt }), {
-        expirationTtl: Math.max(1, Math.ceil((resetAt - now) / 1000))
-    });
+    bucket.count += 1;
+    RATE_LIMIT_BUCKETS.set(key, bucket);
 
-    return { allowed: true, remaining: Math.max(0, limit - nextCount) };
+    if (env?.CALENDAR_KV) {
+        const remainingMs = Math.max(1000, bucket.resetAt - now);
+        const shouldSync = (
+            bucket.count === 1 ||
+            bucket.count >= limit ||
+            (now - (bucket.lastSyncAt || 0) >= RATE_LIMIT_SYNC_INTERVAL_MS)
+        );
+
+        if (shouldSync) {
+            bucket.lastSyncAt = now;
+            const expirationTtl = Math.max(60, Math.ceil(remainingMs / 1000));
+            try {
+                await env.CALENDAR_KV.put(key, JSON.stringify({ count: bucket.count, resetAt: bucket.resetAt }), {
+                    expirationTtl
+                });
+            } catch (kvWriteErr) {
+                console.error('Rate-limit KV write failed:', kvWriteErr);
+            }
+        }
+    }
+
+    return { allowed: true, remaining: Math.max(0, limit - bucket.count) };
 }
 
 // Apenas eventos de ALTA importância dos EUA
@@ -322,21 +360,32 @@ async function fetchFromForexFactory() {
 // ============================================
 // DADOS HISTÓRICOS VIA FRED API
 // ============================================
-async function fetchHistoryFromFRED(seriesId, limit = 6, fredApiKey = '') {
+async function fetchHistoryFromFRED(seriesId, optsOrLimit = 6, fredApiKey = '') {
     if (!fredApiKey) return [];
-    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=${limit}&api_key=${fredApiKey}&file_type=json`;
+
+    const opts = (typeof optsOrLimit === 'number')
+        ? { limit: optsOrLimit }
+        : (optsOrLimit || {});
+
+    const limit = Math.min(Math.max(parseInt(String(opts.limit || 6), 10) || 6, 1), 120);
+    const sortOrder = String(opts.sortOrder || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+    const units = String(opts.units || '').trim();
+    const safeUnits = /^[a-z0-9_]+$/i.test(units) ? units : '';
+
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=${sortOrder}&limit=${limit}${safeUnits ? `&units=${safeUnits}` : ''}&api_key=${fredApiKey}&file_type=json`;
+
     try {
         const res = await fetch(url, { cf: { cacheTtl: 86400 } });
         if (!res.ok) return [];
         const data = await res.json();
         if (!data.observations) return [];
+
         return data.observations
             .filter(o => o.value && o.value !== '.')
             .map(o => ({
                 date: o.date,
                 value: parseFloat(o.value),
-            }))
-            .reverse();
+            }));
     } catch (e) {
         console.error(`FRED fetch error for ${seriesId}:`, e);
         return [];
@@ -545,6 +594,7 @@ export default {
         const path = url.pathname;
         const FMP_API_KEY = getSecret(env, 'FMP_API_KEY');
         const FRED_API_KEY = getSecret(env, 'FRED_API_KEY');
+        const GROQ_API_KEY = getSecret(env, 'GROQ_API_KEY');
 
         // CORS headers
         const corsHeaders = {
@@ -631,9 +681,15 @@ export default {
                 });
             }
 
+            const requestedLimit = parseInt(url.searchParams.get('limit') || '12', 10);
+            const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 120) : 12;
+            const sortOrder = String(url.searchParams.get('sort') || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+            const rawUnits = String(url.searchParams.get('units') || '').trim();
+            const units = /^[a-z0-9_]+$/i.test(rawUnits) ? rawUnits : '';
+
             try {
                 // Tentar cache
-                const cacheKey = `history_${seriesId}`;
+                const cacheKey = `history_${seriesId}_${sortOrder}_${limit}_${units || 'raw'}`;
                 let cached = null;
                 if (env.CALENDAR_KV) {
                     cached = await env.CALENDAR_KV.get(cacheKey, 'json');
@@ -644,13 +700,16 @@ export default {
                         success: true,
                         seriesId,
                         data: cached,
+                        sort: sortOrder,
+                        limit,
+                        units: units || null,
                         source: 'cache',
                     }), {
                         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                     });
                 }
 
-                const data = await fetchHistoryFromFRED(seriesId, 12, FRED_API_KEY);
+                const data = await fetchHistoryFromFRED(seriesId, { limit, sortOrder, units }, FRED_API_KEY);
 
                 if (env.CALENDAR_KV) {
                     await env.CALENDAR_KV.put(
@@ -664,6 +723,9 @@ export default {
                     success: true,
                     seriesId,
                     data,
+                    sort: sortOrder,
+                    limit,
+                    units: units || null,
                     source: 'fresh',
                 }), {
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -689,6 +751,33 @@ export default {
                 });
             }
 
+            const clientIp = getClientIp(request);
+            let liqRate = { allowed: true, remaining: LIQUIDATIONS_RATE_LIMIT };
+            try {
+                liqRate = await checkRateLimit(
+                    env,
+                    `rl_liquidations_${clientIp}`,
+                    LIQUIDATIONS_RATE_LIMIT,
+                    LIQUIDATIONS_RATE_WINDOW_SECONDS
+                );
+            } catch (rateErr) {
+                // Fail-open if KV rate state is unavailable.
+                console.error('Liquidations rate-limit check failed:', rateErr);
+            }
+
+            if (!liqRate.allowed) {
+                return new Response(JSON.stringify({ success: false, error: 'Rate limit exceeded' }), {
+                    status: 429,
+                    headers: {
+                        ...corsHeaders,
+                        'Content-Type': 'application/json',
+                        'Retry-After': String(LIQUIDATIONS_RATE_WINDOW_SECONDS),
+                        'X-RateLimit-Limit': String(LIQUIDATIONS_RATE_LIMIT),
+                        'X-RateLimit-Remaining': '0'
+                    },
+                });
+            }
+
             // Registrar símbolo dinâmico para acumulação via cron (se não é base)
             if (env.CALENDAR_KV) {
                 try {
@@ -706,14 +795,37 @@ export default {
             }
 
             try {
+                const shortCacheKey = `liq_short_${symbol}`;
                 const cacheKey = `liq_12h_${symbol}`;
+                let shortCached = null;
                 let cached = null;
+
                 if (env.CALENDAR_KV) {
+                    shortCached = await env.CALENDAR_KV.get(shortCacheKey, 'json');
                     cached = await env.CALENDAR_KV.get(cacheKey, 'json');
                 }
-                if (cached && (Date.now() - cached.ts < 300000)) {
+
+                if (shortCached && (Date.now() - shortCached.ts < LIQUIDATIONS_SHORT_CACHE_MAX_AGE_MS)) {
+                    return new Response(JSON.stringify({ success: true, ...shortCached, source: 'short-cache' }), {
+                        headers: {
+                            ...corsHeaders,
+                            'Content-Type': 'application/json',
+                            'Cache-Control': `public, max-age=${LIQUIDATIONS_SHORT_CACHE_SECONDS}, stale-while-revalidate=20`,
+                            'X-RateLimit-Limit': String(LIQUIDATIONS_RATE_LIMIT),
+                            'X-RateLimit-Remaining': String(liqRate.remaining)
+                        },
+                    });
+                }
+
+                if (cached && (Date.now() - cached.ts < LIQUIDATIONS_CACHE_MAX_AGE_MS)) {
                     return new Response(JSON.stringify({ success: true, ...cached, source: 'cache' }), {
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        headers: {
+                            ...corsHeaders,
+                            'Content-Type': 'application/json',
+                            'Cache-Control': `public, max-age=${LIQUIDATIONS_SHORT_CACHE_SECONDS}, stale-while-revalidate=20`,
+                            'X-RateLimit-Limit': String(LIQUIDATIONS_RATE_LIMIT),
+                            'X-RateLimit-Remaining': String(liqRate.remaining)
+                        },
                     });
                 }
 
@@ -843,16 +955,121 @@ export default {
                 };
 
                 if (env.CALENDAR_KV) {
-                    await env.CALENDAR_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 300 });
+                    await Promise.all([
+                        env.CALENDAR_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: LIQUIDATIONS_CACHE_SECONDS }),
+                        env.CALENDAR_KV.put(shortCacheKey, JSON.stringify(result), { expirationTtl: LIQUIDATIONS_SHORT_CACHE_SECONDS })
+                    ]);
                 }
 
                 return new Response(JSON.stringify({ success: true, ...result, source: 'fresh' }), {
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    headers: {
+                        ...corsHeaders,
+                        'Content-Type': 'application/json',
+                        'Cache-Control': `public, max-age=${LIQUIDATIONS_SHORT_CACHE_SECONDS}, stale-while-revalidate=20`,
+                        'X-RateLimit-Limit': String(LIQUIDATIONS_RATE_LIMIT),
+                        'X-RateLimit-Remaining': String(liqRate.remaining)
+                    },
                 });
             } catch (e) {
                 console.error('Liquidations endpoint error:', e);
                 return new Response(JSON.stringify({ success: false, error: 'Failed to fetch liquidations' }), {
                     status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            }
+        }
+
+        // POST /ai-summary — Groq proxy (keeps API key server-side)
+        if (path === '/ai-summary' && request.method === 'POST') {
+            try {
+                const clientIp = getClientIp(request);
+                let rl = { allowed: true, remaining: 20 };
+                try {
+                    rl = await checkRateLimit(env, `rl_ai_summary_${clientIp}`, 20, 60);
+                } catch (rateErr) {
+                    // Fail-open: if KV is unavailable, do not break AI endpoint.
+                    console.error('AI rate-limit check failed:', rateErr);
+                }
+                if (!rl.allowed) {
+                    return new Response(JSON.stringify({ success: false, error: 'Rate limit exceeded' }), {
+                        status: 429,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                if (!GROQ_API_KEY) {
+                    return new Response(JSON.stringify({ success: false, error: 'AI provider not configured' }), {
+                        status: 503,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                const body = await request.json();
+                const model = String(body?.model || 'llama-3.3-70b-versatile').trim();
+                const systemPrompt = String(body?.systemPrompt || '').trim();
+                const userPrompt = String(body?.userPrompt || '').trim();
+
+                if (!systemPrompt || !userPrompt) {
+                    return new Response(JSON.stringify({ success: false, error: 'Missing prompt payload' }), {
+                        status: 400,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                if (systemPrompt.length > 12000 || userPrompt.length > 24000) {
+                    return new Response(JSON.stringify({ success: false, error: 'Prompt too large' }), {
+                        status: 413,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                const groqResp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${GROQ_API_KEY}`,
+                    },
+                    body: JSON.stringify({
+                        model,
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ],
+                        temperature: 0.4,
+                        max_tokens: 500,
+                        stream: false
+                    })
+                });
+
+                if (!groqResp.ok) {
+                    return new Response(JSON.stringify({ success: false, error: 'AI upstream error' }), {
+                        status: 502,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                const groqJson = await groqResp.json();
+                const content = String(groqJson?.choices?.[0]?.message?.content || '').trim();
+
+                if (!content) {
+                    return new Response(JSON.stringify({ success: false, error: 'Empty AI response' }), {
+                        status: 502,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                return new Response(JSON.stringify({
+                    success: true,
+                    content,
+                    model,
+                    source: 'groq-worker'
+                }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            } catch (e) {
+                console.error('AI summary endpoint error:', e);
+                return new Response(JSON.stringify({ success: false, error: 'Failed to generate AI summary' }), {
+                    status: 500,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             }
         }
