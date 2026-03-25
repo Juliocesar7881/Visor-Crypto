@@ -1,0 +1,13 @@
+name = "visor-crypto-calendar"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+# Route to the newly purchased domain
+routes = [{pattern = "visorcrypto.loan", custom_domain = true}]
+
+[[kv_namespaces]]
+binding = "CALENDAR_KV"
+id = "8e2cc438aee541088ec5ca2da3496947"
+
+[triggers]
+crons = ["*/5 * * * *"]

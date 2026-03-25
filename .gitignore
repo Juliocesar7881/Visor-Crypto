@@ -1,0 +1,14 @@
+node_modules/
+android/build/
+android/app/build/
+android/.gradle/
+android/.kotlin/
+android/local.properties
+android/keystore.properties
+android/app/*.keystore
+android/app/src/main/assets/public/
+*.apk
+*.aab
+.DS_Store
+www/js/config.js
+worker/.wrangler/

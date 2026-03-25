@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Visor Crypto - Análise de Criptomoedas em Tempo Real</title>
+
+    <!-- Macro Section flag -->
+    <script>window.__MACRO_SECTION_LOADING__ = true;</script>
+
+    <!-- SEO & PWA Meta Tags -->
+    <meta name="description" content="Visor Crypto: análise técnica avançada de criptomoedas em tempo real. Preços, sinais de trading, notícias filtradas por IA, indicadores macroeconômicos e alertas de baleias.">
+    <meta name="keywords" content="crypto, criptomoedas, bitcoin, ethereum, análise técnica, sinais trading, preços tempo real, whale alert, macroeconomia, fed watch">
+    <meta name="author" content="Visor Crypto">
+    <meta name="theme-color" content="#58a6ff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Visor Crypto">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="mobile-frame">
+        <!-- Chart Fullscreen Modal -->
+        <div class="chart-fullscreen-modal" id="chart-fullscreen-modal">
+            <div class="chart-fullscreen-content">
+                <div class="chart-fullscreen-header">
+                    <button class="chart-fullscreen-close" onclick="closeFullscreenChart()">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <div class="chart-fullscreen-info">
+                        <img id="fullscreen-crypto-icon" src="" alt="">
+                        <div>
+                            <div class="chart-fullscreen-name" id="fullscreen-crypto-name">Bitcoin</div>
+                            <div class="chart-fullscreen-price" id="fullscreen-crypto-price">$0.00</div>
+                        </div>
+                    </div>
+                    <div class="fs-timeframe-dropdown" id="fs-timeframe-dropdown">
+                        <div class="fs-timeframe-selector" onclick="toggleFsTimeframeDropdown()">
+                            <span class="fs-timeframe-selector-label">
+                                <i class="fas fa-clock"></i>
+                                <span id="fs-selected-timeframe">15m</span>
+                            </span>
+                            <i class="fas fa-chevron-down fs-timeframe-selector-arrow"></i>
+                        </div>
+                        <div class="fs-timeframe-options">
+                            <div class="fs-timeframe-option" data-period="1m" onclick="selectFsTimeframe('1m','1m')">
+                                <span>1 minuto</span>
+                                <i class="fas fa-check fs-timeframe-option-check"></i>
+                            </div>
+                            <div class="fs-timeframe-option" data-period="5m" onclick="selectFsTimeframe('5m','5m')">
+                                <span>5 minutos</span>
+                                <i class="fas fa-check fs-timeframe-option-check"></i>
+                            </div>
+                            <div class="fs-timeframe-option active" data-period="15m" onclick="selectFsTimeframe('15m','15m')">
+                                <span>15 minutos</span>
+                                <i class="fas fa-check fs-timeframe-option-check"></i>
+                            </div>
+                            <div class="fs-timeframe-option" data-period="30m" onclick="selectFsTimeframe('30m','30m')">
+                                <span>30 minutos</span>
+                                <i class="fas fa-check fs-timeframe-option-check"></i>
+                            </div>
+                            <div class="fs-timeframe-option" data-period="1h" onclick="selectFsTimeframe('1h','1h')">
+                                <span>1 hora</span>
+                                <i class="fas fa-check fs-timeframe-option-check"></i>
+                            </div>
+                            <div class="fs-timeframe-option" data-period="4h" onclick="selectFsTimeframe('4h','4h')">
+                                <span>4 horas</span>
+                                <i class="fas fa-check fs-timeframe-option-check"></i>
+                            </div>
+                            <div class="fs-timeframe-option" data-period="24h" onclick="selectFsTimeframe('24h','24h')">
+                                <span>24 horas</span>
+                                <i class="fas fa-check fs-timeframe-option-check"></i>
+                            </div>
+                            <div class="fs-timeframe-option" data-period="7d" onclick="selectFsTimeframe('7d','7d')">
+                                <span>7 dias</span>
+                                <i class="fas fa-check fs-timeframe-option-check"></i>
+                            </div>
+                            <div class="fs-timeframe-option" data-period="30d" onclick="selectFsTimeframe('30d','30d')">
+                                <span>30 dias</span>
+                                <i class="fas fa-check fs-timeframe-option-check"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-fullscreen-controls">
+                        <button class="chart-type-btn active" data-type="line" onclick="changeFullscreenChartType('line')">
+                            <i class="fas fa-chart-line"></i>
+                        </button>
+                        <button class="chart-type-btn" data-type="candle" onclick="changeFullscreenChartType('candle')">
+                            <i class="fas fa-chart-bar"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="chart-fullscreen-body">
+                    <div class="chart-fullscreen-canvas-container" id="fullscreen-scroll-container">
+                        <div class="chart-fullscreen-canvas-wrapper" id="fullscreen-canvas-wrapper">
+                            <canvas id="fullscreen-chart-canvas"></canvas>
+                        </div>
+                        <div id="fs-crypto-loading" style="position:absolute;top:0;left:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(10,10,15,0.85);z-index:5;transition:opacity 0.3s ease;">
+                            <i class="fas fa-spinner fa-spin" style="color:#3b82f6;font-size:28px;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart Modal -->
+        <div class="chart-modal" id="chart-modal">
+            <div class="chart-modal-content">
+                <div class="chart-modal-header">
+                    <button class="chart-modal-close" onclick="closeChartModal()">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <div class="chart-header-info">
+                        <img id="chart-crypto-icon" src="" alt="">
+                        <div>
+                            <div class="chart-header-name" id="chart-crypto-name">Bitcoin</div>
+                            <div class="chart-header-price" id="chart-crypto-price">$0.00</div>
+                        </div>
+                    </div>
+                    <div style="width: 40px;"></div>
+                </div>
+                <div class="chart-modal-body">
+                    <div class="chart-controls">
+                        <div class="timeframe-dropdown" id="timeframe-dropdown">
+                            <div class="timeframe-selector" onclick="toggleTimeframeDropdown()">
+                                <span class="timeframe-selector-label">
+                                    <i class="fas fa-clock"></i>
+                                    <span id="selected-timeframe">15 minutos</span>
+                                </span>
+                                <i class="fas fa-chevron-down timeframe-selector-arrow"></i>
+                            </div>
+                            <div class="timeframe-options">
+                                <div class="timeframe-option" data-period="1m" onclick="selectTimeframe('1m', '1 minuto')">
+                                    <span>1 minuto</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                                <div class="timeframe-option" data-period="5m" onclick="selectTimeframe('5m', '5 minutos')">
+                                    <span>5 minutos</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                                <div class="timeframe-option active" data-period="15m" onclick="selectTimeframe('15m', '15 minutos')">
+                                    <span>15 minutos</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                                <div class="timeframe-option" data-period="30m" onclick="selectTimeframe('30m', '30 minutos')">
+                                    <span>30 minutos</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                                <div class="timeframe-option" data-period="1h" onclick="selectTimeframe('1h', '1 hora')">
+                                    <span>1 hora</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                                <div class="timeframe-option" data-period="4h" onclick="selectTimeframe('4h', '4 horas')">
+                                    <span>4 horas</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                                <div class="timeframe-option" data-period="24h" onclick="selectTimeframe('24h', '24 horas')">
+                                    <span>24 horas</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                                <div class="timeframe-option" data-period="7d" onclick="selectTimeframe('7d', '7 dias')">
+                                    <span>7 dias</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                                <div class="timeframe-option" data-period="30d" onclick="selectTimeframe('30d', '30 dias')">
+                                    <span>30 dias</span>
+                                    <i class="fas fa-check timeframe-option-check"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chart-type-toggle">
+                            <button class="chart-type-btn active" data-type="line" onclick="changeChartType('line')">
+                                <i class="fas fa-chart-line"></i>
+                            </button>
+                            <button class="chart-type-btn" data-type="candle" onclick="changeChartType('candle')">
+                                <i class="fas fa-chart-bar"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <button class="fullscreen-chart-btn" onclick="openFullscreenChart()" title="Tela Cheia">
+                            <i class="fas fa-expand"></i>
+                        </button>
+                        <canvas id="price-chart" class="chart-canvas"></canvas>
+                        <div id="chart-loading" class="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none;">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                    <div class="chart-stats">
+                        <div class="chart-stat-item">
+                            <div class="chart-stat-value pnl-positive" id="chart-high">--</div>
+                            <div class="chart-stat-label">Máxima</div>
+                        </div>
+                        <div class="chart-stat-item">
+                            <div class="chart-stat-value pnl-negative" id="chart-low">--</div>
+                            <div class="chart-stat-label">Mínima</div>
+                        </div>
+                        <div class="chart-stat-item">
+                            <div class="chart-stat-value" id="chart-change">--</div>
+                            <div class="chart-stat-label">Variação</div>
+                        </div>
+                        <div class="chart-stat-item">
+                            <div class="chart-stat-value" id="chart-volume">--</div>
+                            <div class="chart-stat-label">Volume</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Technical Analysis Button -->
+                    <button class="ta-button" onclick="openTechnicalAnalysis()">
+                        <div class="ta-btn-icon-wrap">
+                            <i class="fas fa-brain"></i>
+                        </div>
+                        <div class="ta-btn-text">
+                            <span class="ta-btn-label">Análise Técnica</span>
+                            <span class="ta-btn-sub">IA · Tempo Real · Multi-TF</span>
+                        </div>
+                        <div class="ta-btn-arrow">
+                            <i class="fas fa-chevron-right"></i>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Technical Analysis Modal -->
+        <div class="ta-modal" id="ta-modal">
+            <div class="ta-modal-content">
+                <div class="ta-modal-header">
+                    <button class="ta-modal-close" onclick="closeTechnicalAnalysis()">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <span class="ta-modal-header-title">Análise Técnica</span>
+                    <button id="ta-notif-bell" class="ta-modal-close" onclick="toggleNotificationPanel()" title="Notificações">
+                        <i class="fas fa-bell" id="ta-notif-bell-icon"></i>
+                    </button>
+                    <!-- Notification Config Panel -->
+                    <div id="ta-notif-panel" style="display:none; position:absolute; top:70px; right:12px; width:280px; background:var(--bg-secondary); border:1px solid rgba(99,102,241,0.3); border-radius:16px; padding:16px; z-index:100; box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                            <span style="font-size:13px;font-weight:700;color:var(--text-primary);">🔔 Notificações</span>
+                            <button onclick="toggleNotificationPanel()" style="background:none;border:none;color:var(--text-muted);font-size:14px;cursor:pointer;"><i class="fas fa-times"></i></button>
+                        </div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg-tertiary);border-radius:10px;margin-bottom:10px;">
+                            <span style="font-size:12px;color:var(--text-secondary);">Receber alertas de sinais</span>
+                            <label style="position:relative;width:44px;height:24px;cursor:pointer;">
+                                <input type="checkbox" id="notif-toggle" onchange="handleNotifToggle(this.checked)" style="display:none;">
+                                <div id="notif-toggle-track" style="width:44px;height:24px;background:#3a3a4a;border:1px solid #555;border-radius:12px;transition:background 0.3s;"></div>
+                                <div id="notif-toggle-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform 0.3s;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>
+                            </label>
+                        </div>
+                        <div id="notif-config-details" style="display:none;">
+                            <div style="margin-bottom:10px;">
+                                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Confiança mínima para alerta</div>
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    <input type="range" id="notif-confidence-slider" min="70" max="100" value="75" step="5" oninput="updateNotifConfLabel(this.value)" onchange="saveNotifConfig()" style="flex:1;accent-color:#6366f1;">
+                                    <span id="notif-confidence-label" style="font-size:14px;font-weight:800;color:#6366f1;min-width:36px;text-align:right;">75%</span>
+                                </div>
+                            </div>
+                            <div style="margin-top:10px;padding:8px;background:rgba(99,102,241,0.1);border-radius:8px;font-size:10px;color:var(--text-muted);text-align:center;">
+                                <i class="fas fa-info-circle" style="margin-right:4px;color:#6366f1;"></i>
+                                Notificações push quando um sinal forte aparecer
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="ta-modal-body" id="ta-modal-body">
+                    <!-- Content loaded dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- News Modal -->
+        <div class="news-modal" id="news-modal">
+            <div class="news-modal-content">
+                <div class="news-modal-header">
+                    <button class="news-modal-close" onclick="closeNewsModal()">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <span class="news-modal-header-title">Notícia</span>
+                    <div style="width: 40px;"></div>
+                </div>
+                <div class="news-modal-body">
+                    <div class="news-modal-image" id="news-modal-image">
+                        <i class="fas fa-newspaper"></i>
+                    </div>
+                    <div class="news-modal-meta">
+                        <span class="news-modal-source" id="news-modal-source"></span>
+                        <span class="news-modal-sentiment" id="news-modal-sentiment"></span>
+                    </div>
+                    <h2 class="news-modal-title" id="news-modal-title"></h2>
+                    <p class="news-modal-summary" id="news-modal-summary"></p>
+                    <div class="news-modal-time" id="news-modal-time">
+                        <i class="far fa-clock"></i>
+                        <span id="news-modal-time-text"></span>
+                    </div>
+                </div>
+                <div class="news-modal-footer">
+                    <button class="news-modal-button" id="news-modal-button" onclick="">
+                        <i class="fas fa-external-link-alt"></i>
+                        Abrir Notícia Original
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Event Detail Modal -->
+        <div class="event-detail-modal" id="event-detail-modal">
+            <div class="event-detail-modal-content">
+                <div class="event-detail-modal-header">
+                    <button class="event-detail-modal-close" onclick="closeEventDetailModal()">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <span class="event-detail-modal-header-title">Evento Econômico</span>
+                    <div style="width: 40px;"></div>
+                </div>
+                <div class="event-detail-modal-body">
+                    <div class="event-detail-card">
+                        <div class="event-detail-date" id="event-detail-date">
+                            <div class="event-detail-day"></div>
+                            <div class="event-detail-month"></div>
+                        </div>
+                        <div class="event-detail-title" id="event-detail-title"></div>
+                        <div class="event-detail-country" id="event-detail-country"></div>
+                        <div class="event-detail-impact" id="event-detail-impact"></div>
+                    </div>
+                    
+                    <div class="event-detail-section">
+                        <div class="event-detail-section-title">
+                            <i class="fas fa-info-circle"></i>
+                            Descrição
+                        </div>
+                        <div class="event-detail-description" id="event-detail-description"></div>
+                    </div>
+
+                    <div class="event-detail-section">
+                        <div class="event-detail-section-title">
+                            <i class="fas fa-chart-line"></i>
+                            Impacto no Mercado
+                        </div>
+                        <div class="event-detail-market-impact" id="event-detail-market-impact"></div>
+                    </div>
+
+                    <div class="event-detail-section">
+                        <div class="event-detail-section-title">
+                            <i class="fas fa-bitcoin"></i>
+                            Impacto em Cripto
+                        </div>
+                        <div class="event-detail-crypto-impact" id="event-detail-crypto-impact"></div>
+                    </div>
+
+                    <!-- Histórico de Resultados - sempre visível para evitar saltos de layout -->
+                    <div class="event-history-section" id="event-history-section">
+                        <div class="card-header" style="margin-bottom: 12px;">
+                            <div class="card-title">
+                                <i class="fas fa-history"></i>
+                                Últimos Resultados
+                            </div>
+                        </div>
+                        <div style="text-align: center; padding: 12px; color: var(--text-muted); font-size: 12px;">
+                            <i class="fas fa-clock" style="opacity: 0.5;"></i> Dados ainda não disponíveis
+                        </div>
+                    </div>
+
+                    <!-- Probabilidades do Evento -->
+                    <div class="event-probabilities-section" id="event-probabilities-section" style="display: none;">
+                        <div class="event-detail-section-title">
+                            <i class="fas fa-chart-pie"></i>
+                            Probabilidades de Mercado
+                        </div>
+                        <div id="event-probabilities-content"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Indicator Detail Modal -->
+        <div class="indicator-detail-modal" id="indicator-detail-modal">
+            <div class="indicator-detail-modal-content">
+                <div class="indicator-detail-modal-header">
+                    <button class="indicator-detail-modal-close" onclick="closeIndicatorDetailModal()">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <span class="news-modal-header-title" id="indicator-modal-title">Indicador</span>
+                    <div style="width: 40px;"></div>
+                </div>
+                <div class="indicator-detail-modal-body">
+                    <div class="indicator-detail-card" id="indicator-detail-card">
+                        <div class="indicator-detail-value" id="indicator-detail-value">--</div>
+                        <div class="indicator-detail-change" id="indicator-detail-change">--</div>
+                        <div class="indicator-detail-name" id="indicator-detail-name">--</div>
+                    </div>
+
+                    <!-- Chart Section for Indicator -->
+                    <div class="indicator-chart-section">
+                        <div class="indicator-chart-header">
+                            <div class="indicator-chart-title">
+                                <i class="fas fa-chart-area"></i>
+                                Gráfico
+                            </div>
+                            <!-- Botão de Análise Técnica -->
+                            <button class="ta-button indicator-ta-btn" onclick="openIndicatorTechnicalAnalysis()">
+                                <div class="ta-btn-icon-wrap">
+                                    <i class="fas fa-microscope"></i>
+                                </div>
+                                <div class="ta-btn-text">
+                                    <span class="ta-btn-label">Análise Técnica</span>
+                                    <span class="ta-btn-sub">IA · Tempo Real</span>
+                                </div>
+                                <div class="ta-btn-arrow">
+                                    <i class="fas fa-chevron-right"></i>
+                                </div>
+                            </button>
+                        </div>
+                        <div class="ind-timeframe-dropdown" id="ind-timeframe-dropdown">
+                            <div class="ind-timeframe-selector" onclick="toggleIndTimeframeDropdown()">
+                                <span class="ind-timeframe-selector-label">
+                                    <i class="fas fa-clock"></i>
+                                    <span id="ind-selected-timeframe">1h</span>
+                                </span>
+                                <i class="fas fa-chevron-down ind-timeframe-selector-arrow"></i>
+                            </div>
+                            <div class="ind-timeframe-options">
+                                <div class="ind-timeframe-option" data-period="15m" onclick="selectIndTimeframe('15m','15m')">
+                                    <span>15 minutos</span>
+                                    <i class="fas fa-check ind-timeframe-option-check"></i>
+                                </div>
+                                <div class="ind-timeframe-option" data-period="30m" onclick="selectIndTimeframe('30m','30m')">
+                                    <span>30 minutos</span>
+                                    <i class="fas fa-check ind-timeframe-option-check"></i>
+                                </div>
+                                <div class="ind-timeframe-option active" data-period="1h" onclick="selectIndTimeframe('1h','1h')">
+                                    <span>1 hora</span>
+                                    <i class="fas fa-check ind-timeframe-option-check"></i>
+                                </div>
+                                <div class="ind-timeframe-option" data-period="4h" onclick="selectIndTimeframe('4h','4h')">
+                                    <span>4 horas</span>
+                                    <i class="fas fa-check ind-timeframe-option-check"></i>
+                                </div>
+                                <div class="ind-timeframe-option" data-period="24h" onclick="selectIndTimeframe('24h','24h')">
+                                    <span>24 horas</span>
+                                    <i class="fas fa-check ind-timeframe-option-check"></i>
+                                </div>
+                                <div class="ind-timeframe-option" data-period="7d" onclick="selectIndTimeframe('7d','7d')">
+                                    <span>7 dias</span>
+                                    <i class="fas fa-check ind-timeframe-option-check"></i>
+                                </div>
+                                <div class="ind-timeframe-option" data-period="1mo" onclick="selectIndTimeframe('1mo','1M')">
+                                    <span>1 mês</span>
+                                    <i class="fas fa-check ind-timeframe-option-check"></i>
+                                </div>
+                                <div class="ind-timeframe-option" data-period="6mo" onclick="selectIndTimeframe('6mo','6M')">
+                                    <span>6 meses</span>
+                                    <i class="fas fa-check ind-timeframe-option-check"></i>
+                                </div>
+                                <div class="ind-timeframe-option" data-period="1y" onclick="selectIndTimeframe('1y','1A')">
+                                    <span>1 ano</span>
+                                    <i class="fas fa-check ind-timeframe-option-check"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="indicator-chart-container" id="indicator-chart-container">
+                            <button class="fullscreen-chart-btn" onclick="openIndicatorFullscreenChart()" title="Tela Cheia" style="position:absolute;top:8px;right:8px;z-index:10;">
+                                <i class="fas fa-expand"></i>
+                            </button>
+                            <canvas id="indicator-chart-canvas" style="touch-action:none;"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="indicator-info-section">
+                        <div class="indicator-info-title">
+                            <i class="fas fa-info-circle"></i>
+                            O que é?
+                        </div>
+                        <div class="indicator-info-text" id="indicator-what-is"></div>
+                    </div>
+
+                    <div class="indicator-info-section">
+                        <div class="indicator-info-title">
+                            <i class="fas fa-chart-line"></i>
+                            Como Interpretar
+                        </div>
+                        <div class="indicator-info-text" id="indicator-how-to"></div>
+                    </div>
+
+                    <div class="indicator-info-section">
+                        <div class="indicator-info-title">
+                            <i class="fas fa-bitcoin"></i>
+                            Impacto em Cripto
+                        </div>
+                        <div class="indicator-info-text" id="indicator-crypto-impact"></div>
+                    </div>
+
+                    <div class="indicator-info-section">
+                        <div class="indicator-info-title">
+                            <i class="fas fa-lightbulb"></i>
+                            Dica de Trading
+                        </div>
+                        <div class="indicator-info-text" id="indicator-trading-tip"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="header">
+            <div class="header-title">
+                <img src="Icone.png" alt="Visor Crypto" class="header-brand-img" onerror="this.style.display='none'; this.parentElement.innerHTML='<span style=\'font-size: 20px; font-weight: 800; background: linear-gradient(135deg, #fff 0%, #e4e4e7 50%, #a1a1aa 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;\'>Visor Crypto</span>';">
+            </div>
+
+        </div>
+
+        <div class="content">
+            <!-- HOME -->
+            <div id="home" class="section active">
+                <div class="quick-stats">
+                    <div class="quick-stat">
+                        <div class="quick-stat-visual">
+                            <div class="quick-stat-ring" id="btc-dom-ring">
+                                <svg viewBox="0 0 80 80">
+                                    <circle cx="40" cy="40" r="34" fill="none" stroke="var(--border-subtle)" stroke-width="5"/>
+                                    <circle cx="40" cy="40" r="34" fill="none" stroke="#f7931a" stroke-width="5" stroke-dasharray="213.6" stroke-dashoffset="213.6" stroke-linecap="round" id="btc-dom-arc" style="transition: stroke-dashoffset 1s ease;"/>
+                                </svg>
+                                <div class="quick-stat-ring-value" id="btc-dominance"><i class="fas fa-spinner fa-spin" style="font-size:14px;opacity:0.4;"></i></div>
+                            </div>
+                        </div>
+                        <div class="quick-stat-label">BTC Dominância</div>
+                    </div>
+                    <div class="quick-stat">
+                        <div class="quick-stat-visual">
+                            <div class="quick-stat-trend" id="market-trend-box">
+                                <div class="trend-arrow" id="trend-arrow">
+                                    <i class="fas fa-minus" style="font-size:22px;color:var(--text-muted);"></i>
+                                </div>
+                                <div class="trend-label" id="market-trend">--</div>
+                            </div>
+                        </div>
+                        <div class="quick-stat-label">Tendência 24h</div>
+                    </div>
+                </div>
+
+                <div class="card ai-card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fas fa-brain"></i>
+                            IA Market Advisor
+                        </div>
+                    </div>
+                    <div id="ai-recommendation">
+                        <div class="loading"><div class="spinner"></div></div>
+                    </div>
+                </div>
+
+                <!-- TOP OPORTUNIDADES V6.1 -->
+                <div class="card" id="top-oportunidades-card" style="display: none;">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fas fa-trophy" style="color: #f59e0b;"></i>
+                            Top Oportunidades
+                        </div>
+
+                    </div>
+                    <div id="top-oportunidades-content" style="padding: 0;">
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fas fa-bolt"></i>
+                            Preços em Tempo Real
+                        </div>
+                    </div>
+                    <div id="live-prices">
+                        <div class="loading"><div class="spinner"></div></div>
+                    </div>
+                </div>
+
+
+            </div>
+
+            <!-- NEWS -->
+            <div id="news" class="section">
+                <div class="news-filters">
+                    <div class="news-filter active" data-filter="all">Todas</div>
+                    <div class="news-filter" data-filter="positive">Positivas</div>
+                    <div class="news-filter" data-filter="negative">Negativas</div>
+                    <div class="news-filter" data-filter="hot">Relevantes</div>
+                </div>
+
+                <div id="news-container">
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
+                    <div class="news-skeleton"><div class="news-skeleton-thumb"></div><div class="news-skeleton-content"><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div><div class="news-skeleton-line"></div></div></div>
+                </div>
+            </div>
+
+            <!-- ANALYSIS -->
+            <div id="analysis" class="section">
+                <!-- Mapa de Calor - Heatmap -->
+                <div onclick="openExternalLink('https://www.coinglass.com/pro/futures/LiquidationHeatMap', 'Liquidation Heatmap')" style="
+                    cursor: pointer;
+                    margin-bottom: 16px;
+                    padding: 14px 18px;
+                    background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 50%, rgba(168, 85, 247, 0.08) 100%);
+                    border: 1px solid rgba(99, 102, 241, 0.25);
+                    border-radius: 14px;
+                    display: flex;
+                    align-items: center;
+                    gap: 14px;
+                    transition: all 0.25s ease;
+                    position: relative;
+                    overflow: hidden;
+                " onmouseover="this.style.borderColor='rgba(99,102,241,0.5)';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='rgba(99,102,241,0.25)';this.style.transform='none'">
+                    <div style="
+                        width: 42px; height: 42px; flex-shrink: 0;
+                        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+                        border-radius: 12px;
+                        display: flex; align-items: center; justify-content: center;
+                        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);">
+                        <i class="fas fa-fire" style="color: white; font-size: 18px;"></i>
+                    </div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-size: 14px; font-weight: 700; color: var(--text-primary);">Mapa de Calor de Liquidações</div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">CoinGlass — Visualize zonas de liquidação em tempo real</div>
+                    </div>
+                    <div style="
+                        width: 32px; height: 32px; flex-shrink: 0;
+                        background: rgba(99, 102, 241, 0.15);
+                        border-radius: 8px;
+                        display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-external-link-alt" style="color: #818cf8; font-size: 12px;"></i>
+                    </div>
+                </div>
+
+                <!-- Fear & Greed -->
+                <div class="fear-greed-meter">
+                    <div class="meter-header">
+                        <div class="meter-title">
+                            <i class="fas fa-heart-pulse"></i>
+                            Fear & Greed Index
+                        </div>
+                        <div class="meter-value" id="fear-greed-value"><i class="fas fa-spinner fa-spin" style="font-size:14px;opacity:0.4;"></i></div>
+                    </div>
+                    <div class="meter-bar">
+                        <div class="meter-indicator" id="fear-greed-indicator" style="left: 50%"></div>
+                    </div>
+                    <div class="meter-labels">
+                        <span>Extreme Fear</span>
+                        <span>Neutral</span>
+                        <span>Extreme Greed</span>
+                    </div>
+                </div>
+
+                <!-- Altseason Index -->
+                <div class="altseason-meter">
+                    <div class="meter-header">
+                        <div class="meter-title">
+                            <i class="fas fa-coins"></i>
+                            Altseason Index
+                        </div>
+                        <div class="meter-value" id="altseason-value"><i class="fas fa-spinner fa-spin" style="font-size:14px;opacity:0.4;"></i></div>
+                    </div>
+                    <div class="altseason-bar">
+                        <div class="altseason-indicator" id="altseason-indicator" style="left: 50%"></div>
+                    </div>
+                    <div class="altseason-labels">
+                        <span>Bitcoin Season</span>
+                        <span>Neutro</span>
+                        <span>Altseason</span>
+                    </div>
+                    <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted); text-align: center;">
+                        <span id="altseason-status">Calculando...</span>
+                    </div>
+                </div>
+
+                <!-- Stats BTC -->
+                <div style="margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--accent-yellow); display: flex; align-items: center; gap: 6px;">
+                    <img src="https://assets.coingecko.com/coins/images/1/small/bitcoin.png" style="width: 16px; height: 16px; border-radius: 50%;">
+                    Bitcoin (BTC)
+                </div>
+                <div class="stats-grid" style="margin-bottom: 20px;">
+                    <div class="stat-box">
+                        <div class="stat-value" id="live-volume-btc">--</div>
+                        <div class="stat-change" id="volume-change-btc"></div>
+                        <div class="mini-perf-bar" id="mini-bar-vol-btc"></div>
+                        <div class="stat-label">Volume 24h BTC</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="market-cap-btc"><i class="fas fa-spinner fa-spin" style="font-size:12px;opacity:0.3;"></i></div>
+                        <div class="stat-change" id="mcap-change-btc"></div>
+                        <div class="mini-perf-bar" id="mini-bar-mcap-btc"></div>
+                        <div class="stat-label">Market Cap BTC (24h)</div>
+                    </div>
+                </div>
+
+                <!-- Stats ETH -->
+                <div style="margin-bottom: 8px; font-size: 12px; font-weight: 600; color: var(--accent-blue); display: flex; align-items: center; gap: 6px;">
+                    <img src="https://assets.coingecko.com/coins/images/279/small/ethereum.png" style="width: 16px; height: 16px; border-radius: 50%;">
+                    Ethereum (ETH)
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-value" id="live-volume">--</div>
+                        <div class="stat-change" id="volume-change"></div>
+                        <div class="mini-perf-bar" id="mini-bar-vol-eth"></div>
+                        <div class="stat-label">Volume 24h ETH</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="market-cap"><i class="fas fa-spinner fa-spin" style="font-size:12px;opacity:0.3;"></i></div>
+                        <div class="stat-change" id="mcap-change"></div>
+                        <div class="mini-perf-bar" id="mini-bar-mcap-eth"></div>
+                        <div class="stat-label">Market Cap ETH (24h)</div>
+                    </div>
+                </div>
+
+                <!-- Combined Order Book + Moving Averages -->
+                <div class="analysis-combined">
+                    <div class="card-header" style="padding: 16px 20px; margin-bottom: 0; border-bottom: 1px solid var(--border-subtle);">
+                        <div class="card-title">
+                            <i class="fas fa-chart-area"></i>
+                            Análise Técnica
+                        </div>
+                        <div class="crypto-dropdown">
+                            <div class="dropdown-selected" onclick="toggleDropdown()">
+                                <span class="dropdown-selected-icon" id="dropdown-icon"><img src="https://assets.coingecko.com/coins/images/1/small/bitcoin.png" style="width: 20px; height: 20px; border-radius: 50%;"></span>
+                                <span id="dropdown-label">BTC</span>
+                                <i class="fas fa-chevron-down" style="font-size: 10px; color: var(--text-muted);"></i>
+                            </div>
+                            <div class="dropdown-menu" id="crypto-dropdown-menu">
+                                <!-- Will be populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="analysis-tabs">
+                        <div class="analysis-tab active" onclick="switchAnalysisTab('orderbook')">
+                            <i class="fas fa-list-ol"></i>
+                            Order Book
+                        </div>
+                        <div class="analysis-tab" onclick="switchAnalysisTab('ma')">
+                            <i class="fas fa-chart-line"></i>
+                            Médias Móveis
+                        </div>
+                    </div>
+
+                    <div class="analysis-content">
+                        <!-- Order Book Panel -->
+                        <div id="panel-orderbook" class="analysis-panel active">
+                            <div id="orderbook-container" class="orderbook">
+                                <div class="loading" style="grid-column: span 2;"><div class="spinner"></div></div>
+                            </div>
+                        </div>
+
+                        <!-- Moving Averages Panel -->
+                        <div id="panel-ma" class="analysis-panel">
+                            <div class="ma-grid">
+                                <div class="ma-item" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, transparent 100%); border: 1px solid rgba(59, 130, 246, 0.3);">
+                                    <div class="ma-label" style="color: #3b82f6;">EMA 9</div>
+                                    <div class="ma-value" id="ema-9">--</div>
+                                    <div class="ma-signal" id="ema-9-signal"></div>
+                                </div>
+                                <div class="ma-item" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, transparent 100%); border: 1px solid rgba(34, 197, 94, 0.3);">
+                                    <div class="ma-label" style="color: #22c55e;">EMA 20</div>
+                                    <div class="ma-value" id="ema-20">--</div>
+                                    <div class="ma-signal" id="ema-20-signal"></div>
+                                </div>
+                                <div class="ma-item" style="background: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, transparent 100%); border: 1px solid rgba(249, 115, 22, 0.3);">
+                                    <div class="ma-label" style="color: #f97316;">EMA 50</div>
+                                    <div class="ma-value" id="ema-50">--</div>
+                                    <div class="ma-signal" id="ema-50-signal"></div>
+                                </div>
+                                <div class="ma-item">
+                                    <div class="ma-label">MA 50</div>
+                                    <div class="ma-value" id="ma-50">--</div>
+                                    <div class="ma-signal" id="ma-50-signal"></div>
+                                </div>
+                                <div class="ma-item">
+                                    <div class="ma-label">MA 99</div>
+                                    <div class="ma-value" id="ma-99">--</div>
+                                    <div class="ma-signal" id="ma-99-signal"></div>
+                                </div>
+                                <div class="ma-item">
+                                    <div class="ma-label">MA 200</div>
+                                    <div class="ma-value" id="ma-200">--</div>
+                                    <div class="ma-signal" id="ma-200-signal"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Support and Resistance -->
+                            <div style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; border: 1px solid var(--border-subtle);">
+                                <div style="font-size: 12px; font-weight: 700; color: var(--accent-purple); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                                    <i class="fas fa-layer-group"></i> Suporte & Resistência Inteligente
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #22c55e;">
+                                        <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">SUPORTE</div>
+                                        <div style="font-size: 14px; font-weight: 700; color: #22c55e;" id="sr-support">--</div>
+                                    </div>
+                                    <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #ef4444;">
+                                        <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">RESISTÊNCIA</div>
+                                        <div style="font-size: 14px; font-weight: 700; color: #ef4444;" id="sr-resistance">--</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="ma-summary" id="ma-summary">
+                                <i class="fas fa-spinner fa-spin"></i> Calculando...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Whale Activity Indicator -->
+                <div id="whale-activity-indicator" class="card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <div class="card-title">
+                            Atividades das Baleias
+                        </div>
+                    </div>
+                    <div style="padding: 16px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="opacity: 0.5;"><i class="fas fa-spinner fa-spin"></i> Carregando atividade...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Links -->
+                <!-- Carteiras das Principais Baleias -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header">
+                        <div class="card-title" style="display: flex; align-items: center; gap: 10px;">
+                            <div style="
+                                width: 32px; height: 32px; 
+                                background: linear-gradient(135deg, #f59e0b, #ef4444);
+                                border-radius: 8px;
+                                display: flex; align-items: center; justify-content: center;
+                                box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);">
+                                <i class="fas fa-wallet" style="color: white; font-size: 14px;"></i>
+                            </div>
+                            <div>
+                                <div style="font-size: 15px; font-weight: 700;">Carteiras das Principais Baleias</div>
+                                <div style="font-size: 10px; color: var(--text-muted); font-weight: 400;">Exchanges & Institucionais</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/coinbase', 'Coinbase')">
+                        <img src="COINBASE.jpg" alt="Coinbase" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Coinbase</div>
+                            <div class="external-link-desc">Arkham - Exchange americana</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/binance', 'Binance')">
+                        <img src="BINANCE.jpg" alt="Binance" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Binance</div>
+                            <div class="external-link-desc">Arkham - Maior exchange</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/blackrock', 'BlackRock')">
+                        <img src="BLACKROCK.jpg" alt="BlackRock" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">BlackRock</div>
+                            <div class="external-link-desc">Arkham - Maior gestora do mundo</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/fidelity', 'Fidelity')">
+                        <img src="FIDELITY.png" alt="Fidelity" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Fidelity</div>
+                            <div class="external-link-desc">Arkham - Gestora institucional</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/grayscale', 'Grayscale')">
+                        <img src="GRAYSCALE.jpg" alt="Grayscale" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Grayscale</div>
+                            <div class="external-link-desc">Arkham - GBTC e ETHE</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/usg', 'US Government')">
+                        <img src="EUA.jpg" alt="US Government" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">U.S. Government</div>
+                            <div class="external-link-desc">Arkham - Governo dos EUA</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/microstrategy', 'MicroStrategy')">
+                        <img src="microstrategy.png" alt="MicroStrategy" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">MicroStrategy</div>
+                            <div class="external-link-desc">Arkham - Maior holder corporativo de BTC</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/metamask', 'MetaMask')">
+                        <img src="metamask.png" alt="MetaMask" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">MetaMask</div>
+                            <div class="external-link-desc">Arkham - Carteira Web3 popular</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/tesla', 'Tesla')">
+                        <img src="Tesla_logo.png" alt="Tesla" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Tesla</div>
+                            <div class="external-link-desc">Arkham - Tesla Inc. (Elon Musk)</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/kraken', 'Kraken')">
+                        <img src="Kraken.png" alt="Kraken" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Kraken</div>
+                            <div class="external-link-desc">Arkham - Exchange americana</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/bitfinex', 'Bitfinex')">
+                        <img src="Bitfinex.png" alt="Bitfinex" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Bitfinex</div>
+                            <div class="external-link-desc">Arkham - Exchange global</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/galaxy-digital', 'Galaxy Digital')">
+                        <img src="galaxy.png" alt="Galaxy Digital" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Galaxy Digital</div>
+                            <div class="external-link-desc">Arkham - Mike Novogratz</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/el-salvador', 'El Salvador')">
+                        <img src="El%20Salvador.png" alt="El Salvador" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">El Salvador</div>
+                            <div class="external-link-desc">Arkham - Governo de El Salvador</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                    <div class="external-link" onclick="openExternalLink('https://intel.arkm.com/explorer/entity/robinhood', 'Robinhood')">
+                        <img src="robinhood.png" alt="Robinhood" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;">
+                        <div class="external-link-text">
+                            <div class="external-link-title">Robinhood</div>
+                            <div class="external-link-desc">Arkham - Plataforma de trading</div>
+                        </div>
+                        <i class="fas fa-chevron-right" style="color: var(--text-muted);"></i>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- MACRO -->
+            <div id="macro" class="section">
+                <div class="macro-tabs">
+                    <div class="macro-tab active" onclick="switchMacroTab('fedwatch')">
+                        <i class="fas fa-landmark"></i>
+                        <span>Fed Watch</span>
+                    </div>
+                    <div class="macro-tab" onclick="switchMacroTab('calendar')">
+                        <i class="fas fa-calendar-alt"></i>
+                        <span>Calendário</span>
+                    </div>
+                    <div class="macro-tab" onclick="switchMacroTab('indicators')">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Indicadores</span>
+                    </div>
+                </div>
+
+                <!-- Fed Watch Panel -->
+                <div id="panel-fedwatch" class="macro-panel active">
+                    <div class="fed-rate-card">
+                        <div class="fed-current-rate">
+                            <div>
+                                <div class="fed-rate-label">Taxa de Juros Atual (Fed Funds)</div>
+                                <div class="fed-rate-value" id="current-fed-rate">--</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="fed-rate-label">Taxa Efetiva (Fed Funds)</div>
+                                <div style="font-size: 14px; font-weight: 600;" id="last-fed-decision"><span style="color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i></span></div>
+                            </div>
+                        </div>
+                        <div class="fed-next-meeting">
+                            <i class="fas fa-clock"></i>
+                            <span id="next-fomc-meeting">Próxima reunião FOMC: Carregando...</span>
+                        </div>
+                    </div>
+
+                    <div class="card-header" style="margin-bottom: 12px;">
+                        <div class="card-title">
+                            <i class="fas fa-percentage"></i>
+                            Probabilidades para Próxima Reunião
+                        </div>
+                    </div>
+
+                    <div class="fed-probabilities" id="fed-probabilities">
+                        <div class="loading"><div class="spinner"></div></div>
+                    </div>
+
+                    <div class="card" style="margin-top: 16px;">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fas fa-info-circle"></i>
+                                O que é o Fed Watch?
+                            </div>
+                        </div>
+                        <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.7;">
+                            O Fed Watch Tool mostra as probabilidades de mercado para mudanças nas taxas de juros do Federal Reserve. 
+                            Probabilidades calculadas com base em dados reais do Federal Reserve (FRED API): taxa efetiva, inflação (CPI) e desemprego, usando modelo econométrico (Regra de Taylor adaptada). Um <strong style="color: var(--accent-green);">corte</strong> geralmente 
+                            é positivo para ativos de risco como cripto, enquanto <strong style="color: var(--accent-red);">aumento</strong> tende a ser negativo.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Calendar Panel -->
+                <div id="panel-calendar" class="macro-panel">
+                    <div class="card-header" style="margin-bottom: 12px;">
+                        <div class="card-title">
+                            <i class="fas fa-calendar-week"></i>
+                            Calendário EUA • Alta Importância • 30 dias
+                        </div>
+                    </div>
+                    <div id="economic-calendar">
+                        <div class="loading"><div class="spinner"></div></div>
+                    </div>
+                </div>
+
+                <!-- Indicators Panel -->
+                <div id="panel-indicators" class="macro-panel">
+                    <div class="card-header" style="margin-bottom: 12px;">
+                        <div class="card-title">
+                            <i class="fas fa-globe"></i>
+                            Indicadores de Mercado
+                        </div>
+                    </div>
+                    <div id="market-indicators">
+                        <div class="loading"><div class="spinner"></div></div>
+                    </div>
+
+                    <div class="card" style="margin-top: 16px;">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="fas fa-lightbulb"></i>
+                                Correlações com Cripto
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;">
+                            <p><strong style="color: var(--accent-red);">VIX Alto (>25):</strong> Maior volatilidade, cautela no mercado</p>
+                            <p><strong style="color: var(--accent-green);">DXY Fraco:</strong> Geralmente positivo para Bitcoin</p>
+                            <p><strong style="color: var(--accent-yellow);">Ouro Subindo:</strong> Fuga para ativos seguros</p>
+                            <p><strong style="color: var(--accent-blue);">S&P500 Forte:</strong> Risk-on, favorece cripto</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DASHBOARD — Sinais & Histórico de Calls -->
+            <div id="dashboard" class="section">
+
+                <!-- ── Hero Banner ────────────────────────────── -->
+                <div style="
+                    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%);
+                    border-radius: 20px;
+                    padding: 20px;
+                    margin-bottom: 16px;
+                    border: 1px solid rgba(99,102,241,0.3);
+                    position: relative;
+                    overflow: hidden;
+                ">
+                    <!-- Glow orb background -->
+                    <div style="position:absolute;top:-30px;right:-30px;width:120px;height:120px;background:radial-gradient(circle,rgba(139,92,246,0.35),transparent 70%);pointer-events:none;"></div>
+                    <div style="position:absolute;bottom:-20px;left:-10px;width:80px;height:80px;background:radial-gradient(circle,rgba(99,102,241,0.2),transparent 70%);pointer-events:none;"></div>
+
+                    <div style="display:flex;align-items:center;justify-content:space-between;position:relative;">
+                        <div style="display:flex;align-items:center;gap:14px;">
+                            <div style="width:46px;height:46px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(99,102,241,0.5);flex-shrink:0;">
+                                <i class="fas fa-satellite-dish" style="color:white;font-size:20px;"></i>
+                            </div>
+                            <div>
+                                <div style="font-size:18px;font-weight:900;color:#fff;letter-spacing:-0.3px;line-height:1.2;" id="dash-monitor-status">Monitoramento Ativo</div>
+                                <div style="font-size:11px;color:rgba(255,255,255,0.55);margin-top:2px;" id="dash-monitor-detail">Escaneando criptos a cada 5 min</div>
+                            </div>
+                        </div>
+                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+                            <!-- Master toggle -->
+                            <label style="position:relative;width:48px;height:26px;cursor:pointer;">
+                                <input type="checkbox" id="dash-master-toggle" onchange="dashHandleMasterToggle(this.checked)" style="display:none;">
+                                <div id="dash-master-track" style="width:48px;height:26px;background:rgba(255,255,255,0.15);border-radius:13px;transition:background 0.3s;border:1px solid rgba(255,255,255,0.2);"></div>
+                                <div id="dash-master-thumb" style="position:absolute;top:3px;left:3px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform 0.3s;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Stats row inside banner -->
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px;">
+                        <div style="background:rgba(255,255,255,0.07);border-radius:10px;padding:10px 8px;text-align:center;">
+                            <div id="dash-stat-total" style="font-size:20px;font-weight:900;color:#fff;">0</div>
+                            <div style="font-size:9px;color:rgba(255,255,255,0.45);text-transform:uppercase;font-weight:700;margin-top:2px;">Total</div>
+                        </div>
+                        <div style="background:rgba(34,197,94,0.15);border-radius:10px;padding:10px 8px;text-align:center;border:1px solid rgba(34,197,94,0.2);">
+                            <div id="dash-stat-long" style="font-size:20px;font-weight:900;color:#4ade80;">0</div>
+                            <div style="font-size:9px;color:rgba(74,222,128,0.6);text-transform:uppercase;font-weight:700;margin-top:2px;">Longs</div>
+                        </div>
+                        <div style="background:rgba(239,68,68,0.15);border-radius:10px;padding:10px 8px;text-align:center;border:1px solid rgba(239,68,68,0.2);">
+                            <div id="dash-stat-short" style="font-size:20px;font-weight:900;color:#f87171;">0</div>
+                            <div style="font-size:9px;color:rgba(248,113,113,0.6);text-transform:uppercase;font-weight:700;margin-top:2px;">Shorts</div>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+                        <div style="background:rgba(255,255,255,0.07);border-radius:10px;padding:10px 8px;text-align:center;">
+                            <div id="dash-stat-avgconf" style="font-size:20px;font-weight:900;color:#a5b4fc;">--</div>
+                            <div style="font-size:9px;color:rgba(165,180,252,0.55);text-transform:uppercase;font-weight:700;margin-top:2px;">Média Conf.</div>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.07);border-radius:10px;padding:10px 8px;text-align:center;">
+                            <div id="dash-stat-today" style="font-size:20px;font-weight:900;color:#fcd34d;">0</div>
+                            <div style="font-size:9px;color:rgba(252,211,77,0.55);text-transform:uppercase;font-weight:700;margin-top:2px;">Hoje</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Sinais Ativos ───────────────────────────── -->
+                <div class="dash-section-header">
+                    <div class="dash-section-title">
+                        <div class="dash-section-icon" style="background:rgba(245,158,11,0.12);">
+                            <i class="fas fa-bolt" style="color:#f59e0b;font-size:13px;"></i>
+                        </div>
+                        Sinais Ativos
+                    </div>
+                    <div id="dash-active-count" class="dash-pill">0 sinais</div>
+                </div>
+                <div id="dash-active-signals" style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px;">
+                    <div class="dash-empty-state">
+                        <i class="fas fa-satellite-dish" style="font-size:32px;margin-bottom:12px;opacity:0.2;"></i>
+                        <div style="font-size:14px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">Nenhum sinal ativo</div>
+                        <div style="font-size:12px;">Os sinais aparecem quando um setup é confirmado pelo motor V4.</div>
+                    </div>
+                </div>
+
+                <!-- ── Confiança das Análises ──────────────────── -->
+                <div class="dash-section-header" style="margin-top:20px;">
+                    <div class="dash-section-title">
+                        <div class="dash-section-icon" style="background:rgba(99,102,241,0.12);">
+                            <i class="fas fa-chart-bar" style="color:#6366f1;font-size:13px;"></i>
+                        </div>
+                        Confiança das Análises
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <div id="dash-conf-updated" class="dash-pill" style="font-size:9px;">Escaneando...</div>
+                    </div>
+                </div>
+                <div class="card" style="padding:0;overflow:hidden;margin-bottom:4px;">
+                    <div id="dash-confidence-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border-subtle);">
+                        <!-- Generated by JS -->
+                    </div>
+                </div>
+
+                <!-- ── Histórico de Calls ──────────────────────── -->
+                <div class="dash-section-header" style="margin-top:20px;">
+                    <div class="dash-section-title">
+                        <div class="dash-section-icon" style="background:rgba(139,92,246,0.12);">
+                            <i class="fas fa-history" style="color:#8b5cf6;font-size:13px;"></i>
+                        </div>
+                        Histórico de Calls
+                    </div>
+                    <div style="display:flex;gap:5px;">
+                        <div onclick="dashFilterHistory('all')" class="dash-hist-filter active" data-filter="all">Todas</div>
+                        <div onclick="dashFilterHistory('long')" class="dash-hist-filter" data-filter="long">Long</div>
+                        <div onclick="dashFilterHistory('short')" class="dash-hist-filter" data-filter="short">Short</div>
+                    </div>
+                </div>
+                <div id="dash-history-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px;">
+                    <div class="dash-empty-state">
+                        <i class="fas fa-clock-rotate-left" style="font-size:32px;margin-bottom:12px;opacity:0.2;"></i>
+                        <div style="font-size:14px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">Nenhum histórico ainda</div>
+                        <div style="font-size:12px;">Calls confirmadas aparecerão aqui automaticamente.</div>
+                    </div>
+                </div>
+
+                <!-- ── Configurações de Sinais ─────────────────── -->
+                <div class="dash-section-header" style="margin-top:20px;">
+                    <div class="dash-section-title">
+                        <div class="dash-section-icon" style="background:rgba(99,102,241,0.12);">
+                            <i class="fas fa-sliders-h" style="color:#6366f1;font-size:13px;"></i>
+                        </div>
+                        Configurações
+                    </div>
+                </div>
+                <div class="card" id="dash-signal-settings-card">
+                    <!-- Global Confidence -->
+                    <div style="margin-bottom:16px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                            <div style="font-size:12px;font-weight:700;color:var(--text-primary);">Confiança mínima global</div>
+                            <span id="dash-global-label" style="font-size:15px;font-weight:800;color:#6366f1;">70%</span>
+                        </div>
+                        <input type="range" id="dash-global-slider" min="70" max="100" value="70" step="5"
+                               oninput="dashUpdateGlobalLabel(this.value)" onchange="dashSaveGlobalConf()"
+                               style="width:100%;accent-color:#6366f1;height:4px;">
+                        <div style="display:flex;justify-content:space-between;margin-top:4px;">
+                            <span style="font-size:9px;color:var(--text-muted);">70%</span>
+                            <span style="font-size:9px;color:var(--text-muted);">100%</span>
+                        </div>
+                    </div>
+                    <div style="height:1px;background:var(--border-subtle);margin-bottom:14px;"></div>
+                    <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:10px;">Por Criptomoeda</div>
+                    <div id="dash-crypto-items" style="display:flex;flex-direction:column;gap:6px;">
+                        <!-- Generated by JS -->
+                    </div>
+                </div>
+
+                <div style="height:24px;"></div>
+            </div>
+
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div class="bottom-nav">
+            <div class="nav-item active" onclick="showSection('home')">
+                <i class="fas fa-home"></i>
+                <span>Home</span>
+            </div>
+            <div class="nav-item" onclick="showSection('dashboard')">
+                <i class="fas fa-satellite-dish"></i>
+                <span>Sinais</span>
+            </div>
+            <div class="nav-item" onclick="showSection('news')">
+                <i class="fas fa-newspaper"></i>
+                <span>Notícias</span>
+            </div>
+            <div class="nav-item" onclick="showSection('macro')">
+                <i class="fas fa-landmark"></i>
+                <span>Macro</span>
+            </div>
+            <div class="nav-item" onclick="showSection('analysis')">
+                <i class="fas fa-chart-line"></i>
+                <span>Análise</span>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Global crash protection -->
+    <script>
+    window.onerror = function(msg, src, line, col, err) {
+        try { console.error('[GlobalError]', msg, src, line, col, err); } catch(e) {}
+        return true;
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+        try { console.error('[UnhandledRejection]', e.reason); } catch(ex) {}
+        e.preventDefault();
+    });
+    </script>
+
+    <!-- App Modules (load order matters - core first, init/lifecycle last) -->
+    <script src="js/config.js"></script>
+    <script src="js/core.js"></script>
+    <script src="js/browser.js"></script>
+    <script src="js/translation.js"></script>
+    <script src="js/news.js"></script>
+    <script src="js/prices.js"></script>
+    <script src="js/market.js"></script>
+    <script src="js/navigation.js"></script>
+    <script src="js/macro.js"></script>
+    <script src="js/init.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/signals.js"></script>
+    <script src="js/technical.js"></script>
+    <script src="js/whale.js"></script>
+    <script src="js/lifecycle.js"></script>
+
+    <!-- TA Engines & Macro Section -->
+    <script src="realtime-cvd.js"></script>
+    <script src="ta-engine-v2.js"></script>
+    <script src="ta-engine-v3.js"></script>
+    <script src="ta-engine-v4.js"></script>
+    <script src="macro-section.js"></script>
+
+</body>
+</html>
