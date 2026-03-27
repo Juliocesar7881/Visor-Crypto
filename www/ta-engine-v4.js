@@ -1,7 +1,7 @@
-﻿/**
- * ══════════════════════════════════════════════════════════════════════════
- *  VISOR CRYPTO — TRADING INTELLIGENCE ENGINE
- * ══════════════════════════════════════════════════════════════════════════
+/**
+ * ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+ *  VISOR CRYPTO â TRADING INTELLIGENCE ENGINE
+ * ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
  *
  *  FEATURES:
  *  [1] Z-Score Dynamic Thresholds
@@ -23,9 +23,9 @@
 (function () {
     'use strict';
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // CONSTANTS & CONFIG
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
     const VERSION = '7.2.0';
     const STORAGE_PREFIX = 'vc4_';
@@ -34,7 +34,7 @@
     const BACKEND_URL = 'https://visor-crypto-api.onrender.com/api';
     const BACKEND_TIMEOUT = 5000;
 
-    // ── Z-Score Thresholds (DYNAMIC — these are fallbacks only) ──
+    // ââ Z-Score Thresholds (DYNAMIC â these are fallbacks only) ââ
     // Real thresholds are now percentile-based per asset from backend
     const Z_SCORE_DISPLACEMENT = 1.3;       // fallback: body z > 1.3
     const Z_SCORE_VOLUME = 1.5;             // fallback: volume z > 1.5
@@ -42,18 +42,18 @@
     const Z_SCORE_LOOKBACK = 100;
     const Z_SCORE_MICRO_LOOKBACK = 50;
 
-    // ── Session / Kill Zone definitions (UTC hours) ──
+    // ââ Session / Kill Zone definitions (UTC hours) ââ
     const SESSIONS = {
-        ASIAN:       { start: 0,  end: 7,  name: 'Asiática',                weight: 0.6, emoji: '🌙' },
-        LONDON_OPEN: { start: 7,  end: 9,  name: 'Abertura Londres',        weight: 1.3, emoji: '🇬🇧' },
-        LONDON:      { start: 9,  end: 12, name: 'Londres',                 weight: 1.0, emoji: '🇬🇧' },
-        KILL_ZONE:   { start: 12, end: 16, name: 'Kill Zone (London/NY)',    weight: 1.5, emoji: '🎯' },
-        NY:          { start: 16, end: 20, name: 'Nova York',               weight: 1.0, emoji: '🇺🇸' },
-        NY_CLOSE:    { start: 20, end: 21, name: 'Fechamento NY',           weight: 0.8, emoji: '🔔' },
-        DEAD:        { start: 21, end: 24, name: 'Zona Morta',              weight: 0.4, emoji: '💤' }
+        ASIAN:       { start: 0,  end: 7,  name: 'AsiÃ¡tica',                weight: 0.6, emoji: 'ð' },
+        LONDON_OPEN: { start: 7,  end: 9,  name: 'Abertura Londres',        weight: 1.3, emoji: 'ð¬ð§' },
+        LONDON:      { start: 9,  end: 12, name: 'Londres',                 weight: 1.0, emoji: 'ð¬ð§' },
+        KILL_ZONE:   { start: 12, end: 16, name: 'Kill Zone (London/NY)',    weight: 1.5, emoji: 'ð¯' },
+        NY:          { start: 16, end: 20, name: 'Nova York',               weight: 1.0, emoji: 'ðºð¸' },
+        NY_CLOSE:    { start: 20, end: 21, name: 'Fechamento NY',           weight: 0.8, emoji: 'ð' },
+        DEAD:        { start: 21, end: 24, name: 'Zona Morta',              weight: 0.4, emoji: 'ð¤' }
     };
 
-    // ── Regime-Adaptive Gate Requirements ──
+    // ââ Regime-Adaptive Gate Requirements ââ
     const REGIME_GATES = {
         // V4 regime names (from computeEnhancedRegime)
         TREND_UP:          { withTrend: { gates: 3, score: 45 }, counterTrend: { gates: 5, score: 65 } },
@@ -75,9 +75,9 @@
     };
     const MIN_CONFIRMATIONS_AGUARDAR = 2;
 
-    // ── DYNAMIC GATE WEIGHTS BY REGIME ──
+    // ââ DYNAMIC GATE WEIGHTS BY REGIME ââ
     // Instead of static weights, each regime adjusts gate importance.
-    // Format: { gateName: weight } — missing keys use the default weight.
+    // Format: { gateName: weight } â missing keys use the default weight.
     const DEFAULT_GATE_WEIGHTS = {
         bosConfirmed: 2.0, displacement: 2.0, volumeExpansion: 1.5,
         cvdConfirms: 1.5, outsideRange: 2.0, fundingOk: 1.0,
@@ -121,8 +121,8 @@
         },
     };
 
-    // ── REDUNDANCY PENALIZATION (V7: Enhanced Correlation Matrix) ──
-    // Gates that are conceptually correlated — if both pass, reduce weight of second
+    // ââ REDUNDANCY PENALIZATION (V7: Enhanced Correlation Matrix) ââ
+    // Gates that are conceptually correlated â if both pass, reduce weight of second
     // Expanded with Z-score correlation: displacement, volume, BOS all measure structural expansion
     const REDUNDANCY_PAIRS = [
         { gate1: 'bosConfirmed', gate2: 'displacement', penaltyFactor: 0.85 },      // BOS + displacement = related but complementary
@@ -134,60 +134,60 @@
         { gate1: 'oiConfirms', gate2: 'cvdConfirms', penaltyFactor: 0.90 },         // OI buildup + CVD = complementary
     ];
 
-    // ── LOGISTIC CALIBRATION COEFFICIENTS ──
+    // ââ LOGISTIC CALIBRATION COEFFICIENTS ââ
     // probability = sigmoid(a0 + a1*gateScore + a2*regimeScore + a3*saturation + a4*btcAlignment + a5*session)
-    // These are initial estimates — should be trained on backtesting data
+    // These are initial estimates â should be trained on backtesting data
     const CALIBRATION_COEFFICIENTS = {
         intercept: -3.5,
-        gateScore: 0.06,       // higher gate score → higher probability
-        regimeQuality: 0.02,   // better regime → higher probability
-        saturation: -0.03,     // higher saturation → lower probability
+        gateScore: 0.06,       // higher gate score â higher probability
+        regimeQuality: 0.02,   // better regime â higher probability
+        saturation: -0.03,     // higher saturation â lower probability
         btcAlignment: 0.5,     // aligned = +0.5, diverging = -0.5
         sessionWeight: 0.3,    // kill zone = +0.3, dead = -0.3
     };
 
-    // ── NOTIFICATION CONFIDENCE THRESHOLD ──
+    // ââ NOTIFICATION CONFIDENCE THRESHOLD ââ
     const NOTIF_MIN_CONFIDENCE = 70;
     const NOTIF_MAX_CONFIDENCE = 100;
     const NOTIF_DEFAULT_CONFIDENCE = 75;
 
-    // ── Range ──
+    // ââ Range ââ
     const RANGE_BUFFER_PERCENT = 0.3;
     const FUNDING_EXTREME_THRESHOLD = 0.05;
 
-    // ── Retest ──
+    // ââ Retest ââ
     const RETEST_WINDOW_CANDLES = 10;
     const RETEST_PROXIMITY_PERCENT = 0.5;
 
-    // ── Risk Engine ──
+    // ââ Risk Engine ââ
     const DEFAULT_RISK_PERCENT = 1.0;      // 1% risk per trade
-    const KILL_SWITCH_CONSECUTIVE = 3;     // 3 consecutive losses → pause
+    const KILL_SWITCH_CONSECUTIVE = 3;     // 3 consecutive losses â pause
     const KILL_SWITCH_PAUSE_HOURS = 4;
-    const EDGE_DEGRADE_THRESHOLD = 40;     // rolling WR < 40% → reduce size
-    const MAX_DAILY_DRAWDOWN = 3.0;        // 3% daily DD → stop
-    const MAX_WEEKLY_DRAWDOWN = 5.0;       // 5% weekly DD → half size
+    const EDGE_DEGRADE_THRESHOLD = 40;     // rolling WR < 40% â reduce size
+    const MAX_DAILY_DRAWDOWN = 3.0;        // 3% daily DD â stop
+    const MAX_WEEKLY_DRAWDOWN = 5.0;       // 5% weekly DD â half size
 
-    // ── Microstructure ──
+    // ââ Microstructure ââ
     const ABSORPTION_WICK_RATIO = 0.60;    // wick > 60% of range = absorption
     const FVG_MIN_GAP_PERCENT = 0.15;      // minimum gap for FVG (0.15%)
     const VOID_BODY_RATIO = 0.85;          // body > 85% of range = liquidity void
 
-    // ── Model Stability ──
+    // ââ Model Stability ââ
     const STABILITY_WINDOW = 20;           // rolling window for edge monitoring
     const STABILITY_DEGRADE_WR = 40;       // WR < 40% = edge degrading
     const STABILITY_CRITICAL_WR = 30;      // WR < 30% = force AGUARDAR all
-    const WEIGHT_DECAY_HALFLIFE = 14;      // days — older signals worth less
+    const WEIGHT_DECAY_HALFLIFE = 14;      // days â older signals worth less
 
-    // ── Data Integrity ──
+    // ââ Data Integrity ââ
     const CRITICAL_DATA_KEYS = ['klines1h', 'klines4h', 'currentPrice'];
     const IMPORTANT_DATA_KEYS = ['orderBook', 'trades', 'fundingRate'];
 
-    // ── OI Analysis ──
+    // ââ OI Analysis ââ
     const OI_DELTA_SIGNIFICANT = 3;        // 3% OI change = significant
     const OI_SQUEEZE_THRESHOLD = 5;        // 5% OI drop with liquidations = squeeze
     const OI_BUILDUP_THRESHOLD = 5;        // 5% OI rise = position buildup
 
-    // ── Anti-Spoofing (v7.1: Adaptive thresholds per regime) ──
+    // ââ Anti-Spoofing (v7.1: Adaptive thresholds per regime) ââ
     const SPOOFING_IMBALANCE_THRESHOLD = 3.0;  // 3:1 bid/ask ratio = suspicious (base)
     const SPOOFING_WALL_PERCENT = 5.0;         // wall > 5% of total depth (base)
     const SPOOFING_SPREAD_THRESHOLD = 0.1;     // spread > 0.1% = low liquidity (base)
@@ -207,22 +207,22 @@
         'COMPRESSION':    { imbalance: 0.7, wall: 0.7, spread: 0.8 },
     };
 
-    // ── Volatility Regime Shift ──
+    // ââ Volatility Regime Shift ââ
     const VOL_SHIFT_ATR_FAST = 20;             // Fast ATR EMA period
     const VOL_SHIFT_ATR_SLOW = 100;            // Slow ATR EMA period
     const VOL_SHIFT_EXPLOSIVE = 1.5;           // fast/slow > 1.5 = EXPLOSIVE
     const VOL_SHIFT_COMPRESSED = 0.6;          // fast/slow < 0.6 = COMPRESSED
 
-    // ── BTC Correlation Multi-Window ──
+    // ââ BTC Correlation Multi-Window ââ
     const BTC_CORR_WINDOWS = [12, 24, 72];     // hours for multi-window correlation
 
-    // ── Market Breadth ──
+    // ââ Market Breadth ââ
     const BREADTH_CACHE_KEY = STORAGE_PREFIX + 'market_breadth';
     const BREADTH_CACHE_TTL = 3 * 60 * 1000;   // 3 min
     const BREADTH_STRONG_THRESHOLD = 65;        // > 65% same dir = strong breadth
     const BREADTH_WEAK_THRESHOLD = 35;          // < 35% same dir = weak breadth
 
-    // ── Collective ──
+    // ââ Collective ââ
     const COLLECTIVE_SYNC_INTERVAL = 30 * 60 * 1000;
     const COLLECTIVE_CACHE_KEY = STORAGE_PREFIX + 'collective_cache';
     const COLLECTIVE_QUEUE_KEY = STORAGE_PREFIX + 'trade_queue';
@@ -231,9 +231,9 @@
     const RISK_STATE_KEY = STORAGE_PREFIX + 'risk_state';
     const STABILITY_KEY = STORAGE_PREFIX + 'stability_';
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // UTILITIES
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
     function mean(a) { return a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0; }
@@ -271,10 +271,10 @@
         return hash;
     }
 
-    // ── SIGMOID for logistic calibration ──
+    // ââ SIGMOID for logistic calibration ââ
     function sigmoid(x) { return 1.0 / (1.0 + Math.exp(-x)); }
 
-    // ── Dynamic threshold cache (per symbol) ──
+    // ââ Dynamic threshold cache (per symbol) ââ
     const _dynamicThresholdCache = {};
     const _dynamicThresholdTTL = 5 * 60 * 1000; // 5 min
 
@@ -303,7 +303,7 @@
         return fallback;
     }
 
-    // ── Macro regime cache ──
+    // ââ Macro regime cache ââ
     let _macroRegimeCache = null;
     let _macroRegimeCacheTs = 0;
     const _macroRegimeTTL = 10 * 60 * 1000; // 10 min
@@ -324,7 +324,7 @@
         return null;
     }
 
-    // ── Systemic risk cache ──
+    // ââ Systemic risk cache ââ
     let _systemicRiskCache = null;
     let _systemicRiskCacheTs = 0;
 
@@ -344,7 +344,7 @@
         return null;
     }
 
-    // ── Setup expectancy cache ──
+    // ââ Setup expectancy cache ââ
     const _expectancyCache = {};
     const _expectancyTTL = 15 * 60 * 1000; // 15 min
 
@@ -367,17 +367,17 @@
         return null;
     }
 
-    // ── Get gate weights for current regime ──
+    // ââ Get gate weights for current regime ââ
     function getGateWeightsForRegime(regime) {
         const weights = REGIME_GATE_WEIGHTS[regime] || DEFAULT_GATE_WEIGHTS;
         return { ...DEFAULT_GATE_WEIGHTS, ...weights };
     }
 
-    // ── Apply redundancy penalization (v7.2: worst-penalty + 2% per extra) ──
+    // ââ Apply redundancy penalization (v7.2: worst-penalty + 2% per extra) ââ
     function applyRedundancyPenalty(gateResults, weights) {
         const adjusted = { ...weights };
         // Collect all penalty factors that hit each gate
-        const penalties = {}; // gateName → [penaltyFactor, ...]
+        const penalties = {}; // gateName â [penaltyFactor, ...]
         for (const pair of REDUNDANCY_PAIRS) {
             if (gateResults[pair.gate1] && gateResults[pair.gate2]) {
                 if (!penalties[pair.gate2]) penalties[pair.gate2] = [];
@@ -394,33 +394,33 @@
         return adjusted;
     }
 
-    // ── Piecewise calibration: less restrictive than logistic (v7.2) ──
-    // Low gateScore → needs minimum floor; Mid → gradual scale; High → near-linear
+    // ââ Piecewise calibration: less restrictive than logistic (v7.2) ââ
+    // Low gateScore â needs minimum floor; Mid â gradual scale; High â near-linear
     function calibrateConfidence(gateScorePercent, regimeQuality, saturation, btcAligned, sessionWeight) {
         let base;
         if (gateScorePercent < 30) {
             // Low: floor at 15, slow rise
             base = 15 + (gateScorePercent / 30) * 15; // 15-30
         } else if (gateScorePercent < 60) {
-            // Mid: gradual (30→60 maps to 30→65)
+            // Mid: gradual (30â60 maps to 30â65)
             base = 30 + ((gateScorePercent - 30) / 30) * 35;
         } else {
-            // High: near-linear (60→100 maps to 65→95)
-            base = 65 + ((gateScorePercent - 60) / 40) * 30;
+            // High: near-linear (60â100 maps to 70->100)
+            base = 70 + ((gateScorePercent - 60) / 40) * 30;
         }
 
         // Contextual adjustments (bounded)
-        const regimeAdj = ((regimeQuality || 50) - 50) * 0.08; // ±4
-        const satAdj = ((saturation || 50) - 50) * -0.06;      // ±3
+        const regimeAdj = ((regimeQuality || 50) - 50) * 0.08; // Â±4
+        const satAdj = ((saturation || 50) - 50) * -0.06;      // Â±3
         const btcAdj = btcAligned ? 2 : -2;
         const sessAdj = ((sessionWeight - 1.0)) * 5;           // kill zone ~+2.5, dead ~-3
 
-        return Math.round(clamp(base + regimeAdj + satAdj + btcAdj + sessAdj, 10, 95));
+        return Math.round(clamp(base + regimeAdj + satAdj + btcAdj + sessAdj, 10, 100));
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 1: Z-SCORE STATISTICAL ENGINE
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Replaces ALL fixed multipliers. The question is no longer
      * "Is volume 1.3x average?" but "How statistically anomalous
@@ -461,16 +461,16 @@
         return ctx.std > 0 ? (value - ctx.mean) / ctx.std : 0;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 2: SESSION CONTEXT & KILL ZONES
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Time is as important as price.
      * A breakout at 03:00 BRT (Asian session) has 70% chance of being
      * a fake sweep reversed when London opens at 04:00.
      *
-     * Kill Zones (London/NY overlap) get 1.5× signal weight.
-     * Dead zones (post-NY) get 0.4× weight.
+     * Kill Zones (London/NY overlap) get 1.5Ã signal weight.
+     * Dead zones (post-NY) get 0.4Ã weight.
      * Weekend: cap at AGUARDAR maximum.
      */
     function getSessionContext() {
@@ -531,23 +531,23 @@
             liquidityLevel,
             fakeBreakoutRisk,
             maxSignalLevel: isWeekend ? 'AGUARDAR' : (currentSession.weight < 0.5 ? 'AGUARDAR' : 'CONFIRMED'),
-            details: `${currentSession.emoji} ${currentSession.name} (${brtHour}h BRT / ${utcHour}h UTC) — Liquidez: ${liquidityLevel}${isWeekend ? ' [WEEKEND]' : ''}`
+            details: `${currentSession.emoji} ${currentSession.name} (${brtHour}h BRT / ${utcHour}h UTC) â Liquidez: ${liquidityLevel}${isWeekend ? ' [WEEKEND]' : ''}`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 3: DISPLACEMENT DETECTOR (Z-SCORE BASED)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
-     * V4.0 asked: "Is body > 1.5× average?"
+     * V4.0 asked: "Is body > 1.5Ã average?"
      * V4.1 asks: "How many standard deviations is this body from the norm?"
      *
      * Sunday afternoon: avg body = $50, std = $15
-     *   → A $90 body has z-score = 2.67 → SIGNIFICANT
+     *   â A $90 body has z-score = 2.67 â SIGNIFICANT
      *
      * CPI day NY open: avg body = $500, std = $300
-     *   → A $700 body has z-score = 0.67 → NOT significant (normal for CPI)
-     *   → Needs $1100+ body (z=2.0) to be real displacement
+     *   â A $700 body has z-score = 0.67 â NOT significant (normal for CPI)
+     *   â Needs $1100+ body (z=2.0) to be real displacement
      *
      * This is why Z-Score > fixed multipliers.
      */
@@ -579,7 +579,7 @@
                         bodyRatio: ctx.body.mean > 0 ? +(body / ctx.body.mean).toFixed(2) : 0,
                         volRatio: ctx.volume.mean > 0 ? +(c.volume / ctx.volume.mean).toFixed(2) : 0,
                         timeframe,
-                        details: `Displacement ${isBullish ? 'bullish' : 'bearish'} (${timeframe}): body z=${bodyZ.toFixed(1)} vol z=${volZ.toFixed(1)} [${(body / (ctx.body.mean || 1)).toFixed(1)}× / ${(c.volume / (ctx.volume.mean || 1)).toFixed(1)}×]`
+                        details: `Displacement ${isBullish ? 'bullish' : 'bearish'} (${timeframe}): body z=${bodyZ.toFixed(1)} vol z=${volZ.toFixed(1)} [${(body / (ctx.body.mean || 1)).toFixed(1)}Ã / ${(c.volume / (ctx.volume.mean || 1)).toFixed(1)}Ã]`
                     };
                 }
             }
@@ -590,16 +590,16 @@
             bodyZScore: ctx.recent.length ? +getZScore(Math.abs(ctx.recent[ctx.recent.length - 1].close - ctx.recent[ctx.recent.length - 1].open), ctx.body).toFixed(2) : 0,
             volZScore: ctx.recent.length ? +getZScore(ctx.recent[ctx.recent.length - 1].volume, ctx.volume).toFixed(2) : 0,
             bodyRatio: 0, volRatio: 0, timeframe,
-            details: `Sem displacement ${timeframe}: candles dentro do desvio padrão normal`
+            details: `Sem displacement ${timeframe}: candles dentro do desvio padrÃ£o normal`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 4: VOLUME EXPANSION (Z-SCORE BASED)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Same Z-Score principle applied to volume.
-     * Not "is volume 1.3× avg?" but "how anomalous is this volume?"
+     * Not "is volume 1.3Ã avg?" but "how anomalous is this volume?"
      */
     function detectVolumeExpansion(klines, lookback) {
         const ctx = computeZScoreContext(klines, lookback || Z_SCORE_LOOKBACK);
@@ -633,14 +633,14 @@
             anomalousCandles: anomalousCount,
             percentile: +percentile(avgRecentVol, ctx.volume.values).toFixed(0),
             details: expanding
-                ? `Volume anômalo: z=${mainZScore.toFixed(1)} (${ratio.toFixed(1)}× média, p${percentile(avgRecentVol, ctx.volume.values).toFixed(0)}${sustained ? ', sustentado' : ', pontual'})`
-                : `Volume normal: z=${mainZScore.toFixed(1)} (${ratio.toFixed(1)}× média)`
+                ? `Volume anÃ´malo: z=${mainZScore.toFixed(1)} (${ratio.toFixed(1)}Ã mÃ©dia, p${percentile(avgRecentVol, ctx.volume.values).toFixed(0)}${sustained ? ', sustentado' : ', pontual'})`
+                : `Volume normal: z=${mainZScore.toFixed(1)} (${ratio.toFixed(1)}Ã mÃ©dia)`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 5: RANGE POSITION DETECTOR
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     function detectRangePosition(currentPrice, volumeProfile, klines1h) {
         const result = {
             inRange: false, rangePosition: null,
@@ -702,38 +702,38 @@
         } else if (result.breakoutDetected && !result.breakoutAccepted) {
             result.tradeable = false;
             result.blockReason = 'BREAKOUT_NAO_ACEITO';
-            result.details = `Breakout sem aceitação — candle não fechou fora do range. AGUARDAR.`;
+            result.details = `Breakout sem aceitaÃ§Ã£o â candle nÃ£o fechou fora do range. AGUARDAR.`;
         } else if (result.rangePosition === 'MID_RANGE') {
             result.tradeable = false;
             result.blockReason = 'MID_RANGE';
-            result.details = `Preço no meio do range (POC: $${poc.toFixed(0)}, VAH: $${vah.toFixed(0)}, VAL: $${val.toFixed(0)}). Combustível de liquidez.`;
+            result.details = `PreÃ§o no meio do range (POC: $${poc.toFixed(0)}, VAH: $${vah.toFixed(0)}, VAL: $${val.toFixed(0)}). CombustÃ­vel de liquidez.`;
         } else if (result.rangePosition === 'AT_POC') {
             result.tradeable = false;
             result.blockReason = 'AT_POC';
-            result.details = `Preço no POC ($${poc.toFixed(0)}) — zona de máxima liquidez. Sem edge.`;
+            result.details = `PreÃ§o no POC ($${poc.toFixed(0)}) â zona de mÃ¡xima liquidez. Sem edge.`;
         } else {
             result.tradeable = false;
             result.blockReason = 'NO_BREAKOUT';
-            result.details = `Dentro do range sem breakout. Aguardar expansão.`;
+            result.details = `Dentro do range sem breakout. Aguardar expansÃ£o.`;
         }
 
         return result;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 6: RETEST DETECTOR + LIMIT ORDER GENERATOR
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
-     * V4.0: "Compre Agora" after displacement → you buy the TOP
-     * V4.1: "Set Limit Order at Retest" → you get optimal entry
+     * V4.0: "Compre Agora" after displacement â you buy the TOP
+     * V4.1: "Set Limit Order at Retest" â you get optimal entry
      *
      * Flow:
      *  1. Displacement happens (price rockets from $100 to $110)
-     *  2. Old V4: "LONG CONFIRMED - REAGIR AGORA" at $110 ← BAD ENTRY
+     *  2. Old V4: "LONG CONFIRMED - REAGIR AGORA" at $110 â BAD ENTRY
      *  3. New V4.1: "LONG CONFIRMED - LIMIT ORDER @ $101.5 (retest do breakout)"
-     *     → Entry at $101.5, Stop at $99, TP1 $106 (1:2 R:R), TP2 $109 (1:3 R:R)
+     *     â Entry at $101.5, Stop at $99, TP1 $106 (1:2 R:R), TP2 $109 (1:3 R:R)
      *
-     * If retest already happened and bounced → MARKET ORDER NOW
+     * If retest already happened and bounced â MARKET ORDER NOW
      */
     function detectRetestAndGenerateOrder(klines, breakoutLevel, breakoutDirection, currentPrice, atr) {
         const base = { retested: false, retestQuality: null, details: '' };
@@ -778,7 +778,7 @@
             retestQuality,
             retestPrice: retestCandle ? (breakoutDirection === 'LONG' ? retestCandle.low : retestCandle.high) : null,
             details: retested
-                ? `Reteste ${retestQuality} em $${breakoutLevel.toFixed(0)} — bounce confirmado`
+                ? `Reteste ${retestQuality} em $${breakoutLevel.toFixed(0)} â bounce confirmado`
                 : `Sem reteste em $${breakoutLevel?.toFixed(0) || '?'}`,
             limitOrder: generateLimitOrder(breakoutLevel, breakoutDirection, currentPrice, atr, retested)
         };
@@ -790,7 +790,7 @@
      */
     function generateLimitOrder(breakoutLevel, direction, currentPrice, atr, retested) {
         if (!breakoutLevel || !direction || !currentPrice) {
-            return { type: 'NONE', reason: 'Sem nível de breakout para ordem' };
+            return { type: 'NONE', reason: 'Sem nÃ­vel de breakout para ordem' };
         }
 
         const atrValue = atr || currentPrice * 0.015; // fallback 1.5%
@@ -824,7 +824,7 @@
             execNote = `Reteste confirmado. Entrada a mercado no bounce @ $${currentPrice.toFixed(2)}`;
         } else {
             execType = 'LIMIT_ON_RETEST';
-            execNote = `AGUARDAR reteste em $${entry.toFixed(2)}. NÃO comprar no topo do displacement.`;
+            execNote = `AGUARDAR reteste em $${entry.toFixed(2)}. NÃO comprar no topo do displacement.`;
         }
 
         return {
@@ -842,9 +842,9 @@
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 7: FUNDING RATE FILTER (v7.2 — gradual penalty)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 7: FUNDING RATE FILTER (v7.2 â gradual penalty)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // Replaces binary block with a gradual confidence penalty.
     // Only blocks at truly extreme levels (>0.08%).
     function checkFundingFilter(fundingRate, signalDirection) {
@@ -870,31 +870,31 @@
                 blocked = true;
                 penalty = -25;
                 riskLevel = 'CRITICAL';
-                reason = `Funding ${ratePct.toFixed(3)}% extremo contra ${signalDirection} — bloqueado.`;
+                reason = `Funding ${ratePct.toFixed(3)}% extremo contra ${signalDirection} â bloqueado.`;
             } else if (absRate > FUNDING_EXTREME_THRESHOLD) {
                 // High: heavy penalty but allow
                 passed = true;
                 blocked = false;
                 penalty = -15;
                 riskLevel = 'HIGH';
-                reason = `Funding ${ratePct.toFixed(3)}% alto contra ${signalDirection} (−15%).`;
+                reason = `Funding ${ratePct.toFixed(3)}% alto contra ${signalDirection} (â15%).`;
             } else if (absRate > FUNDING_EXTREME_THRESHOLD * 0.5) {
                 // Medium: moderate penalty
                 passed = true;
                 blocked = false;
                 penalty = -8;
                 riskLevel = 'MEDIUM';
-                reason = `Funding ${ratePct.toFixed(3)}% moderado contra ${signalDirection} (−8%).`;
+                reason = `Funding ${ratePct.toFixed(3)}% moderado contra ${signalDirection} (â8%).`;
             } else if (absRate > FUNDING_EXTREME_THRESHOLD * 0.25) {
                 // Low-medium: slight warning
                 passed = true;
                 blocked = false;
                 penalty = -3;
                 riskLevel = 'LOW';
-                reason = `Funding ${ratePct.toFixed(3)}% levemente desfavorável (−3%).`;
+                reason = `Funding ${ratePct.toFixed(3)}% levemente desfavorÃ¡vel (â3%).`;
             }
         } else if (absRate > FUNDING_EXTREME_THRESHOLD) {
-            // Funding favors our direction at extreme level — bonus
+            // Funding favors our direction at extreme level â bonus
             penalty = 5;
             riskLevel = 'LOW';
             reason = `Funding ${ratePct.toFixed(3)}% extremo a FAVOR de ${signalDirection} (+5%).`;
@@ -912,20 +912,20 @@
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 8: MICROSTRUCTURE DETECTOR
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Detects institutional footprints from candle data:
      *
      * 1. ABSORPTION: Large wick + high volume + small body at key level
-     *    → Institutional player absorbing retail orders
+     *    â Institutional player absorbing retail orders
      *
      * 2. FAIR VALUE GAP (FVG): Gap between candle[i-1].low and candle[i+1].high
-     *    → Imbalance in price delivery, price tends to fill
+     *    â Imbalance in price delivery, price tends to fill
      *
      * 3. LIQUIDITY VOID: Large body + tiny wicks = price moved fast
-     *    → No resistance zone, price can snap back violently
+     *    â No resistance zone, price can snap back violently
      */
     function detectMicrostructure(klines, direction) {
         if (!klines || klines.length < 20) {
@@ -935,7 +935,7 @@
         const candles = klines.slice(-20).map(parseKline);
         const ctx = computeZScoreContext(klines, Z_SCORE_MICRO_LOOKBACK);
 
-        // ── 1. Absorption Detection ──
+        // ââ 1. Absorption Detection ââ
         let absorption = null;
         for (let i = candles.length - 1; i >= candles.length - 5 && i >= 0; i--) {
             const c = candles[i];
@@ -958,13 +958,13 @@
                     wickRatio: +wickRatio.toFixed(2),
                     volumeZScore: +volZ.toFixed(2),
                     priceLevel: absDirection === 'BULLISH' ? c.low : c.high,
-                    details: `Absorção ${absDirection} detectada: wick ${(wickRatio * 100).toFixed(0)}%, vol z=${volZ.toFixed(1)}`
+                    details: `AbsorÃ§Ã£o ${absDirection} detectada: wick ${(wickRatio * 100).toFixed(0)}%, vol z=${volZ.toFixed(1)}`
                 };
                 break;
             }
         }
 
-        // ── 2. Fair Value Gap (FVG) Detection ──
+        // ââ 2. Fair Value Gap (FVG) Detection ââ
         let fvg = null;
         for (let i = candles.length - 2; i >= candles.length - 8 && i >= 1; i--) {
             const prev = candles[i - 1];
@@ -1004,7 +1004,7 @@
             }
         }
 
-        // ── 3. Liquidity Void Detection ──
+        // ââ 3. Liquidity Void Detection ââ
         let liquidityVoid = null;
         for (let i = candles.length - 1; i >= candles.length - 5 && i >= 0; i--) {
             const c = candles[i];
@@ -1025,21 +1025,21 @@
                         bodyRatio: +bodyRatio.toFixed(2),
                         rangeZScore: +rangeZ.toFixed(2),
                         voidRange: { high: c.high, low: c.low },
-                        details: `Void ${voidDirection}: body ${(bodyRatio * 100).toFixed(0)}% do range (z=${rangeZ.toFixed(1)}). Preço pode voltar para preencher.`
+                        details: `Void ${voidDirection}: body ${(bodyRatio * 100).toFixed(0)}% do range (z=${rangeZ.toFixed(1)}). PreÃ§o pode voltar para preencher.`
                     };
                     break;
                 }
             }
         }
 
-        // ── Microstructure Score ──
+        // ââ Microstructure Score ââ
         let score = 0;
         let confirms = [];
 
         if (absorption?.detected) {
             const absConfirms = (direction === 'LONG' && absorption.direction === 'BULLISH') ||
                                 (direction === 'SHORT' && absorption.direction === 'BEARISH');
-            if (absConfirms) { score += 8; confirms.push('absorção'); }
+            if (absConfirms) { score += 8; confirms.push('absorÃ§Ã£o'); }
             else { score -= 3; }
         }
 
@@ -1050,7 +1050,7 @@
         }
 
         if (liquidityVoid?.detected) {
-            // Voids are WARNING — price can snap back
+            // Voids are WARNING â price can snap back
             score -= 5;
         }
 
@@ -1064,14 +1064,14 @@
             details: confirms.length > 0
                 ? `Microestrutura confirma ${direction}: ${confirms.join(', ')}`
                 : liquidityVoid?.detected
-                    ? `Atenção: void de liquidez detectado — possível snap-back`
+                    ? `AtenÃ§Ã£o: void de liquidez detectado â possÃ­vel snap-back`
                     : 'Sem sinais microestruturais significativos'
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 9: SQUEEZE EXPANSION DETECTOR
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     function detectSqueezeExpansion(volatilityMetrics, klines1h) {
         if (!volatilityMetrics) return { isSqueeze: false, expanding: false, direction: null };
 
@@ -1098,20 +1098,20 @@
         return {
             isSqueeze, expanding, direction, bbWidth,
             details: expanding
-                ? `🔥 Squeeze expandindo para ${direction} — BB p${bbWidth}`
-                : `📦 Squeeze ativo (p${bbWidth}), aguardando expansão. NÃO OPERAR.`
+                ? `ð¥ Squeeze expandindo para ${direction} â BB p${bbWidth}`
+                : `ð¦ Squeeze ativo (p${bbWidth}), aguardando expansÃ£o. NÃO OPERAR.`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 9b: VOLATILITY REGIME SHIFT DETECTOR
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Detects structural changes in volatility using ATR EMA ratio.
-     * ATR_EMA(20) vs ATR_EMA(100) — when fast diverges from slow,
+     * ATR_EMA(20) vs ATR_EMA(100) â when fast diverges from slow,
      * it signals a regime transition:
-     *   EXPLOSIVE: fast/slow > 1.5 — volatility expanding structurally
-     *   COMPRESSED: fast/slow < 0.6 — coiled spring, breakout imminent
+     *   EXPLOSIVE: fast/slow > 1.5 â volatility expanding structurally
+     *   COMPRESSED: fast/slow < 0.6 â coiled spring, breakout imminent
      *   TRANSITIONING: between thresholds, moving fast
      *   STABLE: normal equilibrium
      */
@@ -1150,28 +1150,28 @@
         if (ratio >= VOL_SHIFT_EXPLOSIVE) {
             shift = 'EXPLOSIVE';
             confidence = clamp(Math.round((ratio - 1.0) * 80), 30, 100);
-            icon = '🌋';
-            details = `${icon} Volatilidade EXPLOSIVA (ratio ${ratio.toFixed(2)}) — estrutura mudando, SL mais amplo recomendado`;
+            icon = 'ð';
+            details = `${icon} Volatilidade EXPLOSIVA (ratio ${ratio.toFixed(2)}) â estrutura mudando, SL mais amplo recomendado`;
         } else if (ratio <= VOL_SHIFT_COMPRESSED) {
             shift = 'COMPRESSED';
             confidence = clamp(Math.round((1.0 - ratio) * 80), 30, 100);
-            icon = '🧊';
-            details = `${icon} Volatilidade COMPRIMIDA (ratio ${ratio.toFixed(2)}) — breakout iminente, aguardar direção`;
+            icon = 'ð§';
+            details = `${icon} Volatilidade COMPRIMIDA (ratio ${ratio.toFixed(2)}) â breakout iminente, aguardar direÃ§Ã£o`;
         } else if (ratio > 1.2) {
             shift = 'TRANSITIONING_UP';
             confidence = clamp(Math.round((ratio - 1.0) * 50), 15, 60);
-            icon = '📈';
-            details = `${icon} Vol transitioning UP (${ratio.toFixed(2)}) — monitorar expansão`;
+            icon = 'ð';
+            details = `${icon} Vol transitioning UP (${ratio.toFixed(2)}) â monitorar expansÃ£o`;
         } else if (ratio < 0.8) {
             shift = 'TRANSITIONING_DOWN';
             confidence = clamp(Math.round((1.0 - ratio) * 50), 15, 60);
-            icon = '📉';
-            details = `${icon} Vol transitioning DOWN (${ratio.toFixed(2)}) — contração em curso`;
+            icon = 'ð';
+            details = `${icon} Vol transitioning DOWN (${ratio.toFixed(2)}) â contraÃ§Ã£o em curso`;
         } else {
             shift = 'STABLE';
             confidence = 10;
-            icon = '⚖️';
-            details = `${icon} Volatilidade estável (ratio ${ratio.toFixed(2)})`;
+            icon = 'âï¸';
+            details = `${icon} Volatilidade estÃ¡vel (ratio ${ratio.toFixed(2)})`;
         }
 
         // Rate of change (acceleration of shift)
@@ -1193,9 +1193,9 @@
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 9c: MARKET BREADTH (Cross-Asset Sentiment)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Scans all recently analyzed symbols from the score history cache
      * to calculate market-wide breadth:
@@ -1203,8 +1203,8 @@
      *   breadth_short = % of assets showing SHORT signals
      *   breadth_neutral = % neutral
      *
-     * If > 65% of market is LONG → strong bullish breadth → boost LONG confidence
-     * If < 35% LONG → bearish breadth → penalize LONG, boost SHORT
+     * If > 65% of market is LONG â strong bullish breadth â boost LONG confidence
+     * If < 35% LONG â bearish breadth â penalize LONG, boost SHORT
      */
     function calculateMarketBreadth(currentSymbol, currentDirection) {
         // Use score history from localStorage (updated by all analyses)
@@ -1237,7 +1237,7 @@
                 totalAssets,
                 alignment: 'INSUFFICIENT_DATA',
                 boost: 0,
-                details: 'Poucos ativos analisados para breadth (mín: 3)',
+                details: 'Poucos ativos analisados para breadth (mÃ­n: 3)',
                 assets: assetDetails
             };
         }
@@ -1252,40 +1252,40 @@
             if (longPct >= BREADTH_STRONG_THRESHOLD) {
                 alignment = 'STRONG_ALIGNED';
                 boost = 8;
-                icon = '🟢';
-                details = `${icon} Breadth FORTE: ${longPct}% do mercado bullish — confirma LONG`;
+                icon = 'ð¢';
+                details = `${icon} Breadth FORTE: ${longPct}% do mercado bullish â confirma LONG`;
             } else if (longPct <= BREADTH_WEAK_THRESHOLD) {
                 alignment = 'DIVERGING';
                 boost = -10;
-                icon = '🔴';
-                details = `${icon} Breadth CONTRA: apenas ${longPct}% bullish — LONG contra a maré`;
+                icon = 'ð´';
+                details = `${icon} Breadth CONTRA: apenas ${longPct}% bullish â LONG contra a marÃ©`;
             } else {
                 alignment = 'NEUTRAL';
                 boost = 0;
-                icon = '🟡';
+                icon = 'ð¡';
                 details = `${icon} Breadth misto: ${longPct}% bullish, ${shortPct}% bearish`;
             }
         } else if (currentDirection === 'SHORT') {
             if (shortPct >= BREADTH_STRONG_THRESHOLD) {
                 alignment = 'STRONG_ALIGNED';
                 boost = 8;
-                icon = '🟢';
-                details = `${icon} Breadth FORTE: ${shortPct}% do mercado bearish — confirma SHORT`;
+                icon = 'ð¢';
+                details = `${icon} Breadth FORTE: ${shortPct}% do mercado bearish â confirma SHORT`;
             } else if (shortPct <= BREADTH_WEAK_THRESHOLD) {
                 alignment = 'DIVERGING';
                 boost = -10;
-                icon = '🔴';
-                details = `${icon} Breadth CONTRA: apenas ${shortPct}% bearish — SHORT contra a maré`;
+                icon = 'ð´';
+                details = `${icon} Breadth CONTRA: apenas ${shortPct}% bearish â SHORT contra a marÃ©`;
             } else {
                 alignment = 'NEUTRAL';
                 boost = 0;
-                icon = '🟡';
+                icon = 'ð¡';
                 details = `${icon} Breadth misto: ${longPct}% bullish, ${shortPct}% bearish`;
             }
         } else {
             alignment = 'NEUTRAL';
             boost = 0;
-            icon = '🟡';
+            icon = 'ð¡';
             details = `${icon} Breadth: ${longPct}% bullish, ${shortPct}% bearish, ${neutralPct}% neutro`;
         }
 
@@ -1306,9 +1306,9 @@
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 27: MACRO LIQUIDITY INDEX
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * V7: Measures macro-level market liquidity from:
      * - BTC dominance trend (rising = risk-off)
@@ -1316,7 +1316,7 @@
      * - Average funding rates across top assets
      * - Taker buy/sell pressure aggregated
      *
-     * Does NOT veto signals — adjusts confidence by ±3-5%
+     * Does NOT veto signals â adjusts confidence by Â±3-5%
      */
     const MACRO_LIQ_CACHE_KEY = STORAGE_PREFIX + 'macro_liquidity';
     const MACRO_LIQ_TTL = 5 * 60 * 1000; // 5 min
@@ -1336,8 +1336,8 @@
             totalMcapTrend: null,
             avgFunding: null,
             adjustment: 0,
-            icon: '💧',
-            details: 'Liquidez macro indisponível'
+            icon: 'ð§',
+            details: 'Liquidez macro indisponÃ­vel'
         };
 
         try {
@@ -1399,10 +1399,10 @@
             result.index = indexScore;
 
             // Trend classification
-            if (indexScore >= 70) { result.trend = 'FLUSH'; result.icon = '🌊'; }
-            else if (indexScore >= 55) { result.trend = 'HEALTHY'; result.icon = '💧'; }
-            else if (indexScore >= 40) { result.trend = 'TIGHTENING'; result.icon = '🔻'; }
-            else { result.trend = 'DRY'; result.icon = '🏜️'; }
+            if (indexScore >= 70) { result.trend = 'FLUSH'; result.icon = 'ð'; }
+            else if (indexScore >= 55) { result.trend = 'HEALTHY'; result.icon = 'ð§'; }
+            else if (indexScore >= 40) { result.trend = 'TIGHTENING'; result.icon = 'ð»'; }
+            else { result.trend = 'DRY'; result.icon = 'ðï¸'; }
 
             // Confidence adjustment
             if (indexScore >= 70) result.adjustment = 3;
@@ -1410,7 +1410,7 @@
             else if (indexScore >= 40) result.adjustment = -3;
             else result.adjustment = -5;
 
-            const trendLabels = { FLUSH: 'Muito líquido', HEALTHY: 'Saudável', TIGHTENING: 'Apertando', DRY: 'Seco' };
+            const trendLabels = { FLUSH: 'Muito lÃ­quido', HEALTHY: 'SaudÃ¡vel', TIGHTENING: 'Apertando', DRY: 'Seco' };
             result.details = `Liquidez Macro: ${trendLabels[result.trend]} (${indexScore}/100) | BTC Dom: ${btcDominance.toFixed(1)}% (${btcDomTrend}) | MCap 24h: ${mcapChange24h > 0 ? '+' : ''}${mcapChange24h.toFixed(1)}%`;
 
             // Cache
@@ -1423,12 +1423,12 @@
         return result;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 10: DATA INTEGRITY GATE
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Validates all incoming data BEFORE analysis.
-     * If critical data is missing → FORCE_NEUTRO, no fallback, no guesses.
+     * If critical data is missing â FORCE_NEUTRO, no fallback, no guesses.
      */
     function checkDataIntegrity(rawData) {
         const issues = [];
@@ -1438,7 +1438,7 @@
         CRITICAL_DATA_KEYS.forEach(key => {
             const val = rawData[key];
             if (!val || (Array.isArray(val) && val.length === 0) || (typeof val === 'number' && val <= 0)) {
-                issues.push(`❌ ${key}: ausente ou vazio`);
+                issues.push(`â ${key}: ausente ou vazio`);
                 critical = true;
             }
         });
@@ -1447,17 +1447,17 @@
             const val = rawData[key];
             if (!val || (Array.isArray(val) && val.length === 0) ||
                 (typeof val === 'object' && !Array.isArray(val) && Object.keys(val).length === 0)) {
-                issues.push(`⚠️ ${key}: indisponível`);
+                issues.push(`â ï¸ ${key}: indisponÃ­vel`);
                 degraded = true;
             }
         });
 
         if (rawData.klines1h && rawData.klines1h.length < 20) {
-            issues.push('⚠️ klines1h: apenas ' + rawData.klines1h.length + ' candles (min: 20)');
+            issues.push('â ï¸ klines1h: apenas ' + rawData.klines1h.length + ' candles (min: 20)');
             degraded = true;
         }
         if (rawData.klines4h && rawData.klines4h.length < 20) {
-            issues.push('⚠️ klines4h: apenas ' + rawData.klines4h.length + ' candles (min: 20)');
+            issues.push('â ï¸ klines4h: apenas ' + rawData.klines4h.length + ' candles (min: 20)');
             degraded = true;
         }
 
@@ -1468,16 +1468,16 @@
             issues,
             score: critical ? 0 : degraded ? 70 : 100,
             details: critical
-                ? '🚨 DADOS CRÍTICOS AUSENTES — FORÇANDO NEUTRO'
+                ? 'ð¨ DADOS CRÃTICOS AUSENTES â FORÃANDO NEUTRO'
                 : degraded
-                    ? '⚠️ Alguns dados indisponíveis — qualidade reduzida'
-                    : '✅ Todos os dados validados'
+                    ? 'â ï¸ Alguns dados indisponÃ­veis â qualidade reduzida'
+                    : 'â Todos os dados validados'
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 11: OPEN INTEREST ANALYSIS (OI + OI Delta)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * MANDATORY for crypto futures. Detects:
      * - Short squeeze (OI falling + short liquidations + price up)
@@ -1492,7 +1492,7 @@
         const forceOrders = rawData.forceOrders;
 
         if (!oi || !oi.openInterest) {
-            return { available: false, confirmsDirection: true, signal: 'UNKNOWN', score: 0, details: 'OI indisponível' };
+            return { available: false, confirmsDirection: true, signal: 'UNKNOWN', score: 0, details: 'OI indisponÃ­vel' };
         }
 
         const currentOI = parseFloat(oi.openInterest);
@@ -1549,30 +1549,30 @@
         if (oiTrend === 'FALLING_FAST' && liqShorts > liqLongs * 2) {
             signal = 'SHORT_SQUEEZE';
             score = 2;
-            description = '🔥 Short Squeeze: OI caindo + shorts liquidados';
+            description = 'ð¥ Short Squeeze: OI caindo + shorts liquidados';
             confirmsDirection = intendedDirection === 'LONG';
         } else if (oiTrend === 'FALLING_FAST' && liqLongs > liqShorts * 2) {
             signal = 'LONG_SQUEEZE';
             score = -2;
-            description = '🔥 Long Squeeze: OI caindo + longs liquidados';
+            description = 'ð¥ Long Squeeze: OI caindo + longs liquidados';
             confirmsDirection = intendedDirection === 'SHORT';
         } else if ((oiTrend === 'RISING' || oiTrend === 'RISING_FAST') && takerBias === 'BULLISH') {
             signal = 'LONG_BUILDUP';
             score = 1.5;
-            description = '📈 Acumulação LONG: OI subindo + compras agressivas';
+            description = 'ð AcumulaÃ§Ã£o LONG: OI subindo + compras agressivas';
             confirmsDirection = intendedDirection === 'LONG';
         } else if ((oiTrend === 'RISING' || oiTrend === 'RISING_FAST') && takerBias === 'BEARISH') {
             signal = 'SHORT_BUILDUP';
             score = -1.5;
-            description = '📉 Acumulação SHORT: OI subindo + vendas agressivas';
+            description = 'ð AcumulaÃ§Ã£o SHORT: OI subindo + vendas agressivas';
             confirmsDirection = intendedDirection === 'SHORT';
         } else if (oiTrend === 'FALLING' && liqTotalUSD > 0) {
             signal = 'POSSIBLE_FAKE';
             score = 0;
-            description = '⚠️ Possível falso breakout: OI caindo sem novas posições';
+            description = 'â ï¸ PossÃ­vel falso breakout: OI caindo sem novas posiÃ§Ãµes';
             confirmsDirection = false;
         } else {
-            description = `OI estável (Δ${oiDeltaPercent.toFixed(1)}%)`;
+            description = `OI estÃ¡vel (Î${oiDeltaPercent.toFixed(1)}%)`;
             confirmsDirection = true;
         }
 
@@ -1588,13 +1588,13 @@
             score,
             confirmsDirection,
             description,
-            details: `OI: ${(currentOI / 1e6).toFixed(1)}M | Δ: ${oiDeltaPercent > 0 ? '+' : ''}${oiDeltaPercent.toFixed(1)}% | Taker: ${takerBias} | Liqs: ${liqLongs}L/${liqShorts}S`
+            details: `OI: ${(currentOI / 1e6).toFixed(1)}M | Î: ${oiDeltaPercent > 0 ? '+' : ''}${oiDeltaPercent.toFixed(1)}% | Taker: ${takerBias} | Liqs: ${liqLongs}L/${liqShorts}S`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 12: ANTI-SPOOFING (Order Book Delta)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * v7.1: Detects market manipulation via order book analysis
      * with regime-adaptive thresholds:
@@ -1604,7 +1604,7 @@
     function detectSpoofing(rawData, regimeKey) {
         const ob = rawData.orderBook;
         if (!ob || !ob.bids || !ob.asks || ob.bids.length === 0 || ob.asks.length === 0) {
-            return { detected: false, risk: 'UNKNOWN', obBias: 'NEUTRAL', score: 0, details: 'Order book indisponível' };
+            return { detected: false, risk: 'UNKNOWN', obBias: 'NEUTRAL', score: 0, details: 'Order book indisponÃ­vel' };
         }
 
         // v7.1: Adaptive thresholds
@@ -1642,18 +1642,18 @@
 
         if (bidAskRatio > imbalanceThreshold || (1 / bidAskRatio) > imbalanceThreshold) {
             const dir = bidAskRatio > imbalanceThreshold ? 'compra' : 'venda';
-            issues.push(`🚨 Muro de ${dir} suspeito: ${Math.max(bidAskRatio, 1 / bidAskRatio).toFixed(1)}:1`);
+            issues.push(`ð¨ Muro de ${dir} suspeito: ${Math.max(bidAskRatio, 1 / bidAskRatio).toFixed(1)}:1`);
             spoofRisk = 'HIGH';
             detected = true;
         }
 
         if (maxBidPercent > wallThreshold || maxAskPercent > wallThreshold) {
-            issues.push(`⚠️ Parede detectada: ${Math.max(maxBidPercent, maxAskPercent).toFixed(0)}% do depth em 1 nível`);
+            issues.push(`â ï¸ Parede detectada: ${Math.max(maxBidPercent, maxAskPercent).toFixed(0)}% do depth em 1 nÃ­vel`);
             if (spoofRisk === 'LOW') spoofRisk = 'MEDIUM';
         }
 
         if (spreadPercent > spreadThreshold) {
-            issues.push(`⚠️ Spread alto: ${spreadPercent.toFixed(3)}%`);
+            issues.push(`â ï¸ Spread alto: ${spreadPercent.toFixed(3)}%`);
             if (spoofRisk === 'LOW') spoofRisk = 'MEDIUM';
         }
 
@@ -1668,14 +1668,14 @@
             issues,
             score: spoofRisk === 'HIGH' ? -2 : spoofRisk === 'MEDIUM' ? -1 : 0,
             details: spoofRisk !== 'LOW'
-                ? `🚨 ${issues[0]}`
-                : `✅ Book normal (B/A: ${bidAskRatio.toFixed(2)}, spread: ${spreadPercent.toFixed(3)}%)`
+                ? `ð¨ ${issues[0]}`
+                : `â Book normal (B/A: ${bidAskRatio.toFixed(2)}, spread: ${spreadPercent.toFixed(3)}%)`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 13: ENHANCED 6-STATE REGIME
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * 6 regime states that adapt indicator weights, signal criteria, and R:R:
      * TREND_UP, TREND_DOWN, RANGE, EXPANSION, COMPRESSION, HIGH_VOL
@@ -1685,7 +1685,7 @@
         const klines4h = rawData.klines4h;
 
         if (!klines1h || klines1h.length < 30 || !klines4h || klines4h.length < 20) {
-            return v3Regime || { regime: 'RANGE', regimeStrength: 0.3, regimeIcon: '⚖️', regimeColor: '#f59e0b', regimeDescription: 'Dados insuficientes para regime', falseBreakoutRisk: 'MEDIUM' };
+            return v3Regime || { regime: 'RANGE', regimeStrength: 0.3, regimeIcon: 'âï¸', regimeColor: '#f59e0b', regimeDescription: 'Dados insuficientes para regime', falseBreakoutRisk: 'MEDIUM' };
         }
 
         // Calculate ATR percentile for volatility classification
@@ -1727,53 +1727,53 @@
         if (atrPercentile < 20) {
             regime = 'COMPRESSION';
             regimeStrength = 0.4;
-            regimeIcon = '💎';
+            regimeIcon = 'ð';
             regimeColor = '#8b5cf6';
-            regimeDescription = 'Compressão de volatilidade — explosão iminente';
+            regimeDescription = 'CompressÃ£o de volatilidade â explosÃ£o iminente';
             falseBreakoutRisk = 'HIGH';
         }
         // HIGH_VOL: Extreme volatility, danger zone
         else if (atrPercentile > 85) {
             regime = 'HIGH_VOL';
             regimeStrength = 0.6;
-            regimeIcon = '🌋';
+            regimeIcon = 'ð';
             regimeColor = '#ef4444';
-            regimeDescription = 'Volatilidade extrema — stops largos obrigatórios';
+            regimeDescription = 'Volatilidade extrema â stops largos obrigatÃ³rios';
             falseBreakoutRisk = 'MEDIUM';
         }
         // EXPANSION: Strong trend with rising OI (new money entering)
         else if (isTrending && oiRising && atrPercentile > 60) {
             regime = trendUp ? 'EXPANSION_UP' : 'EXPANSION_DOWN';
             regimeStrength = 0.85;
-            regimeIcon = trendUp ? '🚀' : '💀';
+            regimeIcon = trendUp ? 'ð' : 'ð';
             regimeColor = trendUp ? '#22c55e' : '#ef4444';
-            regimeDescription = `Expansão ${trendUp ? 'alta' : 'baixa'}: tendência + OI crescente + volatilidade`;
+            regimeDescription = `ExpansÃ£o ${trendUp ? 'alta' : 'baixa'}: tendÃªncia + OI crescente + volatilidade`;
             falseBreakoutRisk = 'LOW';
         }
         // TREND_UP / TREND_DOWN
         else if (isTrending && trendUp) {
             regime = 'TREND_UP';
             regimeStrength = Math.min((adxVal - 20) / 30, 1);
-            regimeIcon = '📈';
+            regimeIcon = 'ð';
             regimeColor = '#4ade80';
-            regimeDescription = 'Tendência de alta';
+            regimeDescription = 'TendÃªncia de alta';
             falseBreakoutRisk = 'LOW';
         }
         else if (isTrending && trendDown) {
             regime = 'TREND_DOWN';
             regimeStrength = Math.min((adxVal - 20) / 30, 1);
-            regimeIcon = '📉';
+            regimeIcon = 'ð';
             regimeColor = '#f87171';
-            regimeDescription = 'Tendência de baixa';
+            regimeDescription = 'TendÃªncia de baixa';
             falseBreakoutRisk = 'LOW';
         }
         // RANGE: Default
         else {
             regime = 'RANGE';
             regimeStrength = 0.3;
-            regimeIcon = '⚖️';
+            regimeIcon = 'âï¸';
             regimeColor = '#f59e0b';
-            regimeDescription = 'Mercado lateral — osciladores mais confiáveis';
+            regimeDescription = 'Mercado lateral â osciladores mais confiÃ¡veis';
             falseBreakoutRisk = oiFalling ? 'HIGH' : 'MEDIUM';
         }
 
@@ -1799,9 +1799,9 @@
         return ema;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 10b: BOS SCORING (v7.2 — contínuo, não binário)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 10b: BOS SCORING (v7.2 â contÃ­nuo, nÃ£o binÃ¡rio)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     function scoreBosGate(bosValidation) {
         if (!bosValidation) return { score: 0, label: 'N/A' };
         if (bosValidation.bosType === 'REAL') return { score: 1.0, label: 'REAL' };
@@ -1810,12 +1810,12 @@
         return { score: 0, label: bosValidation.bosType || 'NONE' };
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 10c: ACCEPTANCE TIMING (v7.2 — faster detection)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 10c: ACCEPTANCE TIMING (v7.2 â faster detection)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     function detectAcceptance(rangePosition, rawData) {
         if (rangePosition?.breakoutAccepted) {
-            return { accepted: true, timeframe: 'default', confidence: 1.0, details: 'Aceitação confirmada (candle fechou fora)' };
+            return { accepted: true, timeframe: 'default', confidence: 1.0, details: 'AceitaÃ§Ã£o confirmada (candle fechou fora)' };
         }
         try {
             const klines15m = rawData?.klines15m;
@@ -1828,22 +1828,22 @@
                     const allAbove = closes.every(c => c > high);
                     const allBelow = closes.every(c => c < low);
                     if (allAbove || allBelow) {
-                        return { accepted: true, timeframe: '15m', confidence: 0.8, direction: allAbove ? 'UP' : 'DOWN', details: `Aceitação rápida (3×15m ${allAbove ? 'acima' : 'abaixo'} do range)` };
+                        return { accepted: true, timeframe: '15m', confidence: 0.8, direction: allAbove ? 'UP' : 'DOWN', details: `AceitaÃ§Ã£o rÃ¡pida (3Ã15m ${allAbove ? 'acima' : 'abaixo'} do range)` };
                     }
                     const aboveCount = closes.filter(c => c > high).length;
                     const belowCount = closes.filter(c => c < low).length;
                     if (aboveCount >= 2 || belowCount >= 2) {
-                        return { accepted: true, timeframe: '15m', confidence: 0.6, direction: aboveCount >= 2 ? 'UP' : 'DOWN', details: `Aceitação parcial (${Math.max(aboveCount, belowCount)}/3×15m fora)` };
+                        return { accepted: true, timeframe: '15m', confidence: 0.6, direction: aboveCount >= 2 ? 'UP' : 'DOWN', details: `AceitaÃ§Ã£o parcial (${Math.max(aboveCount, belowCount)}/3Ã15m fora)` };
                     }
                 }
             }
         } catch (e) {}
-        return { accepted: false, timeframe: null, confidence: 0, details: 'Sem aceitação detectada' };
+        return { accepted: false, timeframe: null, confidence: 0, details: 'Sem aceitaÃ§Ã£o detectada' };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 14: REGIME-ADAPTIVE CONFIRMATION GATE
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * The heart of V4.1. Gates are the same, but REQUIREMENTS ADAPT:
      *
@@ -1885,7 +1885,7 @@
             intendedDirection = displacement.direction === 'UP' ? 'LONG' : displacement.direction === 'DOWN' ? 'SHORT' : null;
         }
 
-        // ─── GATE EVALUATION (9 core gates, v7.2: BOS contínuo + acceptance rápida) ───
+        // âââ GATE EVALUATION (9 core gates, v7.2: BOS contÃ­nuo + acceptance rÃ¡pida) âââ
         const bosScore = scoreBosGate(bosValidation);
         const acceptanceResult = detectAcceptance(rangePosition, params.rawData);
 
@@ -1896,12 +1896,12 @@
                 bosScore: bosScore.score,        // continuous 0-1 for soft adjustments
                 weight: 2.0,
                 description: bosScore.score >= 1.0
-                    ? '✅ Break of Structure confirmado (volume + close + CVD)'
+                    ? 'â Break of Structure confirmado (volume + close + CVD)'
                     : bosScore.score >= 0.5
-                        ? '⚡ BOS fraco detectado — conta parcialmente'
+                        ? 'â¡ BOS fraco detectado â conta parcialmente'
                         : bosValidation?.bosType === 'FAKE_SWEEP'
-                            ? '❌ BOS = FAKE SWEEP (caça de liquidez)'
-                            : '⚠️ BOS não confirmado'
+                            ? 'â BOS = FAKE SWEEP (caÃ§a de liquidez)'
+                            : 'â ï¸ BOS nÃ£o confirmado'
             },
             displacement: {
                 name: 'Displacement Z-Score',
@@ -1909,16 +1909,16 @@
                         (displacement4h?.detected && displacement4h?.direction === intendedDirection),
                 weight: 2.0,
                 description: displacement1h?.detected || displacement4h?.detected
-                    ? `✅ Displacement z=${(displacement1h?.bodyZScore || displacement4h?.bodyZScore || 0).toFixed(1)} (${displacement1h?.detected ? '1h' : '4h'})`
-                    : '❌ Sem displacement — candles no desvio padrão normal'
+                    ? `â Displacement z=${(displacement1h?.bodyZScore || displacement4h?.bodyZScore || 0).toFixed(1)} (${displacement1h?.detected ? '1h' : '4h'})`
+                    : 'â Sem displacement â candles no desvio padrÃ£o normal'
             },
             volumeExpansion: {
                 name: 'Volume Z-Score',
                 passed: (volumeExpansion1h?.expanding && volumeExpansion1h?.sustained) || (volumeExpansion4h?.expanding),
                 weight: 1.5,
                 description: volumeExpansion1h?.expanding || volumeExpansion4h?.expanding
-                    ? `✅ Volume z=${(volumeExpansion1h?.zScore || volumeExpansion4h?.zScore || 0).toFixed(1)} (${volumeExpansion1h?.sustained ? 'sustentado' : 'pontual'})`
-                    : '❌ Volume dentro do normal estatístico'
+                    ? `â Volume z=${(volumeExpansion1h?.zScore || volumeExpansion4h?.zScore || 0).toFixed(1)} (${volumeExpansion1h?.sustained ? 'sustentado' : 'pontual'})`
+                    : 'â Volume dentro do normal estatÃ­stico'
             },
             cvdConfirms: (() => {
                 // Real CVD via WebSocket (preferido) ou fallback para kline-based
@@ -1947,10 +1947,10 @@
                     icebergs,
                     weight: 1.5,
                     description: useRealCvd
-                        ? `${cvdPassed ? '✅' : '❌'} CVD Real (${cvdSource}) delta=${(cvdDelta||0).toFixed ? (cvdDelta||0).toFixed(0) : '?'}${cvdDiv ? ' [' + cvdDiv.type + ']' : ''}${icebergs.length > 0 ? ' (' + icebergs.length + ' icebergs)' : ''}`
+                        ? `${cvdPassed ? 'â' : 'â'} CVD Real (${cvdSource}) delta=${(cvdDelta||0).toFixed ? (cvdDelta||0).toFixed(0) : '?'}${cvdDiv ? ' [' + cvdDiv.type + ']' : ''}${icebergs.length > 0 ? ' (' + icebergs.length + ' icebergs)' : ''}`
                         : cvdAdvanced
-                            ? `${(intendedDirection === 'LONG' && cvdAdvanced?.delta > 0) || (intendedDirection === 'SHORT' && cvdAdvanced?.delta < 0) ? '✅' : '❌'} CVD (kline) ${cvdAdvanced?.delta > 0 ? '+' : ''}${cvdAdvanced?.delta?.toFixed ? cvdAdvanced.delta.toFixed(0) : '?'}`
-                            : '⚠️ CVD indisponível'
+                            ? `${(intendedDirection === 'LONG' && cvdAdvanced?.delta > 0) || (intendedDirection === 'SHORT' && cvdAdvanced?.delta < 0) ? 'â' : 'â'} CVD (kline) ${cvdAdvanced?.delta > 0 ? '+' : ''}${cvdAdvanced?.delta?.toFixed ? cvdAdvanced.delta.toFixed(0) : '?'}`
+                            : 'â ï¸ CVD indisponÃ­vel'
                 };
             })(),
             outsideRange: {
@@ -1958,26 +1958,26 @@
                 passed: rangePosition?.tradeable === true,
                 weight: 2.0,
                 description: rangePosition?.tradeable
-                    ? `✅ ${rangePosition.details}`
-                    : `❌ ${rangePosition?.details || 'Mid-range'}`
+                    ? `â ${rangePosition.details}`
+                    : `â ${rangePosition?.details || 'Mid-range'}`
             },
             fundingOk: {
                 name: 'Funding OK',
                 passed: !fundingFilter?.blocked,
                 weight: 1.0,
                 description: fundingFilter?.blocked
-                    ? `❌ ${fundingFilter.reason}`
-                    : `✅ ${fundingFilter?.reason || 'Funding neutro'}`
+                    ? `â ${fundingFilter.reason}`
+                    : `â ${fundingFilter?.reason || 'Funding neutro'}`
             },
             acceptance: {
-                name: 'Aceitação Breakout',
+                name: 'AceitaÃ§Ã£o Breakout',
                 passed: acceptanceResult.accepted,
                 acceptanceConfidence: acceptanceResult.confidence,
                 acceptanceTimeframe: acceptanceResult.timeframe,
                 weight: 1.5,
                 description: acceptanceResult.accepted
-                    ? `✅ ${acceptanceResult.details}`
-                    : '❌ Sem aceitação (candle não fechou fora)'
+                    ? `â ${acceptanceResult.details}`
+                    : 'â Sem aceitaÃ§Ã£o (candle nÃ£o fechou fora)'
             },
             oiConfirms: {
                 name: 'OI Confirma',
@@ -1985,21 +1985,21 @@
                 weight: 1.5,
                 description: oiAnalysis?.available
                     ? oiAnalysis.confirmsDirection
-                        ? `✅ ${oiAnalysis.description}`
-                        : `❌ ${oiAnalysis.description}`
-                    : '⚠️ OI indisponível'
+                        ? `â ${oiAnalysis.description}`
+                        : `â ${oiAnalysis.description}`
+                    : 'â ï¸ OI indisponÃ­vel'
             },
             antiSpoofOk: {
                 name: 'Anti-Spoof OK',
                 passed: !antiSpoof?.detected,
                 weight: 1.0,
                 description: antiSpoof?.detected
-                    ? `❌ ${antiSpoof.details}`
-                    : `✅ ${antiSpoof?.details || 'Sem manipulação detectada'}`
+                    ? `â ${antiSpoof.details}`
+                    : `â ${antiSpoof?.details || 'Sem manipulaÃ§Ã£o detectada'}`
             }
         };
 
-        // ─── SCORE CALCULATION (with regime-adaptive weights + redundancy penalization) ───
+        // âââ SCORE CALCULATION (with regime-adaptive weights + redundancy penalization) âââ
         let passedCount = 0, totalWeight = 0, passedWeight = 0;
         const gateResults = [];
 
@@ -2034,11 +2034,11 @@
 
         let gateScore = totalWeight > 0 ? (passedWeight / totalWeight) * 100 : 0;
 
-        // ─── SESSION CONTEXT (v7.2: removed from gateScore — moved to soft adjustments) ───
+        // âââ SESSION CONTEXT (v7.2: removed from gateScore â moved to soft adjustments) âââ
         // Session influence is now applied via the centralized soft-adjustment system
         // in enhanceWithReactive, keeping gateScore purely gate-based.
 
-        // ─── REGIME-ADAPTIVE REQUIREMENTS ───
+        // âââ REGIME-ADAPTIVE REQUIREMENTS âââ
         const regimeConfig = REGIME_GATES[regimeKey] || REGIME_GATES.DEFAULT;
 
         // Determine if we're trading WITH or AGAINST the trend
@@ -2052,7 +2052,7 @@
         const minGates = requirements.gates;
         const minScore = requirements.score;
 
-        // ─── SIGNAL DETERMINATION ───
+        // âââ SIGNAL DETERMINATION âââ
         let v4Signal, v4SignalType, v4Confidence, v4Probability;
         let actionMessage, actionIcon;
 
@@ -2062,8 +2062,8 @@
             v4SignalType = 'aguardar';
             v4Confidence = 15;
             v4Probability = 50;
-            actionMessage = `⛔ ${crashState.direction === 'down' ? 'CRASH' : 'PUMP'} (${crashState.severity}). NÃO OPERAR.`;
-            actionIcon = '🚨';
+            actionMessage = `â ${crashState.direction === 'down' ? 'CRASH' : 'PUMP'} (${crashState.severity}). NÃO OPERAR.`;
+            actionIcon = 'ð¨';
         }
         // No direction at all (even after fallbacks)
         else if (!intendedDirection) {
@@ -2071,8 +2071,8 @@
             v4SignalType = 'aguardar';
             v4Confidence = v3Confidence || 20;
             v4Probability = 50;
-            actionMessage = 'Sem viés direcional claro. Aguardar.';
-            actionIcon = '⏸️';
+            actionMessage = 'Sem viÃ©s direcional claro. Aguardar.';
+            actionIcon = 'â¸ï¸';
         }
         // Weekend cap: max AGUARDAR
         else if (sessionContext?.isWeekend) {
@@ -2080,8 +2080,8 @@
             v4SignalType = 'aguardar';
             v4Confidence = clamp(Math.round(gateScore * 0.5), 10, 45);
             v4Probability = clamp(Math.round(50 + (gateScore - 50) * 0.3), 30, 60);
-            actionMessage = `🌙 Weekend: liquidez muito baixa. Máximo = AGUARDAR. ${passedCount}/${Object.keys(gates).length} gates.`;
-            actionIcon = '🔶';
+            actionMessage = `ð Weekend: liquidez muito baixa. MÃ¡ximo = AGUARDAR. ${passedCount}/${Object.keys(gates).length} gates.`;
+            actionIcon = 'ð¶';
         }
         // CONFIRMED: meets regime-adaptive requirements + requires at least 1 active gate
         else if (passedCount >= minGates && gateScore >= minScore) {
@@ -2100,16 +2100,16 @@
                 const retestBonus = retest?.retested ? ' + reteste' : '';
                 const sessionInfo = sessionContext?.isKillZone ? ' [KILL ZONE]' : '';
                 const confirmType = hasActiveGate ? 'estrutural' : hasFlowConfluence ? 'flow confluence' : 'multi-gate';
-                actionMessage = `🎯 ${intendedDirection} CONFIRMADO (${confirmType}) — ${passedCount}/${Object.keys(gates).length} gates (${gateScore.toFixed(0)}%, regime: ${regimeKey} requer ${minGates})${retestBonus}${sessionInfo}`;
-                actionIcon = intendedDirection === 'LONG' ? '🟢' : '🔴';
+                actionMessage = `ð¯ ${intendedDirection} CONFIRMADO (${confirmType}) â ${passedCount}/${Object.keys(gates).length} gates (${gateScore.toFixed(0)}%, regime: ${regimeKey} requer ${minGates})${retestBonus}${sessionInfo}`;
+                actionIcon = intendedDirection === 'LONG' ? 'ð¢' : 'ð´';
             } else {
-                // Downgrade to AGUARDAR — gates passed but no active confirmation
+                // Downgrade to AGUARDAR â gates passed but no active confirmation
                 v4Signal = 'AGUARDAR_' + intendedDirection;
                 v4SignalType = 'aguardar';
                 v4Confidence = clamp(Math.round(gateScore * 0.65), 15, 50);
                 v4Probability = clamp(Math.round(50 + (gateScore - 50) * 0.35), 30, 65);
-                actionMessage = `⏳ ${passedCount}/${Object.keys(gates).length} gates ok, mas sem confirmação ativa (BOS/Displacement/Volume ou CVD+OI). Aguardar.`;
-                actionIcon = '🔶';
+                actionMessage = `â³ ${passedCount}/${Object.keys(gates).length} gates ok, mas sem confirmaÃ§Ã£o ativa (BOS/Displacement/Volume ou CVD+OI). Aguardar.`;
+                actionIcon = 'ð¶';
             }
         }
         // AGUARDAR
@@ -2120,51 +2120,51 @@
             v4Probability = clamp(Math.round(50 + (gateScore - 50) * 0.4), 30, 70);
 
             const missing = gateResults.filter(g => !g.passed).map(g => g.name);
-            actionMessage = `⏳ Estrutura ${intendedDirection} formando (${passedCount}/${Object.keys(gates).length}, precisa de ${minGates} para ${regimeKey}). Falta: ${missing.slice(0, 3).join(', ')}`;
-            actionIcon = '🔶';
+            actionMessage = `â³ Estrutura ${intendedDirection} formando (${passedCount}/${Object.keys(gates).length}, precisa de ${minGates} para ${regimeKey}). Falta: ${missing.slice(0, 3).join(', ')}`;
+            actionIcon = 'ð¶';
         }
-        // Fallback — insufficient gates
+        // Fallback â insufficient gates
         else {
             v4Signal = intendedDirection ? 'AGUARDAR_' + intendedDirection : 'NEUTRO';
             v4SignalType = 'aguardar';
             v4Confidence = clamp(Math.round(gateScore * 0.5), 10, 35);
             v4Probability = 50;
-            actionMessage = `Apenas ${passedCount}/${Object.keys(gates).length} gates. Regime ${regimeKey} requer ${minGates}. Aguardar confirmações.`;
-            actionIcon = '⏸️';
+            actionMessage = `Apenas ${passedCount}/${Object.keys(gates).length} gates. Regime ${regimeKey} requer ${minGates}. Aguardar confirmaÃ§Ãµes.`;
+            actionIcon = 'â¸ï¸';
         }
 
-        // ─── RETEST CONFIDENCE BOOST ───
+        // âââ RETEST CONFIDENCE BOOST âââ
         if (retest?.retested && v4Signal.includes('CONFIRMED')) {
             v4Confidence = clamp(v4Confidence + 8, 40, 100);
             if (retest.retestQuality === 'STRONG') v4Confidence = clamp(v4Confidence + 5, 40, 100);
         }
 
-        // ─── MICROSTRUCTURE BONUS/PENALTY ───
+        // âââ MICROSTRUCTURE BONUS/PENALTY âââ
         if (microstructure) {
             v4Confidence = clamp(v4Confidence + microstructure.score, 10, 100);
         }
 
-        // ─── SESSION PENALTY FOR DEAD ZONES ───
+        // âââ SESSION PENALTY FOR DEAD ZONES âââ
         if (sessionContext?.isDeadZone && v4Signal.includes('CONFIRMED')) {
             v4Confidence = clamp(v4Confidence - 10, 10, 100);
             if (v4Confidence < 45) {
                 v4Signal = 'AGUARDAR_' + intendedDirection;
                 v4SignalType = 'aguardar';
-                actionMessage += '\n💤 Sessão de baixa liquidez — rebaixado para AGUARDAR.';
+                actionMessage += '\nð¤ SessÃ£o de baixa liquidez â rebaixado para AGUARDAR.';
             }
         }
 
-        // ─── FALSE BREAKOUT RISK ───
+        // âââ FALSE BREAKOUT RISK âââ
         if (enhancedRegime?.falseBreakoutRisk === 'HIGH') {
             v4Confidence = clamp(v4Confidence - 15, 10, 100);
             if (v4Signal.includes('CONFIRMED') && v4Confidence < 45) {
                 v4Signal = 'AGUARDAR_' + intendedDirection;
                 v4SignalType = 'aguardar';
-                actionMessage += '\n⚠️ Alto risco de falso breakout — AGUARDAR.';
+                actionMessage += '\nâ ï¸ Alto risco de falso breakout â AGUARDAR.';
             }
         }
 
-        // ─── LOGISTIC CALIBRATION ───
+        // âââ LOGISTIC CALIBRATION âââ
         // Replace heuristic confidence with sigmoid-calibrated probability
         const regimeQuality = (enhancedRegime?.regimeStrength || 0.5) * 100;
         const satVal = params.saturation?.saturationPercent || 50;
@@ -2177,21 +2177,21 @@
         const finalConfidence = clamp(Math.round((v4Confidence * 0.6) + (calibratedConfidence * 0.4)), 10, 100);
         v4Confidence = finalConfidence;
 
-        // ─── AGUARDAR CONFIDENCE HARD CAP ───
-        // AGUARDAR signals must NEVER have 70%+ confidence — that would be a CONFIRMED signal.
-        // If post-processing (calibration, microstructure) pushed confidence ≥ 70 for an AGUARDAR,
+        // âââ AGUARDAR CONFIDENCE HARD CAP âââ
+        // AGUARDAR signals must NEVER have 70%+ confidence â that would be a CONFIRMED signal.
+        // If post-processing (calibration, microstructure) pushed confidence â¥ 70 for an AGUARDAR,
         // promote it to CONFIRMED (with direction) instead.
         if (v4SignalType === 'aguardar' && intendedDirection && v4Confidence >= 70) {
             v4Signal = intendedDirection + '_CONFIRMED';
             v4SignalType = intendedDirection.toLowerCase();
-            actionMessage = `🎯 ${intendedDirection} CONFIRMADO — confiança alta (${v4Confidence}%) promoveu sinal. ${passedCount}/${Object.keys(gates).length} gates.`;
-            actionIcon = intendedDirection === 'LONG' ? '🟢' : '🔴';
+            actionMessage = `ð¯ ${intendedDirection} CONFIRMADO â confianÃ§a alta (${v4Confidence}%) promoveu sinal. ${passedCount}/${Object.keys(gates).length} gates.`;
+            actionIcon = intendedDirection === 'LONG' ? 'ð¢' : 'ð´';
         } else if (v4SignalType === 'aguardar' && v4Confidence > 65) {
             // Hard cap AGUARDAR at 65% max
             v4Confidence = 65;
         }
 
-        // ─── ENTRY vs TIMING separation (V7: Full EntryScore + ContinuationScore) ──
+        // âââ ENTRY vs TIMING separation (V7: Full EntryScore + ContinuationScore) ââ
         // Engine A (Entry): Probability of immediate reaction from this level
         const entryGates = ['bosConfirmed', 'displacement', 'volumeExpansion', 'outsideRange', 'acceptance'];
         // Engine B (Continuation): Probability of expansion beyond 1R
@@ -2216,15 +2216,15 @@
         let timingAdvice = null;
         if (entryScore >= 80 && continuationScore >= 75) {
             suggestedRR = '1:3';
-            timingAdvice = `🎯 Entry forte (${entryScore}%) + continuação forte (${continuationScore}%) → R:R agressivo 1:3 viável.`;
+            timingAdvice = `ð¯ Entry forte (${entryScore}%) + continuaÃ§Ã£o forte (${continuationScore}%) â R:R agressivo 1:3 viÃ¡vel.`;
         } else if (entryScore >= 70 && continuationScore < 50) {
             suggestedRR = '1:1.5';
-            timingAdvice = `⏰ Entry bom (${entryScore}%) mas continuação fraca (${continuationScore}%) → R:R conservador 1:1.5 e TP parcial no 1R.`;
+            timingAdvice = `â° Entry bom (${entryScore}%) mas continuaÃ§Ã£o fraca (${continuationScore}%) â R:R conservador 1:1.5 e TP parcial no 1R.`;
         } else if (entryScore < 50 && continuationScore >= 70) {
             suggestedRR = 'WAIT';
-            timingAdvice = `⚠️ Continuação promissora (${continuationScore}%) mas entry fraco (${entryScore}%) → Aguardar pullback para entry melhor.`;
+            timingAdvice = `â ï¸ ContinuaÃ§Ã£o promissora (${continuationScore}%) mas entry fraco (${entryScore}%) â Aguardar pullback para entry melhor.`;
         } else if (entryScore < 40) {
-            timingAdvice = `❌ Entry insuficiente (${entryScore}%) — sem estrutura para operar.`;
+            timingAdvice = `â Entry insuficiente (${entryScore}%) â sem estrutura para operar.`;
         }
 
         return {
@@ -2247,19 +2247,19 @@
             continuationScore,
             suggestedRR,
             timingAdvice,
-            reasoning: gateResults.map(g => `${g.passed ? '✅' : '❌'} [${g.weight.toFixed(1)}] ${g.name}: ${g.description}`).join('\n')
+            reasoning: gateResults.map(g => `${g.passed ? 'â' : 'â'} [${g.weight.toFixed(1)}] ${g.name}: ${g.description}`).join('\n')
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 11: RISK ENGINE
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
-     * Quem quebra conta não é sinal ruim. É sizing errado.
+     * Quem quebra conta nÃ£o Ã© sinal ruim. Ã sizing errado.
      *
      * Position sizing adaptativo por volatilidade
-     * Kill switch após sequência de perdas
-     * Stop dinâmico baseado em estrutura
+     * Kill switch apÃ³s sequÃªncia de perdas
+     * Stop dinÃ¢mico baseado em estrutura
      * Drawdown control
      */
     function calculateRisk(params) {
@@ -2304,7 +2304,7 @@
             killReason = `Kill switch ativado: ${riskState.consecutiveLosses} perdas consecutivas. Pausa de ${KILL_SWITCH_PAUSE_HOURS}h.`;
         } else if (riskState.dailyPnl <= -MAX_DAILY_DRAWDOWN) {
             killSwitch = true;
-            killReason = `Drawdown diário ${riskState.dailyPnl.toFixed(1)}% atingiu limite de -${MAX_DAILY_DRAWDOWN}%. STOP.`;
+            killReason = `Drawdown diÃ¡rio ${riskState.dailyPnl.toFixed(1)}% atingiu limite de -${MAX_DAILY_DRAWDOWN}%. STOP.`;
         }
 
         // Size multiplier based on edge state
@@ -2349,8 +2349,8 @@
             dailyPnl: +riskState.dailyPnl.toFixed(2),
             weeklyPnl: +riskState.weeklyPnl.toFixed(2),
             details: killSwitch
-                ? `🛑 ${killReason}`
-                : `Risk: ${riskPerTrade.toFixed(1)}%/trade, Stop: $${suggestedStop.toFixed(0)} (${riskPercent.toFixed(1)}%), Lev: ${clamp(leverageSuggested, 1, 20).toFixed(1)}×${sizeMultiplier < 1 ? ` [size ${(sizeMultiplier * 100).toFixed(0)}%]` : ''}`
+                ? `ð ${killReason}`
+                : `Risk: ${riskPerTrade.toFixed(1)}%/trade, Stop: $${suggestedStop.toFixed(0)} (${riskPercent.toFixed(1)}%), Lev: ${clamp(leverageSuggested, 1, 20).toFixed(1)}Ã${sizeMultiplier < 1 ? ` [size ${(sizeMultiplier * 100).toFixed(0)}%]` : ''}`
         };
     }
 
@@ -2384,15 +2384,15 @@
         return Math.ceil((((d - start) / 86400000) + start.getDay() + 1) / 7);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 12: MODEL STABILITY MONITOR
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Prevents overfitting and detects edge degradation.
      *
      * Tracks rolling 20-signal performance:
-     *  - WR < 40% → reduce confidence by 15%
-     *  - WR < 30% → force ALL signals to AGUARDAR
+     *  - WR < 40% â reduce confidence by 15%
+     *  - WR < 30% â force ALL signals to AGUARDAR
      *
      * Also applies temporal weight decay:
      * Signals from 14+ days ago worth 50% less in performance calc.
@@ -2405,13 +2405,13 @@
         // Get signals with outcomes, apply temporal decay
         const withOutcomes = stats.signals.filter(s => s.outcome != null);
 
-        // v7.2: Cold start guard — with fewer than 8 evaluated signals, assume stable
+        // v7.2: Cold start guard â with fewer than 8 evaluated signals, assume stable
         // Prevents premature FORCE_AGUARDAR from a couple of random losses
         if (withOutcomes.length < 8) {
             return {
                 stable: true, rollingWR: null, action: 'NONE', confidenceAdjust: 0,
                 coldStart: true, signalsEvaluated: withOutcomes.length,
-                details: `Cold start: ${withOutcomes.length}/8 sinais — estabilidade presumida.`
+                details: `Cold start: ${withOutcomes.length}/8 sinais â estabilidade presumida.`
             };
         }
 
@@ -2468,21 +2468,21 @@
             windowSize: STABILITY_WINDOW,
             signalsEvaluated: withOutcomes.length,
             details: action === 'FORCE_AGUARDAR'
-                ? `🚨 Edge crítico: WR ${rollingWR.toFixed(0)}% (últimos ${STABILITY_WINDOW}). TODOS sinais → AGUARDAR.`
+                ? `ð¨ Edge crÃ­tico: WR ${rollingWR.toFixed(0)}% (Ãºltimos ${STABILITY_WINDOW}). TODOS sinais â AGUARDAR.`
                 : action === 'REDUCE_CONFIDENCE'
-                    ? `⚠️ Edge degradando: WR ${rollingWR.toFixed(0)}% (últimos ${STABILITY_WINDOW}). Confiança -15%.`
+                    ? `â ï¸ Edge degradando: WR ${rollingWR.toFixed(0)}% (Ãºltimos ${STABILITY_WINDOW}). ConfianÃ§a -15%.`
                     : edgeTrend === 'DEGRADING'
-                        ? `📉 Tendência de queda: edge degradando. Monitorar.`
-                        : `✅ Modelo estável: WR ${rollingWR.toFixed(0)}% (${edgeTrend})`
+                        ? `ð TendÃªncia de queda: edge degradando. Monitorar.`
+                        : `â Modelo estÃ¡vel: WR ${rollingWR.toFixed(0)}% (${edgeTrend})`
         };
 
         safeSet(key, result);
         return result;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 13: REACTIVE PERFORMANCE TRACKER
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     function trackReactiveSignal(symbol, v4Result, v3Analysis) {
         const key = REACTIVE_STATS_KEY + symbol;
         let stats = safeGet(key) || { signals: [], created: Date.now() };
@@ -2559,7 +2559,7 @@
             };
         };
 
-        // ─── Regime-specific performance ───
+        // âââ Regime-specific performance âââ
         const byRegime = {};
         const allWithOutcome = stats.signals.filter(s => s.outcome);
         const regimes = [...new Set(allWithOutcome.map(s => s.regime).filter(Boolean))];
@@ -2568,7 +2568,7 @@
             if (regSignals.length >= 3) byRegime[r] = calcStats(regSignals);
         });
 
-        // ─── Session performance ───
+        // âââ Session performance âââ
         const bySession = {};
         const sessions = [...new Set(allWithOutcome.map(s => s.session).filter(Boolean))];
         sessions.forEach(sess => {
@@ -2588,15 +2588,15 @@
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 14: COLLECTIVE LEARNING CLIENT (REPUTATION-WEIGHTED)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
-     * V4.0: All users equal weight → learns from losers.
-     * V4.1: Reputation scoring. Device with 65% WR weighs 10× more
+     * V4.0: All users equal weight â learns from losers.
+     * V4.1: Reputation scoring. Device with 65% WR weighs 10Ã more
      *        than device with 30% WR. Algorithm learns from Smart Money.
      *
-     * Device hash is anonymous but persistent — backend builds
+     * Device hash is anonymous but persistent â backend builds
      * reputation profile without knowing who you are.
      */
     function queueTradeForBackend(symbol, v4Result, v3Analysis) {
@@ -2701,9 +2701,9 @@
         return null;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 15: BOT INTEGRATION LAYER
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Generates webhook-ready structured output for bot execution.
      * Compatible with Binance Futures API webhook receivers.
@@ -2755,85 +2755,85 @@
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 16: REACTIVE SUMMARY GENERATOR
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     function generateReactiveSummary(v4Result, squeezeState, collectiveStats, reactivePerf, sessionContext, limitOrder, riskEngine, microstructure, modelStability) {
         let lines = [];
 
         // Signal
         if (v4Result.v4Signal.includes('CONFIRMED')) {
-            lines.push(`🎯 SINAL ${v4Result.v4Signal}: Confirmações atingidas para regime ${v4Result.regimeKey}.`);
+            lines.push(`ð¯ SINAL ${v4Result.v4Signal}: ConfirmaÃ§Ãµes atingidas para regime ${v4Result.regimeKey}.`);
 
             // Execution plan
             if (limitOrder?.type === 'LIMIT_ON_RETEST') {
-                lines.push(`📋 EXECUÇÃO: Limit Order @ $${limitOrder.entry} (aguardar reteste)`);
+                lines.push(`ð EXECUÃÃO: Limit Order @ $${limitOrder.entry} (aguardar reteste)`);
                 lines.push(`   SL: $${limitOrder.stopLoss} | TP1: $${limitOrder.tp1} (${limitOrder.riskReward1}R) | TP2: $${limitOrder.tp2} (${limitOrder.riskReward2}R)`);
             } else if (limitOrder?.type === 'MARKET_AFTER_RETEST') {
-                lines.push(`📋 EXECUÇÃO: Market Order — reteste confirmado`);
+                lines.push(`ð EXECUÃÃO: Market Order â reteste confirmado`);
                 lines.push(`   SL: $${limitOrder.stopLoss} | TP1: $${limitOrder.tp1} | TP2: $${limitOrder.tp2}`);
             }
         } else if (v4Result.v4Signal.includes('AGUARDAR')) {
             const dir = v4Result.v4Signal.replace('AGUARDAR_', '');
-            lines.push(`⏳ AGUARDAR ${dir}: ${v4Result.passedCount}/${v4Result.totalGates} gates (precisa ${v4Result.minGatesRequired} para ${v4Result.regimeKey}).`);
-            lines.push(`"Perder 20% do início > tentar 100% e errar metade."`);
+            lines.push(`â³ AGUARDAR ${dir}: ${v4Result.passedCount}/${v4Result.totalGates} gates (precisa ${v4Result.minGatesRequired} para ${v4Result.regimeKey}).`);
+            lines.push(`"Perder 20% do inÃ­cio > tentar 100% e errar metade."`);
         } else {
-            lines.push(`⏸️ NÃO OPERAR: Sem estrutura confirmada.`);
+            lines.push(`â¸ï¸ NÃO OPERAR: Sem estrutura confirmada.`);
         }
 
         lines.push('');
 
         // Session context
         if (sessionContext) {
-            lines.push(`${sessionContext.sessionEmoji} Sessão: ${sessionContext.sessionName} — Liquidez: ${sessionContext.liquidityLevel}, Fake breakout risk: ${sessionContext.fakeBreakoutRisk}`);
-            if (sessionContext.isWeekend) lines.push(`⚠️ WEEKEND: Liquidez mínima. Sinais limitados a AGUARDAR.`);
+            lines.push(`${sessionContext.sessionEmoji} SessÃ£o: ${sessionContext.sessionName} â Liquidez: ${sessionContext.liquidityLevel}, Fake breakout risk: ${sessionContext.fakeBreakoutRisk}`);
+            if (sessionContext.isWeekend) lines.push(`â ï¸ WEEKEND: Liquidez mÃ­nima. Sinais limitados a AGUARDAR.`);
         }
 
         // Gates
         lines.push('');
-        lines.push(`📊 Gates: ${v4Result.passedCount}/${v4Result.totalGates} (Score: ${v4Result.gateScore}%, Regime: ${v4Result.regimeKey} requer ${v4Result.minGatesRequired})`);
-        v4Result.gates.forEach(g => lines.push(`  ${g.passed ? '✅' : '❌'} ${g.name}`));
+        lines.push(`ð Gates: ${v4Result.passedCount}/${v4Result.totalGates} (Score: ${v4Result.gateScore}%, Regime: ${v4Result.regimeKey} requer ${v4Result.minGatesRequired})`);
+        v4Result.gates.forEach(g => lines.push(`  ${g.passed ? 'â' : 'â'} ${g.name}`));
 
         // Risk
         if (riskEngine) {
             lines.push('');
             if (riskEngine.killSwitch) {
-                lines.push(`🛑 KILL SWITCH: ${riskEngine.killReason}`);
+                lines.push(`ð KILL SWITCH: ${riskEngine.killReason}`);
             } else {
-                lines.push(`💰 Risk: ${riskEngine.riskPerTrade}%/trade | Stop: $${riskEngine.suggestedStop} (${riskEngine.stopPercent}%) | Lev: ${riskEngine.leverageSuggested}×`);
+                lines.push(`ð° Risk: ${riskEngine.riskPerTrade}%/trade | Stop: $${riskEngine.suggestedStop} (${riskEngine.stopPercent}%) | Lev: ${riskEngine.leverageSuggested}Ã`);
             }
         }
 
         // Model stability
         if (modelStability && !modelStability.stable) {
             lines.push('');
-            lines.push(`⚠️ ${modelStability.details}`);
+            lines.push(`â ï¸ ${modelStability.details}`);
         }
 
         // Microstructure
         if (microstructure?.confirmsDirection) {
             lines.push('');
-            lines.push(`🔬 Microestrutura: ${microstructure.details}`);
+            lines.push(`ð¬ Microestrutura: ${microstructure.details}`);
         }
 
         // Squeeze
         if (squeezeState?.isSqueeze) {
             lines.push('');
             lines.push(squeezeState.expanding
-                ? `🔥 SQUEEZE EXPANDINDO para ${squeezeState.direction}`
-                : `📦 SQUEEZE sem expansão — alto risco de falso breakout`);
+                ? `ð¥ SQUEEZE EXPANDINDO para ${squeezeState.direction}`
+                : `ð¦ SQUEEZE sem expansÃ£o â alto risco de falso breakout`);
         }
 
         // Collective
         if (collectiveStats?.globalWinRate) {
             lines.push('');
-            lines.push(`🌐 Coletivo (${collectiveStats.totalUsers || 0} devices): WR ${collectiveStats.globalWinRate}% | Consenso: ${collectiveStats.consensusSignal || '?'}`);
+            lines.push(`ð Coletivo (${collectiveStats.totalUsers || 0} devices): WR ${collectiveStats.globalWinRate}% | Consenso: ${collectiveStats.consensusSignal || '?'}`);
         }
 
         // Reactive perf
         if (reactivePerf && reactivePerf.confirmed.count >= 3) {
             lines.push('');
-            lines.push(`📈 Local: CONFIRMED WR ${reactivePerf.confirmed.winRate}% (${reactivePerf.confirmed.count}) vs AGUARDAR WR ${reactivePerf.aguardar.winRate}% (${reactivePerf.aguardar.count})`);
+            lines.push(`ð Local: CONFIRMED WR ${reactivePerf.confirmed.winRate}% (${reactivePerf.confirmed.count}) vs AGUARDAR WR ${reactivePerf.aguardar.winRate}% (${reactivePerf.aguardar.count})`);
             if (reactivePerf.advantage !== null) {
                 lines.push(`   Vantagem reativa: ${reactivePerf.advantage > 0 ? '+' : ''}${reactivePerf.advantage}%`);
             }
@@ -2842,9 +2842,9 @@
         return lines.join('\n');
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 18: BTC ALIGNMENT (Market Context)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Compares any altcoin's direction/momentum with BTC.
      * An altcoin breakout AGAINST BTC direction = high risk.
@@ -2857,7 +2857,7 @@
 
     async function analyzeBtcAlignment(rawData, intendedDirection, symbol) {
         if (symbol === 'BTCUSDT') {
-            return { available: true, alignment: 'SELF', correlation: 1, risk: 'NONE', details: 'BTC — auto-referenciado', btcTrend: null };
+            return { available: true, alignment: 'SELF', correlation: 1, risk: 'NONE', details: 'BTC â auto-referenciado', btcTrend: null };
         }
 
         // Try to get BTC data from cache or fetch
@@ -2871,12 +2871,12 @@
                 btcKlines = await resp.json();
                 safeSet(BTC_CACHE_KEY, { data: btcKlines, ts: Date.now() });
             } catch (e) {
-                return { available: false, alignment: 'UNKNOWN', correlation: 0, risk: 'UNKNOWN', details: 'Dados BTC indisponíveis' };
+                return { available: false, alignment: 'UNKNOWN', correlation: 0, risk: 'UNKNOWN', details: 'Dados BTC indisponÃ­veis' };
             }
         }
 
         if (!btcKlines || btcKlines.length < 30 || !rawData.klines1h || rawData.klines1h.length < 30) {
-            return { available: false, alignment: 'UNKNOWN', correlation: 0, risk: 'UNKNOWN', details: 'Dados insuficientes para correlação' };
+            return { available: false, alignment: 'UNKNOWN', correlation: 0, risk: 'UNKNOWN', details: 'Dados insuficientes para correlaÃ§Ã£o' };
         }
 
         // Calculate BTC trend (EMA 20 vs EMA 50)
@@ -2954,15 +2954,15 @@
         if (aligned) {
             alignment = 'ALIGNED';
             risk = 'LOW';
-            description = `✅ Alinhado com BTC (${btcTrend})`;
+            description = `â Alinhado com BTC (${btcTrend})`;
         } else if (diverging) {
             alignment = 'DIVERGING';
             risk = correlation > 0.7 ? 'HIGH' : 'MEDIUM';
-            description = `⚠️ Divergindo do BTC (${btcTrend}) — risco ${risk === 'HIGH' ? 'alto' : 'médio'}`;
+            description = `â ï¸ Divergindo do BTC (${btcTrend}) â risco ${risk === 'HIGH' ? 'alto' : 'mÃ©dio'}`;
         } else {
             alignment = 'NEUTRAL';
             risk = 'LOW';
-            description = `BTC neutro — alt independente`;
+            description = `BTC neutro â alt independente`;
         }
 
         return {
@@ -2986,9 +2986,9 @@
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 19: SCORE PERCENTILE (Market-Wide Ranking)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Stores scores for all analyzed symbols in localStorage.
      * When showing a single asset, calculates its percentile
@@ -3024,10 +3024,10 @@
         const rank = sorted.length - (idx >= 0 ? idx : sorted.length) + 1;
 
         let description;
-        if (pct >= 90) description = `🏆 Top ${100 - pct}% — entre os mais fortes agora`;
-        else if (pct >= 70) description = `📈 Acima da média (p${pct})`;
-        else if (pct >= 30) description = `➖ Na média do mercado (p${pct})`;
-        else description = `📉 Abaixo da média (p${pct})`;
+        if (pct >= 90) description = `ð Top ${100 - pct}% â entre os mais fortes agora`;
+        else if (pct >= 70) description = `ð Acima da mÃ©dia (p${pct})`;
+        else if (pct >= 30) description = `â Na mÃ©dia do mercado (p${pct})`;
+        else description = `ð Abaixo da mÃ©dia (p${pct})`;
 
         return {
             available: true,
@@ -3035,13 +3035,13 @@
             rank,
             total: scores.length,
             description,
-            details: `Rank ${rank}/${scores.length} — Percentil ${pct}`
+            details: `Rank ${rank}/${scores.length} â Percentil ${pct}`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 20: SETUP HISTORY STATISTICS
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Tracks every unique "setup fingerprint" combination:
      *   regime + oiSignal + cvdDirection + displacementDirection
@@ -3065,8 +3065,8 @@
     }
 
     /**
-     * V7: recordSetupOutcome agora envia ao backend (global DB) ao invés de localStorage.
-     * LocalStorage mantido apenas como write-through cache de emergência.
+     * V7: recordSetupOutcome agora envia ao backend (global DB) ao invÃ©s de localStorage.
+     * LocalStorage mantido apenas como write-through cache de emergÃªncia.
      */
     function recordSetupOutcome(fingerprint, won, rMultiple) {
         // Send to backend (fire-and-forget)
@@ -3116,7 +3116,7 @@
                 winRate: null,
                 avgR: null,
                 count: stats?.count || 0,
-                description: stats ? `Setup com apenas ${stats.count} amostra(s) — insuficiente` : 'Setup nunca registrado — dados virão com o tempo'
+                description: stats ? `Setup com apenas ${stats.count} amostra(s) â insuficiente` : 'Setup nunca registrado â dados virÃ£o com o tempo'
             };
         }
 
@@ -3126,7 +3126,7 @@
         let quality;
         if (wr >= 60 && avgR >= 1.0) quality = 'EXCELENTE';
         else if (wr >= 50 && avgR >= 0.8) quality = 'BOM';
-        else if (wr >= 40) quality = 'MÉDIO';
+        else if (wr >= 40) quality = 'MÃDIO';
         else quality = 'FRACO';
 
         return {
@@ -3138,19 +3138,19 @@
             wins: stats.wins,
             losses: stats.losses,
             quality,
-            description: `WR: ${wr}% | R médio: ${avgR} | ${stats.count} amostras — ${quality}`
+            description: `WR: ${wr}% | R mÃ©dio: ${avgR} | ${stats.count} amostras â ${quality}`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 21: REGIME QUALITY CLASSIFIER
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Not all TREND_UP are equal.
      * Classifies regime health/quality:
-     *   WEAK     — ADX barely above 25, vol falling
-     *   STABLE   — ADX steady, normal vol
-     *   ACCELERATING — ADX rising, vol expanding
+     *   WEAK     â ADX barely above 25, vol falling
+     *   STABLE   â ADX steady, normal vol
+     *   ACCELERATING â ADX rising, vol expanding
      *
      * Uses ADX slope (ADX now vs ADX 5candles ago)
      * + volume Z-Score trend
@@ -3158,7 +3158,7 @@
      */
     function classifyRegimeQuality(regimeData, volumeExpansion, klines1h) {
         if (!regimeData || !regimeData.regime) {
-            return { quality: 'UNKNOWN', qualityScore: 0, details: 'Regime indisponível' };
+            return { quality: 'UNKNOWN', qualityScore: 0, details: 'Regime indisponÃ­vel' };
         }
 
         const regime = regimeData.regime;
@@ -3186,48 +3186,48 @@
         if (regime === 'RANGE' || regime === 'COMPRESSION') {
             // Range: quality is about stability
             if (volLow && adx < 20) {
-                quality = 'Estável';
-                qualityEmoji = '🔒';
+                quality = 'EstÃ¡vel';
+                qualityEmoji = 'ð';
                 qualityScore = 50;
             } else if (volHigh) {
-                quality = 'Instável';
-                qualityEmoji = '⚡';
+                quality = 'InstÃ¡vel';
+                qualityEmoji = 'â¡';
                 qualityScore = 30;
             } else {
                 quality = 'Normal';
-                qualityEmoji = '➖';
+                qualityEmoji = 'â';
                 qualityScore = 40;
             }
         } else if (regime.includes('TREND') || regime.includes('EXPANSION')) {
             // Trend: quality is about strength + expansion
             if (adxLevel === 'STRONG' && volExpanding) {
                 quality = 'Acelerando';
-                qualityEmoji = '🔥';
+                qualityEmoji = 'ð¥';
                 qualityScore = 95;
             } else if (adxLevel === 'STRONG' || (adxLevel === 'MODERATE' && volSustained)) {
                 quality = 'Forte';
-                qualityEmoji = '💪';
+                qualityEmoji = 'ðª';
                 qualityScore = 80;
             } else if (adxLevel === 'MODERATE') {
-                quality = 'Estável';
-                qualityEmoji = '✅';
+                quality = 'EstÃ¡vel';
+                qualityEmoji = 'â';
                 qualityScore = 65;
             } else if (adxLevel === 'WEAK') {
                 quality = 'Fraco';
-                qualityEmoji = '⚠️';
+                qualityEmoji = 'â ï¸';
                 qualityScore = 40;
             } else {
                 quality = 'Enfraquecendo';
-                qualityEmoji = '📉';
+                qualityEmoji = 'ð';
                 qualityScore = 25;
             }
         } else if (regime === 'HIGH_VOL') {
             quality = 'Perigoso';
-            qualityEmoji = '🌋';
+            qualityEmoji = 'ð';
             qualityScore = 20;
         } else {
             quality = 'Normal';
-            qualityEmoji = '➖';
+            qualityEmoji = 'â';
             qualityScore = 50;
         }
 
@@ -3237,16 +3237,16 @@
             qualityScore,
             adxLevel,
             regime,
-            details: `${qualityEmoji} ${regime} (${quality}) — ADX ${adx.toFixed(0)} (${adxLevel}), ATR p${atrPercentile}`
+            details: `${qualityEmoji} ${regime} (${quality}) â ADX ${adx.toFixed(0)} (${adxLevel}), ATR p${atrPercentile}`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 22: SATURATION / EXTENSION INDICATOR
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Measures how much of the "expected move" has already happened.
-     * If price has already moved 80% of the avg 4h range → late entry risk.
+     * If price has already moved 80% of the avg 4h range â late entry risk.
      *
      * Uses:
      *   - ATR-based expected range for the current 4h candle
@@ -3285,20 +3285,20 @@
         let risk, riskEmoji, description;
         if (saturationPercent >= 85) {
             risk = 'HIGH';
-            riskEmoji = '🔴';
-            description = `Movimento já estendido (${saturationPercent}% do ATR 4h) — risco de pullback ↑`;
+            riskEmoji = 'ð´';
+            description = `Movimento jÃ¡ estendido (${saturationPercent}% do ATR 4h) â risco de pullback â`;
         } else if (saturationPercent >= 60) {
             risk = 'MEDIUM';
-            riskEmoji = '🟡';
-            description = `Expansão moderada (${saturationPercent}% do ATR 4h) — cuidado com late entry`;
+            riskEmoji = 'ð¡';
+            description = `ExpansÃ£o moderada (${saturationPercent}% do ATR 4h) â cuidado com late entry`;
         } else if (saturationPercent >= 30) {
             risk = 'LOW';
-            riskEmoji = '🟢';
-            description = `Espaço disponível (${saturationPercent}% do ATR 4h) — entrada boa`;
+            riskEmoji = 'ð¢';
+            description = `EspaÃ§o disponÃ­vel (${saturationPercent}% do ATR 4h) â entrada boa`;
         } else {
             risk = 'VERY_LOW';
-            riskEmoji = '🟢';
-            description = `Início do movimento (${saturationPercent}% do ATR 4h) — timing ótimo`;
+            riskEmoji = 'ð¢';
+            description = `InÃ­cio do movimento (${saturationPercent}% do ATR 4h) â timing Ã³timo`;
         }
 
         return {
@@ -3314,9 +3314,9 @@
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 23: NOTIFICATION CONFIGURATION + FCM INTEGRATION
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * V6: Dual notification system:
      * 1) Local Capacitor fallback for offline
@@ -3364,7 +3364,7 @@
         return t;
     }
 
-    // ── FCM Token management ──
+    // ââ FCM Token management ââ
     async function registerFcmToken(token) {
         if (!token) return false;
         safeSet(FCM_TOKEN_KEY, token);
@@ -3416,9 +3416,9 @@
         } catch {}
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 16b: NOTIFICATION COOLDOWN (v7.2 — #16)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 16b: NOTIFICATION COOLDOWN (v7.2 â #16)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     const NOTIF_COOLDOWN_KEY = STORAGE_PREFIX + 'notif_cooldown_';
     const NOTIF_COOLDOWN_MS = {
         'SETUP_CONFIRMED': 30 * 60 * 1000,     // 30 min between same type
@@ -3458,8 +3458,8 @@
             !isNotificationOnCooldown(symbol, 'SETUP_CONFIRMED')) {
             triggers.push({
                 type: 'SETUP_CONFIRMED',
-                title: `${symbol} — ${analysis.v4Signal}`,
-                body: `Setup confirmado com ${analysis.v4GatesPassed}/${analysis.v4GatesTotal} gates (${analysis.v4Confidence}% confiança, limite: ${threshold}%)`,
+                title: `${symbol} â ${analysis.v4Signal}`,
+                body: `Setup confirmado com ${analysis.v4GatesPassed}/${analysis.v4GatesTotal} gates (${analysis.v4Confidence}% confianÃ§a, limite: ${threshold}%)`,
                 priority: 'HIGH'
             });
             markNotificationSent(symbol, 'SETUP_CONFIRMED');
@@ -3471,8 +3471,8 @@
             !isNotificationOnCooldown(symbol, 'CONFIDENCE_THRESHOLD')) {
             triggers.push({
                 type: 'CONFIDENCE_THRESHOLD',
-                title: `${symbol} — Confiança ${analysis.v4Confidence}%`,
-                body: `Confiança atingiu ${analysis.v4Confidence}% (limite configurado: ${threshold}%)`,
+                title: `${symbol} â ConfianÃ§a ${analysis.v4Confidence}%`,
+                body: `ConfianÃ§a atingiu ${analysis.v4Confidence}% (limite configurado: ${threshold}%)`,
                 priority: 'MEDIUM'
             });
             markNotificationSent(symbol, 'CONFIDENCE_THRESHOLD');
@@ -3484,8 +3484,8 @@
             !isNotificationOnCooldown(symbol, 'REGIME_CHANGE')) {
             triggers.push({
                 type: 'REGIME_CHANGE',
-                title: `${symbol} — Regime mudou`,
-                body: `${prevAnalysis.enhancedRegimeV4.regime} → ${analysis.enhancedRegimeV4.regime}`,
+                title: `${symbol} â Regime mudou`,
+                body: `${prevAnalysis.enhancedRegimeV4.regime} â ${analysis.enhancedRegimeV4.regime}`,
                 priority: 'MEDIUM'
             });
             markNotificationSent(symbol, 'REGIME_CHANGE');
@@ -3498,8 +3498,8 @@
             if (jump >= (cond.scoreJumpPercent || 10)) {
                 triggers.push({
                     type: 'SCORE_JUMP',
-                    title: `${symbol} — Score subiu ${jump.toFixed(0)}%`,
-                    body: `Gate score: ${prevAnalysis.v4GateScore.toFixed(0)}% → ${analysis.v4GateScore.toFixed(0)}%`,
+                    title: `${symbol} â Score subiu ${jump.toFixed(0)}%`,
+                    body: `Gate score: ${prevAnalysis.v4GateScore.toFixed(0)}% â ${analysis.v4GateScore.toFixed(0)}%`,
                     priority: 'LOW'
                 });
                 markNotificationSent(symbol, 'SCORE_JUMP');
@@ -3509,9 +3509,9 @@
         return triggers;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // MODULE 17: MASTER V5 ENHANCEMENT ORCHESTRATOR
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Main entry: V3 does the math. V5 decides WHETHER to act,
      * HOW to act (limit vs market), and HOW MUCH to risk.
@@ -3519,10 +3519,10 @@
     async function enhanceWithReactive(v3Analysis, rawData, symbol) {
         const startTime = Date.now();
 
-        // ─── [0] DATA INTEGRITY CHECK ───
+        // âââ [0] DATA INTEGRITY CHECK âââ
         const dataIntegrity = checkDataIntegrity(rawData);
         if (!dataIntegrity.valid) {
-            // FORCE NEUTRO — no fallback, no guesses
+            // FORCE NEUTRO â no fallback, no guesses
             return {
                 ...v3Analysis,
                 v4Signal: 'NEUTRO',
@@ -3530,19 +3530,19 @@
                 v4Confidence: 5,
                 v4Probability: 50,
                 v4ActionMessage: dataIntegrity.details + '\n' + dataIntegrity.issues.join('\n'),
-                v4ActionIcon: '🚨',
+                v4ActionIcon: 'ð¨',
                 v4GateScore: 0,
                 v4GatesTotal: 9,
                 v4GatesPassed: 0,
                 v4Gates: [],
-                v4Reasoning: 'FORCE_NEUTRO: Dados críticos ausentes',
+                v4Reasoning: 'FORCE_NEUTRO: Dados crÃ­ticos ausentes',
                 v4ExecutionType: 'NONE',
                 dataIntegrity,
                 v4ProcessingTime: Date.now() - startTime
             };
         }
 
-        // Connect Real CVD WebSocket (se disponível) — skip in scan context
+        // Connect Real CVD WebSocket (se disponÃ­vel) â skip in scan context
         if (window.RealtimeCVD && !window._taScanContext) {
             try { window.RealtimeCVD.connect(symbol); } catch (e) {}
         }
@@ -3571,31 +3571,31 @@
             else if (origSignal === 'SHORT') intendedDir = 'SHORT';
         }
 
-        // ─── [1] SESSION CONTEXT ───
+        // âââ [1] SESSION CONTEXT âââ
         const sessionContext = getSessionContext();
 
-        // ─── [2] DISPLACEMENT (Z-Score) ───
+        // âââ [2] DISPLACEMENT (Z-Score) âââ
         const displacement1h = detectDisplacement(rawData.klines1h, '1h');
         const displacement4h = detectDisplacement(rawData.klines4h, '4h');
 
-        // ─── [3] VOLUME EXPANSION (Z-Score) ───
+        // âââ [3] VOLUME EXPANSION (Z-Score) âââ
         const volumeExpansion1h = detectVolumeExpansion(rawData.klines1h, Z_SCORE_LOOKBACK);
         const volumeExpansion4h = detectVolumeExpansion(rawData.klines4h, Math.min(Z_SCORE_LOOKBACK, 50));
 
-        // ─── [4] RANGE POSITION ───
+        // âââ [4] RANGE POSITION âââ
         const rangePosition = detectRangePosition(
             currentPrice,
             v3Analysis.indicators?.volumeProfile || v3Analysis.volumeProfile,
             rawData.klines1h
         );
 
-        // ─── [5] FUNDING FILTER ───
+        // âââ [5] FUNDING FILTER âââ
         const fundingFilter = checkFundingFilter(fundingRate, intendedDir);
 
-        // ─── [6] MICROSTRUCTURE ───
+        // âââ [6] MICROSTRUCTURE âââ
         const microstructure = detectMicrostructure(rawData.klines1h, intendedDir);
 
-        // ─── [7] RETEST + LIMIT ORDER ───
+        // âââ [7] RETEST + LIMIT ORDER âââ
         let retestLevel = null;
         if (rangePosition.breakoutDirection === 'LONG') {
             retestLevel = v3Analysis.indicators?.volumeProfile?.vah;
@@ -3604,37 +3604,37 @@
         }
         const retest = detectRetestAndGenerateOrder(rawData.klines1h, retestLevel, rangePosition.breakoutDirection, currentPrice, atr);
 
-        // ─── [8] SQUEEZE ───
+        // âââ [8] SQUEEZE âââ
         const squeezeState = detectSqueezeExpansion(v3Analysis.volatilityMetrics, rawData.klines1h);
 
-        // ─── [8b] VOLATILITY REGIME SHIFT ───
+        // âââ [8b] VOLATILITY REGIME SHIFT âââ
         const volRegimeShift = detectVolatilityRegimeShift(rawData.klines1h);
 
-        // ─── [8c] MARKET BREADTH ───
+        // âââ [8c] MARKET BREADTH âââ
         const marketBreadth = calculateMarketBreadth(symbol, intendedDir);
 
-        // ─── [8d] MULTI-TIMEFRAME ANALYSIS (v7.1) ───
+        // âââ [8d] MULTI-TIMEFRAME ANALYSIS (v7.1) âââ
         const mtfAnalysis = analyzeMultiTimeframe(rawData);
 
-        // ─── [9] OI ANALYSIS (Open Interest + OI Delta) ───
+        // âââ [9] OI ANALYSIS (Open Interest + OI Delta) âââ
         const oiAnalysis = analyzeOpenInterest(rawData, intendedDir);
 
-        // ─── [11] ENHANCED 6-STATE REGIME (moved before anti-spoof for adaptive thresholds) ───
+        // âââ [11] ENHANCED 6-STATE REGIME (moved before anti-spoof for adaptive thresholds) âââ
         const enhancedRegimeV4 = computeEnhancedRegime(rawData, v3Analysis.enhancedRegime || v3Analysis.marketRegime, oiAnalysis);
 
-        // ─── [10] ANTI-SPOOFING (v7.1: Regime-Adaptive) ───
+        // âââ [10] ANTI-SPOOFING (v7.1: Regime-Adaptive) âââ
         const antiSpoof = detectSpoofing(rawData, enhancedRegimeV4?.regime);
 
-        // ─── [12] MODEL STABILITY CHECK ───
+        // âââ [12] MODEL STABILITY CHECK âââ
         const modelStability = checkModelStability(symbol);
 
-        // ─── [12b] REGIME QUALITY ───
+        // âââ [12b] REGIME QUALITY âââ
         const regimeQuality = classifyRegimeQuality(enhancedRegimeV4, volumeExpansion1h, rawData.klines1h);
 
-        // ─── [12c] SATURATION / EXTENSION ───
+        // âââ [12c] SATURATION / EXTENSION âââ
         const saturation = measureSaturation(rawData, currentPrice, intendedDir);
 
-        // ─── [13] EVALUATE GATES (regime-adaptive, with OI + Anti-Spoof) ───
+        // âââ [13] EVALUATE GATES (regime-adaptive, with OI + Anti-Spoof) âââ
         const v4Result = evaluateReactiveGates({
             v3Signal, v3Confidence, v3Score,
             displacement1h, displacement4h,
@@ -3654,84 +3654,84 @@
         // Store session key for tracking
         v4Result.sessionKey = sessionContext.session;
 
-        // ─── v7.2 NEW MODULES ───
+        // âââ v7.2 NEW MODULES âââ
         const liquidityLevels = analyzeLiquidityLevels(rawData, currentPrice);
         const hiddenDivergence = detectHiddenDivergence(rawData);
         const signalTTL = checkSignalTTL(symbol, v4Result.v4Signal);
         const liquidationZones = estimateLiquidationZones(rawData, currentPrice);
 
-        // Connect order flow WebSocket (first call only) — skip in scan context
+        // Connect order flow WebSocket (first call only) â skip in scan context
         if (!window._taScanContext) connectOrderFlowWS(symbol);
         const orderFlow = getOrderFlowAnalysis(symbol);
 
-        // ─── SOFT: Hidden divergence bonus ───
+        // âââ SOFT: Hidden divergence bonus âââ
         // (added to soft adjustments array below)
 
-        // ─── SOFT: Signal TTL decay ───
+        // âââ SOFT: Signal TTL decay âââ
         // (applied after gates via soft adjustments)
 
-        // ─── SOFT: Order flow confirmation ───
+        // âââ SOFT: Order flow confirmation âââ
         // (added to soft adjustments array below)
 
-        // ═══════════════════════════════════════════════════════════════
+        // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
         // v7.2: CENTRALIZED SOFT-ADJUSTMENT SYSTEM (#2)
-        // ═══════════════════════════════════════════════════════════════
+        // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
         // All confidence adjustments are collected, then applied once with a cap.
         // Hard overrides (signal type changes) remain separate.
         const softAdjustments = [];
 
-        // ─── HARD OVERRIDE: SQUEEZE BLOCK (signal demotion only) ───
+        // âââ HARD OVERRIDE: SQUEEZE BLOCK (signal demotion only) âââ
         if (squeezeState.isSqueeze && !squeezeState.expanding && v4Result.v4Signal.includes('CONFIRMED')) {
             v4Result.v4Signal = 'AGUARDAR_' + (v4Result.intendedDirection || 'LONG');
             v4Result.v4SignalType = 'aguardar';
-            softAdjustments.push({ source: 'squeeze', adj: -15, reason: '📦 Squeeze sem expansão' });
+            softAdjustments.push({ source: 'squeeze', adj: -15, reason: 'ð¦ Squeeze sem expansÃ£o' });
         }
 
-        // ─── SOFT: Volatility Regime Shift ───
+        // âââ SOFT: Volatility Regime Shift âââ
         if (volRegimeShift.shift === 'EXPLOSIVE') {
-            softAdjustments.push({ source: 'volRegime', adj: -5, reason: `${volRegimeShift.icon} Vol EXPLOSIVO — SL mais amplo` });
+            softAdjustments.push({ source: 'volRegime', adj: -5, reason: `${volRegimeShift.icon} Vol EXPLOSIVO â SL mais amplo` });
         } else if (volRegimeShift.shift === 'COMPRESSED') {
-            softAdjustments.push({ source: 'volRegime', adj: +5, reason: `${volRegimeShift.icon} Vol COMPRIMIDA — breakout favorável` });
+            softAdjustments.push({ source: 'volRegime', adj: +5, reason: `${volRegimeShift.icon} Vol COMPRIMIDA â breakout favorÃ¡vel` });
         }
 
-        // ─── SOFT: Market Breadth ───
+        // âââ SOFT: Market Breadth âââ
         if (marketBreadth.available && marketBreadth.boost !== 0) {
             softAdjustments.push({ source: 'breadth', adj: marketBreadth.boost, reason: `${marketBreadth.icon} ${marketBreadth.details}` });
         }
 
-        // ─── SOFT: MTF Alignment ───
+        // âââ SOFT: MTF Alignment âââ
         if (mtfAnalysis.available && mtfAnalysis.confidenceModifier !== 0) {
             softAdjustments.push({ source: 'mtf', adj: mtfAnalysis.confidenceModifier, reason: `${mtfAnalysis.icon} MTF: ${mtfAnalysis.summary}` });
         }
 
-        // ─── SOFT: Session context (moved from gateScore for #3) ───
+        // âââ SOFT: Session context (moved from gateScore for #3) âââ
         if (sessionContext) {
             const sessMult = sessionContext.signalMultiplier || 1.0;
             const sessAdj = Math.round((sessMult - 1.0) * 15); // kill zone: ~+7, dead zone: ~-9
             if (sessAdj !== 0) {
-                softAdjustments.push({ source: 'session', adj: sessAdj, reason: `${sessionContext.isKillZone ? '🔥' : '💤'} Sessão: ${sessionContext.session}` });
+                softAdjustments.push({ source: 'session', adj: sessAdj, reason: `${sessionContext.isKillZone ? 'ð¥' : 'ð¤'} SessÃ£o: ${sessionContext.session}` });
             }
         }
 
-        // ─── SOFT: Funding penalty (gradual, from v7.2 funding filter) ───
+        // âââ SOFT: Funding penalty (gradual, from v7.2 funding filter) âââ
         if (fundingFilter?.penalty && fundingFilter.penalty !== 0) {
-            softAdjustments.push({ source: 'funding', adj: fundingFilter.penalty, reason: `💰 ${fundingFilter.reason}` });
+            softAdjustments.push({ source: 'funding', adj: fundingFilter.penalty, reason: `ð° ${fundingFilter.reason}` });
         }
 
-        // ─── SOFT: Hidden divergence (#10) ───
+        // âââ SOFT: Hidden divergence (#10) âââ
         if (hiddenDivergence.detected) {
             const divDir = hiddenDivergence.type === 'HIDDEN_BULL' ? 'LONG' : 'SHORT';
             const divAdj = divDir === v4Result.intendedDirection ? +4 : -4;
-            softAdjustments.push({ source: 'hiddenDiv', adj: divAdj, reason: `🔍 ${hiddenDivergence.details}` });
+            softAdjustments.push({ source: 'hiddenDiv', adj: divAdj, reason: `ð ${hiddenDivergence.details}` });
         }
 
-        // ─── SOFT: Signal TTL decay (#11) ───
+        // âââ SOFT: Signal TTL decay (#11) âââ
         if (signalTTL.decayFactor < 1.0) {
-            const ttlAdj = Math.round((signalTTL.decayFactor - 1.0) * 20); // e.g. 0.5 → -10
-            softAdjustments.push({ source: 'signalTTL', adj: ttlAdj, reason: `⏳ ${signalTTL.details}` });
+            const ttlAdj = Math.round((signalTTL.decayFactor - 1.0) * 20); // e.g. 0.5 â -10
+            softAdjustments.push({ source: 'signalTTL', adj: ttlAdj, reason: `â³ ${signalTTL.details}` });
         }
 
-        // ─── SOFT: Order flow pressure (#15) ───
+        // âââ SOFT: Order flow pressure (#15) âââ
         if (orderFlow.available) {
             const flowDir = orderFlow.pressure.includes('BUY') ? 'LONG' : orderFlow.pressure.includes('SELL') ? 'SHORT' : null;
             if (flowDir) {
@@ -3741,12 +3741,12 @@
             }
         }
 
-        // ─── [11d] SAVE SIGNAL DIRECTION FOR BREADTH ───
+        // âââ [11d] SAVE SIGNAL DIRECTION FOR BREADTH âââ
         const signalDirs = safeGet(STORAGE_PREFIX + 'signal_directions') || {};
         signalDirs[symbol] = { direction: v4Result.intendedDirection || 'NEUTRAL', ts: Date.now() };
         safeSet(STORAGE_PREFIX + 'signal_directions', signalDirs);
 
-        // ─── V3/V4 SIGNAL CONFLICT RESOLUTION ───
+        // âââ V3/V4 SIGNAL CONFLICT RESOLUTION âââ
         const v3Dir = v3Signal === 'LONG' ? 'LONG' : v3Signal === 'SHORT' ? 'SHORT' : null;
         const v4Dir = v4Result.intendedDirection;
         let signalConflict = null;
@@ -3756,27 +3756,27 @@
                 // HARD: downgrade signal type
                 v4Result.v4Signal = 'AGUARDAR_' + v4Dir;
                 v4Result.v4SignalType = 'aguardar';
-                softAdjustments.push({ source: 'v3v4_conflict', adj: -15, reason: `⚡ Conflito V3(${v3Dir})/V4(${v4Dir})` });
+                softAdjustments.push({ source: 'v3v4_conflict', adj: -15, reason: `â¡ Conflito V3(${v3Dir})/V4(${v4Dir})` });
             } else {
-                softAdjustments.push({ source: 'v3v4_conflict', adj: -8, reason: `⚡ Conflito direção V3/V4` });
+                softAdjustments.push({ source: 'v3v4_conflict', adj: -8, reason: `â¡ Conflito direÃ§Ã£o V3/V4` });
             }
         } else if (v3Dir && v4Dir && v3Dir === v4Dir && v4Result.v4Signal.includes('CONFIRMED')) {
             signalConflict = { type: 'AGREEMENT', v3: v3Dir, v4: v4Dir };
-            softAdjustments.push({ source: 'v3v4_agree', adj: +5, reason: '✅ V3/V4 concordam na direção' });
+            softAdjustments.push({ source: 'v3v4_agree', adj: +5, reason: 'â V3/V4 concordam na direÃ§Ã£o' });
         }
         v4Result.signalConflict = signalConflict;
 
-        // ─── HARD OVERRIDE: MODEL STABILITY ───
+        // âââ HARD OVERRIDE: MODEL STABILITY âââ
         if (modelStability.action === 'FORCE_AGUARDAR' && v4Result.v4Signal.includes('CONFIRMED')) {
             v4Result.v4Signal = 'AGUARDAR_' + (v4Result.intendedDirection || 'LONG');
             v4Result.v4SignalType = 'aguardar';
-            v4Result.actionMessage += `\n🚨 Modelo instável (WR ${modelStability.rollingWR}%) — forçando AGUARDAR.`;
+            v4Result.actionMessage += `\nð¨ Modelo instÃ¡vel (WR ${modelStability.rollingWR}%) â forÃ§ando AGUARDAR.`;
         }
         if (modelStability.confidenceAdjust && modelStability.confidenceAdjust !== 0) {
-            softAdjustments.push({ source: 'modelStability', adj: modelStability.confidenceAdjust, reason: `📊 Estabilidade modelo: ${modelStability.details}` });
+            softAdjustments.push({ source: 'modelStability', adj: modelStability.confidenceAdjust, reason: `ð Estabilidade modelo: ${modelStability.details}` });
         }
 
-        // ─── [13] RISK ENGINE ───
+        // âââ [13] RISK ENGINE âââ
         const riskEngine = calculateRisk({
             currentPrice,
             limitOrder: retest.limitOrder,
@@ -3789,10 +3789,10 @@
             v4Result.v4Signal = 'NEUTRO';
             v4Result.v4SignalType = 'aguardar';
             v4Result.v4Confidence = 10;
-            v4Result.actionMessage = `🛑 KILL SWITCH: ${riskEngine.killReason}`;
+            v4Result.actionMessage = `ð KILL SWITCH: ${riskEngine.killReason}`;
         }
 
-        // ─── [14] EXECUTION TYPE ANNOTATION ───
+        // âââ [14] EXECUTION TYPE ANNOTATION âââ
         let v4ExecutionType = 'NONE';
         if (v4Result.v4Signal.includes('CONFIRMED')) {
             v4ExecutionType = retest.retested ? 'MARKET_AFTER_RETEST' : 'LIMIT_ON_RETEST';
@@ -3800,7 +3800,7 @@
             v4ExecutionType = 'WAIT';
         }
 
-        // ─── [15] COLLECTIVE (async, non-blocking) ───
+        // âââ [15] COLLECTIVE (async, non-blocking) âââ
         let collectiveStats = null;
         try {
             const [stats] = await Promise.all([
@@ -3812,10 +3812,10 @@
 
         // SOFT: collective consensus
         if (collectiveStats?.consensusSignal === v4Result.v4Signal && collectiveStats?.consensusConfidence > 60) {
-            softAdjustments.push({ source: 'collective', adj: +5, reason: '🤝 Consenso coletivo alinhado' });
+            softAdjustments.push({ source: 'collective', adj: +5, reason: 'ð¤ Consenso coletivo alinhado' });
         }
 
-        // ─── [16] TRACK & EVALUATE ───
+        // âââ [16] TRACK & EVALUATE âââ
         trackReactiveSignal(symbol, v4Result, v3Analysis);
         const reactivePerf = evaluateReactiveSignals(symbol, currentPrice);
 
@@ -3823,10 +3823,10 @@
             queueTradeForBackend(symbol, v4Result, v3Analysis);
         }
 
-        // ─── [17] BOT WEBHOOK ───
+        // âââ [17] BOT WEBHOOK âââ
         const botWebhook = generateBotWebhook(v4Result, retest.limitOrder, riskEngine, symbol);
 
-        // ─── [18] BTC ALIGNMENT (async) ───
+        // âââ [18] BTC ALIGNMENT (async) âââ
         let btcAlignment = null;
         try {
             btcAlignment = await analyzeBtcAlignment(rawData, intendedDir, symbol);
@@ -3834,7 +3834,7 @@
             btcAlignment = { available: false, alignment: 'UNKNOWN', correlation: 0, risk: 'UNKNOWN', details: 'Erro ao buscar BTC' };
         }
 
-        // ─── [18b] MACRO REGIME + SYSTEMIC RISK + MACRO LIQUIDITY (async) ───
+        // âââ [18b] MACRO REGIME + SYSTEMIC RISK + MACRO LIQUIDITY (async) âââ
         let macroRegime = null;
         let systemicRisk = null;
         let macroLiquidity = null;
@@ -3853,17 +3853,17 @@
         if (systemicRisk && systemicRisk.level === 'CRITICAL' && v4Result.v4Signal.includes('CONFIRMED')) {
             v4Result.v4Signal = 'AGUARDAR_' + (v4Result.intendedDirection || 'LONG');
             v4Result.v4SignalType = 'aguardar';
-            v4Result.actionMessage += `\n🌊 RISCO SISTÊMICO CRÍTICO (corr: ${(systemicRisk.avg_correlation || 0).toFixed(2)}) — operações bloqueadas.`;
+            v4Result.actionMessage += `\nð RISCO SISTÃMICO CRÃTICO (corr: ${(systemicRisk.avg_correlation || 0).toFixed(2)}) â operaÃ§Ãµes bloqueadas.`;
         }
         // SOFT: systemic risk penalty
         if (systemicRisk && systemicRisk.risk_multiplier && systemicRisk.risk_multiplier < 1.0) {
-            const sysAdj = Math.round((systemicRisk.risk_multiplier - 1.0) * 30); // e.g. 0.8 → -6
-            softAdjustments.push({ source: 'systemicRisk', adj: sysAdj, reason: `⚠️ Risco sistêmico ${systemicRisk.level} (×${systemicRisk.risk_multiplier.toFixed(2)})` });
+            const sysAdj = Math.round((systemicRisk.risk_multiplier - 1.0) * 30); // e.g. 0.8 â -6
+            softAdjustments.push({ source: 'systemicRisk', adj: sysAdj, reason: `â ï¸ Risco sistÃªmico ${systemicRisk.level} (Ã${systemicRisk.risk_multiplier.toFixed(2)})` });
         }
 
         // SOFT: macro regime
         if (macroRegime && macroRegime.regime === 'MACRO_RISK_OFF' && v4Result.v4Signal.includes('LONG')) {
-            softAdjustments.push({ source: 'macroRegime', adj: -10, reason: '📉 Macro RISK OFF — longs penalizados' });
+            softAdjustments.push({ source: 'macroRegime', adj: -10, reason: 'ð Macro RISK OFF â longs penalizados' });
         }
 
         // SOFT: macro liquidity
@@ -3871,8 +3871,8 @@
             softAdjustments.push({ source: 'macroLiquidity', adj: macroLiquidity.adjustment, reason: `${macroLiquidity.icon} Liquidez macro ${macroLiquidity.trend}` });
         }
 
-        // ═══════ APPLY ALL SOFT ADJUSTMENTS WITH CAP ═══════
-        const SOFT_ADJ_CAP = 25; // max ±25 total from all soft adjustments
+        // âââââââ APPLY ALL SOFT ADJUSTMENTS WITH CAP âââââââ
+        const SOFT_ADJ_CAP = 25; // max Â±25 total from all soft adjustments
         const totalPositive = softAdjustments.filter(a => a.adj > 0).reduce((s, a) => s + a.adj, 0);
         const totalNegative = softAdjustments.filter(a => a.adj < 0).reduce((s, a) => s + a.adj, 0);
         const rawSoftTotal = totalPositive + totalNegative;
@@ -3886,7 +3886,7 @@
         const activeAdjs = softAdjustments.filter(a => a.adj !== 0);
         if (activeAdjs.length > 0) {
             const adjSummary = activeAdjs.map(a => `${a.adj > 0 ? '+' : ''}${a.adj} ${a.source}`).join(', ');
-            v4Result.actionMessage += `\n📊 Ajustes (${cappedSoftTotal > 0 ? '+' : ''}${cappedSoftTotal}${rawSoftTotal !== cappedSoftTotal ? ' cap de ±' + SOFT_ADJ_CAP : ''}): ${adjSummary}`;
+            v4Result.actionMessage += `\nð Ajustes (${cappedSoftTotal > 0 ? '+' : ''}${cappedSoftTotal}${rawSoftTotal !== cappedSoftTotal ? ' cap de Â±' + SOFT_ADJ_CAP : ''}): ${adjSummary}`;
         }
 
         // Store soft adjustments in result for transparency
@@ -3897,13 +3897,13 @@
             cap: SOFT_ADJ_CAP
         };
 
-        // ─── [18c] DYNAMIC THRESHOLDS (async, non-blocking) ───
+        // âââ [18c] DYNAMIC THRESHOLDS (async, non-blocking) âââ
         let dynamicThresholds = null;
         try {
             dynamicThresholds = await fetchDynamicThresholds(symbol);
         } catch {}
 
-        // ─── [18d] EXPECTANCY (async, non-blocking) ───
+        // âââ [18d] EXPECTANCY (async, non-blocking) âââ
         let expectancy = null;
         const fingerprint = getSetupFingerprint(
             enhancedRegimeV4?.regime,
@@ -3915,21 +3915,21 @@
             expectancy = await fetchSetupExpectancy(symbol, fingerprint?.fingerprint || 'unknown');
         } catch {}
 
-        // ─── [19] SCORE PERCENTILE ───
+        // âââ [19] SCORE PERCENTILE âââ
         updateScoreHistory(symbol, v4Result.v4Confidence, v4Result.gateScore, v4Result.passedCount, v4Result.totalGates);
         const scorePercentile = getScorePercentile(symbol, v4Result.v4Confidence);
 
-        // ─── [20] SETUP FINGERPRINT (already computed above for expectancy) ───
+        // âââ [20] SETUP FINGERPRINT (already computed above for expectancy) âââ
         const setupFingerprint = fingerprint;
         const setupStats = getSetupStats(setupFingerprint);
 
-        // ─── [21] SUMMARY ───
+        // âââ [21] SUMMARY âââ
         const reactiveSummary = generateReactiveSummary(
             v4Result, squeezeState, collectiveStats, reactivePerf,
             sessionContext, retest.limitOrder, riskEngine, microstructure, modelStability
         );
 
-        // ─── [22] v7.2: DYNAMIC EXIT PLAN (#12) ───
+        // âââ [22] v7.2: DYNAMIC EXIT PLAN (#12) âââ
         const dynamicExitPlan = generateDynamicExitPlan({
             currentPrice,
             atr,
@@ -3939,7 +3939,7 @@
             riskEngine
         });
 
-        // ─── BUILD RESULT ───
+        // âââ BUILD RESULT âââ
         return {
             ...v3Analysis,
 
@@ -4043,9 +4043,9 @@
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 28: MULTI-TIMEFRAME ANALYSIS (v7.1 — TPE)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 28: MULTI-TIMEFRAME ANALYSIS (v7.1 â TPE)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Analyzes trend alignment across 4 timeframes (15m, 1h, 4h, 1d).
      * - Computes EMA trend direction per TF
@@ -4070,7 +4070,7 @@
         const vol4h = calcTfVolatility(rawData.klines4h);
         const vol1d = calcTfVolatility(rawData.klines1d);
         
-        // Inverso normalizado: menos vol = mais confiável para trend
+        // Inverso normalizado: menos vol = mais confiÃ¡vel para trend
         const totalVol = (vol15m || 0.001) + (vol1h || 0.001) + (vol4h || 0.001) + (vol1d || 0.001);
         const invVol15m = totalVol / Math.max(vol15m, 0.0001);
         const invVol1h = totalVol / Math.max(vol1h, 0.0001);
@@ -4174,13 +4174,13 @@
             confidenceModifier,
             adaptiveWeights: { '15m': timeframes[0].weight.toFixed(2), '1h': timeframes[1].weight.toFixed(2), '4h': timeframes[2].weight.toFixed(2), '1d': timeframes[3].weight.toFixed(2) },
             summary: `${alignedCount}/${totalAvailable} TFs ${dominantDirection.toLowerCase()} (${alignmentScore.toFixed(0)}%)`,
-            icon: alignedCount === totalAvailable ? '🎯' : alignedCount >= totalAvailable * 0.5 ? '⚡' : '⚠️'
+            icon: alignedCount === totalAvailable ? 'ð¯' : alignedCount >= totalAvailable * 0.5 ? 'â¡' : 'â ï¸'
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 29: LIQUIDITY LEVELS ANALYSIS (v7.2 — #9)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 29: LIQUIDITY LEVELS ANALYSIS (v7.2 â #9)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Identifies price levels where liquidity is likely pooled
      * (clustering of swing highs/lows = stop losses = targets for MMs).
@@ -4250,24 +4250,24 @@
             result.nearestBelow = below[0] || null;
             result.score = clamp(proximityScore, 0, 20);
             result.details = allLevels.length > 0
-                ? `${allLevels.length} níveis de liquidez. Mais próx: ${above[0] ? '$' + above[0].price.toFixed(0) + '↑' : '-'} / ${below[0] ? '$' + below[0].price.toFixed(0) + '↓' : '-'}`
-                : 'Sem níveis de liquidez claros.';
+                ? `${allLevels.length} nÃ­veis de liquidez. Mais prÃ³x: ${above[0] ? '$' + above[0].price.toFixed(0) + 'â' : '-'} / ${below[0] ? '$' + below[0].price.toFixed(0) + 'â' : '-'}`
+                : 'Sem nÃ­veis de liquidez claros.';
         } catch (e) {
             result.details = 'Erro analisando liquidez.';
         }
         return result;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 30: HIDDEN DIVERGENCE DETECTION (v7.2 — #10)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 30: HIDDEN DIVERGENCE DETECTION (v7.2 â #10)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Detects hidden divergences between price and RSI/CVD.
-     * Hidden bull div: price makes higher low, RSI/CVD makes lower low → continuation up
-     * Hidden bear div: price makes lower high, RSI/CVD makes higher high → continuation down
+     * Hidden bull div: price makes higher low, RSI/CVD makes lower low â continuation up
+     * Hidden bear div: price makes lower high, RSI/CVD makes higher high â continuation down
      */
     function detectHiddenDivergence(rawData) {
-        const result = { detected: false, type: null, strength: 0, details: 'Sem divergência oculta' };
+        const result = { detected: false, type: null, strength: 0, details: 'Sem divergÃªncia oculta' };
         try {
             const klines = rawData?.klines1h;
             if (!klines || klines.length < 30) return result;
@@ -4301,22 +4301,22 @@
                 result.detected = true;
                 result.type = 'HIDDEN_BULL';
                 result.strength = clamp(Math.round((priceLow2 - priceLow1) / priceLow1 * 1000), 1, 10);
-                result.details = `Divergência oculta BULL: preço HL, RSI LL → continuação up`;
+                result.details = `DivergÃªncia oculta BULL: preÃ§o HL, RSI LL â continuaÃ§Ã£o up`;
             }
             // Hidden bearish: price LH, RSI HH
             else if (priceHigh2 < priceHigh1 && rsi2 > rsi1) {
                 result.detected = true;
                 result.type = 'HIDDEN_BEAR';
                 result.strength = clamp(Math.round((priceHigh1 - priceHigh2) / priceHigh1 * 1000), 1, 10);
-                result.details = `Divergência oculta BEAR: preço LH, RSI HH → continuação down`;
+                result.details = `DivergÃªncia oculta BEAR: preÃ§o LH, RSI HH â continuaÃ§Ã£o down`;
             }
         } catch (e) {}
         return result;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 31: SIGNAL TTL (v7.2 — #11)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 31: SIGNAL TTL (v7.2 â #11)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Tracks signal "freshness". Confirmed signals have a TTL (time to live).
      * If the signal stays the same for too long without execution, it decays.
@@ -4331,7 +4331,7 @@
         const stored = safeGet(key);
         const now = Date.now();
 
-        // If signal changed → reset TTL
+        // If signal changed â reset TTL
         if (!stored || stored.signal !== currentSignal) {
             const entry = { signal: currentSignal, createdAt: now, lastChecked: now };
             safeSet(key, entry);
@@ -4358,13 +4358,13 @@
             age,
             decayFactor: +decayFactor.toFixed(2),
             remaining: SIGNAL_TTL_MAX_MS - age,
-            details: decayFactor < 1.0 ? `Sinal envelhecendo (${(age / 3600000).toFixed(1)}h, fator ${decayFactor.toFixed(2)})` : 'Sinal válido'
+            details: decayFactor < 1.0 ? `Sinal envelhecendo (${(age / 3600000).toFixed(1)}h, fator ${decayFactor.toFixed(2)})` : 'Sinal vÃ¡lido'
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 32: DYNAMIC EXIT PLAN (v7.2 — #12)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 32: DYNAMIC EXIT PLAN (v7.2 â #12)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Generates an exit plan based on market structure:
      * - TP1: nearest liquidity level or 1R
@@ -4424,13 +4424,13 @@
                 tp2Pct: 30, // close 30% at TP2
                 tp3Pct: 30  // run 30% to TP3 with trailing
             },
-            details: `SL $${stopLoss.toFixed(0)} | TP1 $${structuredTp1.toFixed(0)} (1R) | TP2 $${structuredTp2.toFixed(0)} (2R) | TP3 $${tp3.toFixed(0)} (3R) | Trail ${trailingMultiplier}×ATR`
+            details: `SL $${stopLoss.toFixed(0)} | TP1 $${structuredTp1.toFixed(0)} (1R) | TP2 $${structuredTp2.toFixed(0)} (2R) | TP3 $${tp3.toFixed(0)} (3R) | Trail ${trailingMultiplier}ÃATR`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 33: LIQUIDATION ZONES ESTIMATION (v7.2 — #14)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 33: LIQUIDATION ZONES ESTIMATION (v7.2 â #14)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * Estimates where leveraged liquidations are clustered based on
      * recent price extremes and common leverage levels (5x, 10x, 25x, 50x).
@@ -4457,7 +4457,7 @@
                         leverage: lev,
                         side: 'LONG_LIQ',
                         distance: +((currentPrice - liqPrice) / currentPrice * 100).toFixed(2),
-                        details: `Liquidação de longs ${lev}× abertos em $${recentHigh.toFixed(0)}`
+                        details: `LiquidaÃ§Ã£o de longs ${lev}Ã abertos em $${recentHigh.toFixed(0)}`
                     });
                 }
             }
@@ -4471,7 +4471,7 @@
                         leverage: lev,
                         side: 'SHORT_LIQ',
                         distance: +((liqPrice - currentPrice) / currentPrice * 100).toFixed(2),
-                        details: `Liquidação de shorts ${lev}× abertos em $${recentLow.toFixed(0)}`
+                        details: `LiquidaÃ§Ã£o de shorts ${lev}Ã abertos em $${recentLow.toFixed(0)}`
                     });
                 }
             }
@@ -4484,16 +4484,16 @@
             result.zones = zones;
             result.nearestLong = longLiqs[0] || null;
             result.nearestShort = shortLiqs[0] || null;
-            result.details = `${zones.length} zonas de liquidação mapeadas.`;
+            result.details = `${zones.length} zonas de liquidaÃ§Ã£o mapeadas.`;
         } catch (e) {
-            result.details = 'Erro estimando zonas de liquidação.';
+            result.details = 'Erro estimando zonas de liquidaÃ§Ã£o.';
         }
         return result;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // MODULE 34: ORDER FLOW RING BUFFER (v7.2 — #15)
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    // MODULE 34: ORDER FLOW RING BUFFER (v7.2 â #15)
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     /**
      * WebSocket-based order flow aggregation using a fixed-size ring buffer.
      * Tracks aggressive buy/sell pressure imbalance in real-time.
@@ -4501,6 +4501,11 @@
      */
     const ORDER_FLOW_BUFFERS = {};
     const ORDER_FLOW_BUFFER_SIZE = 500;
+    const MAX_ACTIVE_ORDERFLOW_WS = 8;
+
+    function getActiveOrderFlowCount() {
+        return Object.values(ORDER_FLOW_BUFFERS).filter(buf => buf && (buf.wsConnected || buf._ws)).length;
+    }
 
     function getOrderFlowBuffer(symbol) {
         if (!ORDER_FLOW_BUFFERS[symbol]) {
@@ -4543,6 +4548,9 @@
     function connectOrderFlowWS(symbol) {
         const buf = getOrderFlowBuffer(symbol);
         if (buf.wsConnected) return;
+        if (buf._ws && (buf._ws.readyState === WebSocket.OPEN || buf._ws.readyState === WebSocket.CONNECTING)) return;
+        if (!buf.wsConnected && !buf._ws && getActiveOrderFlowCount() >= MAX_ACTIVE_ORDERFLOW_WS) return;
+        buf._disconnected = false;
 
         try {
             const pair = symbol.toLowerCase().replace('/', '');
@@ -4557,9 +4565,11 @@
             ws.onopen = () => { buf.wsConnected = true; };
             ws.onclose = () => {
                 buf.wsConnected = false;
+                buf._ws = null;
                 // Auto-reconnect after 5s only if not intentionally disconnected
                 if (!buf._disconnected) {
-                    setTimeout(() => connectOrderFlowWS(symbol), 5000);
+                    if (buf._reconnectTimer) clearTimeout(buf._reconnectTimer);
+                    buf._reconnectTimer = setTimeout(() => connectOrderFlowWS(symbol), 5000);
                 }
             };
             ws.onerror = () => { ws.close(); };
@@ -4573,6 +4583,10 @@
         if (!buf) return;
         buf._disconnected = true;
         buf.wsConnected = false;
+        if (buf._reconnectTimer) {
+            clearTimeout(buf._reconnectTimer);
+            buf._reconnectTimer = null;
+        }
         if (buf._ws) {
             buf._ws.onclose = null; // prevent reconnect
             buf._ws.close();
@@ -4615,16 +4629,16 @@
             pressure,
             tradesInBuffer: buf.count,
             staleness,
-            icon: pressure.includes('BUY') ? '🟢' : pressure.includes('SELL') ? '🔴' : '⚪',
+            icon: pressure.includes('BUY') ? 'ð¢' : pressure.includes('SELL') ? 'ð´' : 'âª',
             details: isStale
                 ? `Order flow stale (${(staleness / 1000).toFixed(0)}s sem update)`
                 : `Buy ${buyPct.toFixed(0)}% / Sell ${sellPct.toFixed(0)}% (${buf.count} trades, imb: ${imbalance > 0 ? '+' : ''}${imbalance.toFixed(1)}%)`
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     // EXPORT
-    // ═══════════════════════════════════════════════════════════════
+    // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     window.TAEngineV4 = {
         // Core
         enhanceWithReactive,

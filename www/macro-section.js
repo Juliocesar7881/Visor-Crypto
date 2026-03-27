@@ -63,6 +63,7 @@
     let indicatorCandleData = null;
     let _chartRequestId = 0; // Race condition guard
     let macroPriceFetchPromise = null;
+    let macroPriceWarmupPromise = null;
     let macroPriceFetchStartedAt = 0;
 
     function macroLog(msg, type = 'info') {
@@ -105,18 +106,26 @@
     // CACHE DE PREÇOS - localStorage para load instantâneo
     // ============================================
     const INDICATOR_CACHE_KEY = 'vc_macro_indicator_cache';
-    const INDICATOR_CACHE_TTL = 5 * 60 * 1000; // 5 min para cache ser válido
+    const INDICATOR_CACHE_TTL = 10 * 60 * 1000; // 10 min máx de defasagem
+    const INDICATOR_STALE_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 dias (apenas valores reais já obtidos)
     
-    function loadCachedPrices() {
+    function loadCachedPrices(options = {}) {
         try {
+            const { allowStale = false } = options;
             const raw = localStorage.getItem(INDICATOR_CACHE_KEY);
             if (!raw) return false;
             const cache = JSON.parse(raw);
-            if (!cache.ts || (Date.now() - cache.ts) > INDICATOR_CACHE_TTL) return false;
+            if (!cache.ts) return false;
+            const ageMs = Date.now() - cache.ts;
+            const isFresh = ageMs <= INDICATOR_CACHE_TTL;
+            const isStaleButAllowed = allowStale && ageMs <= INDICATOR_STALE_CACHE_MAX_AGE;
+            if (!isFresh && !isStaleButAllowed) return false;
             if (cache.prices) Object.assign(indicatorPrices, cache.prices);
             if (cache.changes) Object.assign(indicatorChanges, cache.changes);
             if (cache.prev) Object.assign(previousIndicatorPrices, cache.prev);
-            macroLog('📦 Cache de preços carregado (instantâneo)', 'success');
+            macroLog(isFresh
+                ? '📦 Cache de preços reais carregado (fresco)'
+                : '📦 Cache de preços reais carregado (stale temporário, atualizando em rede)', 'success');
             return true;
         } catch (e) { return false; }
     }
@@ -144,23 +153,27 @@
             const totalIndicators = Object.keys(MARKET_INDICATORS).length;
 
             // 1. Carregar cache imediatamente para UI instantânea
-            const hadCache = loadCachedPrices();
+            const hadCache = loadCachedPrices({ allowStale: true });
             if (hadCache) {
                 renderAllIndicators(); // Renderizar com cache enquanto busca novos
             }
 
-            // 2. Priorizar metais via Twelve Data para resposta mais rápida (ouro/prata)
-            await loadPricesViaTwelveData({ priorityOnly: true, fastMode: true });
-            renderAllIndicators();
+            // 2. Buscar dados frescos em paralelo (mantém UI instantânea com cache)
+            const forceRefresh = true;
+            const priorityPromise = loadPricesViaTwelveData({ priorityOnly: true, fastMode: true, forceRefresh })
+                .then(() => {
+                    renderAllIndicators();
+                })
+                .catch(() => {});
 
-            // 3. Buscar dados frescos em background
             macroLog('📊 Buscando via Yahoo Finance...', 'info');
-            const yahooSuccess = await loadPricesViaYahooV8();
+            const yahooSuccess = await loadPricesViaYahooV8({ forceRefresh });
+            await priorityPromise;
 
             // 4. Complementar com Twelve Data se necessário
             if (yahooSuccess < totalIndicators) {
                 macroLog('📦 Complementando com Twelve Data...', 'info');
-                await loadPricesViaTwelveData();
+                await loadPricesViaTwelveData({ forceRefresh });
             }
 
             const total = Object.values(indicatorPrices).filter(p => p > 0).length;
@@ -181,24 +194,58 @@
 
         return macroPriceFetchPromise;
     }
+
+    function warmupMacroPrices() {
+        if (macroPriceWarmupPromise) return macroPriceWarmupPromise;
+        macroPriceWarmupPromise = loadAllPricesInstant()
+            .catch(() => false)
+            .finally(() => { macroPriceWarmupPromise = null; });
+        return macroPriceWarmupPromise;
+    }
     
     // ============================================
     // YAHOO FINANCE V8 - CHART ENDPOINT (mais confiável)
     // ============================================
-    async function loadPricesViaYahooV8() {
+    function applyYahooChartData(symbol, data) {
+        const result = data?.chart?.result?.[0];
+        if (!result) return false;
+
+        const meta = result.meta;
+        const price = meta?.regularMarketPrice || 0;
+        const prevClose = meta?.previousClose || meta?.chartPreviousClose || price;
+        if (!(price > 0)) return false;
+
+        const change = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+        indicatorPrices[symbol] = price;
+        indicatorChanges[symbol] = change;
+        previousIndicatorPrices[symbol] = prevClose;
+        macroLog(`✅ ${MARKET_INDICATORS[symbol].name}: ${price.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}%)`, 'success');
+        return true;
+    }
+
+    async function loadPricesViaYahooV8(options = {}) {
+        const { forceRefresh = false } = options;
         let successCount = 0;
         const symbols = Object.keys(MARKET_INDICATORS);
         
         // Função para buscar um símbolo
         async function fetchSymbol(symbol) {
             // Pular se já temos preço
-            if (indicatorPrices[symbol] && indicatorPrices[symbol] > 0) {
+            if (!forceRefresh && indicatorPrices[symbol] && indicatorPrices[symbol] > 0) {
                 return true;
             }
             
             const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
+
+            // 1) Native HTTP (Capacitor) primeiro para evitar CORS/proxy quando possível
+            try {
+                const nativeData = await nativeHttpGet(yahooUrl);
+                if (applyYahooChartData(symbol, nativeData)) return true;
+            } catch (_) {
+                // fallback para proxy
+            }
+
             const sourceUrls = [
-                yahooUrl,
                 `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
                 `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
             ];
@@ -207,7 +254,7 @@
                 const url = sourceUrls[idx];
                 try {
                     const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), idx === 0 ? 3500 : 4000);
+                    const timeout = setTimeout(() => controller.abort(), idx === 0 ? 2200 : 2800);
 
                     const response = await fetch(url, { signal: controller.signal });
                     clearTimeout(timeout);
@@ -215,24 +262,7 @@
                     if (!response.ok) continue;
 
                     const data = await response.json();
-                    const result = data?.chart?.result?.[0];
-
-                    if (result) {
-                        const meta = result.meta;
-                        const price = meta?.regularMarketPrice || 0;
-                        const prevClose = meta?.previousClose || meta?.chartPreviousClose || price;
-
-                        if (price > 0) {
-                            const change = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
-
-                            indicatorPrices[symbol] = price;
-                            indicatorChanges[symbol] = change;
-                            previousIndicatorPrices[symbol] = prevClose;
-
-                            macroLog(`✅ ${MARKET_INDICATORS[symbol].name}: ${price.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}%)`, 'success');
-                            return true;
-                        }
-                    }
+                    if (applyYahooChartData(symbol, data)) return true;
                 } catch (e) {
                     // Silent fail, try next proxy
                 }
@@ -255,7 +285,7 @@
     // TWELVE DATA - OURO, XLE (3 chaves = 2400 créditos/dia)
     // ============================================
     async function loadPricesViaTwelveData(options = {}) {
-        const { priorityOnly = false, fastMode = false } = options;
+        const { priorityOnly = false, fastMode = false, forceRefresh = false } = options;
         let successCount = 0;
 
         const entries = Object.entries(TWELVE_DATA_SYMBOLS).filter(([internalSymbol]) => {
@@ -265,7 +295,7 @@
 
         for (const [internalSymbol, tdSymbol] of entries) {
             // Pular se já temos preço do Yahoo
-            if (indicatorPrices[internalSymbol] && indicatorPrices[internalSymbol] > 0) {
+            if (!forceRefresh && indicatorPrices[internalSymbol] && indicatorPrices[internalSymbol] > 0) {
                 continue;
             }
 
@@ -350,7 +380,7 @@
     function formatIndicatorPrice(symbol) {
         const config = MARKET_INDICATORS[symbol];
         const rawPrice = indicatorPrices[symbol] || 0;
-        if (!rawPrice) return '<i class="fas fa-spinner fa-spin" style="font-size:11px;opacity:0.4;"></i>';
+        if (!rawPrice) return '--';
         
         const decimals = config.decimals || 2;
         
@@ -2389,6 +2419,7 @@
     
     // Native HTTP request — Capacitor 8 patches fetch() to use native HTTP automatically
     // Multiple fallback strategies for maximum reliability
+    async function nativeHttpText(url) { try { if (window.Capacitor?.Plugins?.CapacitorHttp) { const resp = await window.Capacitor.Plugins.CapacitorHttp.request({ url, method: 'GET', connectTimeout: 8000, readTimeout: 8000 }); if (resp.status >= 200 && resp.status < 300) { return typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data); } } } catch (_) {} try { if (window.CapacitorHttp?.request) { const resp = await window.CapacitorHttp.request({ url, method: 'GET', connectTimeout: 8000, readTimeout: 8000 }); if (resp.status >= 200 && resp.status < 300) { return typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data); } } } catch (_) {} const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 8000); try { const response = await fetch(url, { signal: controller.signal }); clearTimeout(timer); if (!response.ok) throw new Error('HTTP ' + response.status); return await response.text(); } catch (err) { clearTimeout(timer); throw err; } }
     async function nativeHttpGet(url) {
         // Strategy 1: Capacitor.Plugins.CapacitorHttp (Capacitor 5-6 style)
         try {
@@ -2451,27 +2482,7 @@
         return obs.slice(0, limit);
     }
 
-    async function fetchFredCsvFallback(seriesId, sortOrder = 'desc', limit = 10) {
-        const csvUrl = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + encodeURIComponent(seriesId);
-        const urls = [
-            csvUrl,
-            CORS_PROXY + encodeURIComponent(csvUrl)
-        ];
-
-        for (const url of urls) {
-            try {
-                const res = await _fetchWithTimeout(url, {}, 8000);
-                if (!res.ok) continue;
-                const text = await res.text();
-                const observations = parseFredCsvObservations(text, sortOrder, limit);
-                if (observations.length > 0) {
-                    return { observations };
-                }
-            } catch (_) {}
-        }
-
-        return { observations: [] };
-    }
+    async function fetchFredCsvFallback(seriesId, sortOrder = 'desc', limit = 10) { const csvUrl = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + encodeURIComponent(seriesId); const urls = [ csvUrl, CORS_PROXY + encodeURIComponent(csvUrl), 'https://api.allorigins.win/raw?url=' + encodeURIComponent(csvUrl) ]; for (let i=0; i<urls.length; i++) { try { const text = await nativeHttpText(urls[i]); if (text && typeof text === 'string') { const observations = parseFredCsvObservations(text, sortOrder, limit); if (observations.length > 0) return { observations }; } } catch(e) {} } return { observations: [] }; }
 
     // Fetch FRED series data — tries direct first, then CORS proxy as fallback
     async function fetchFredSmart(seriesId, opts = {}) {
@@ -2524,7 +2535,7 @@
             return { observations: [] };
         }
 
-        let url = 'https://api.stlouisfed.org/fred/series/observations?series_id=' + seriesId + '&api_key=' + FRED_API_KEY + '&file_type=json&sort_order=' + sortOrder + '&limit=' + limit;
+        let url = ''+ APP_CONFIG.CALENDAR_WORKER_URL +'/proxy/fred/fred/series/observations?series_id=' + seriesId + '&api_key=' + FRED_API_KEY + '&file_type=json&sort_order=' + sortOrder + '&limit=' + limit;
         if (units) url += '&units=' + units;
 
         // Tentativa 1: direto
@@ -3004,7 +3015,7 @@
     
     // Cache para histórico de eventos
     let ECONOMIC_HISTORY_CACHE = {};
-    const ECONOMIC_HISTORY_CACHE_TTL = 6 * 60 * 60 * 1000; // 6h
+    const ECONOMIC_HISTORY_CACHE_TTL = 30 * 60 * 1000; // 30min para manter últimos dados mais frescos
     const ECONOMIC_HISTORY_MAX_KEYS = 40;
 
     function getEconomicHistoryFromCache(eventTitle) {
@@ -3294,7 +3305,7 @@
 
                 // Garantir que o modal mostre sempre meses recentes (evitar dados muito antigos)
                 const cutoff = new Date();
-                cutoff.setMonth(cutoff.getMonth() - 18);
+                cutoff.setMonth(cutoff.getMonth() - 6);
                 const recentObs = validObs.filter((o) => {
                     const d = new Date((o.date || '') + 'T00:00:00');
                     return !isNaN(d.getTime()) && d >= cutoff;
@@ -3732,7 +3743,7 @@
         const result = {};
         const fetchPromises = Object.entries(FRED_RELEASE_IDS).map(async ([key, releaseId]) => {
             try {
-                const url = 'https://api.stlouisfed.org/fred/release/dates?release_id=' + releaseId +
+                const url = ''+ APP_CONFIG.CALENDAR_WORKER_URL +'/proxy/fred/fred/release/dates?release_id=' + releaseId +
                     '&api_key=' + FRED_API_KEY + '&file_type=json&sort_order=desc&limit=30' +
                     '&include_release_dates_with_no_data=true';
                 const response = await _fetchWithTimeout(url, {}, 10000);
@@ -4647,8 +4658,8 @@
     // ============================================
     // INICIALIZAÇÃO
     // ============================================
-    function loadMacroData() {
-        if (macroLoaded) return;
+    async function loadMacroData() {
+        if (macroLoaded) return macroPriceFetchPromise || Promise.resolve(true);
         
         macroLog('=== MACRO v14.0 - FED WATCH DINÂMICO + CALENDÁRIO INTERATIVO ===', 'success');
         macroLoaded = true;
@@ -4656,15 +4667,18 @@
         try { pruneChartCache(); } catch(e) {}
         
         try { renderAllIndicators(); } catch(e) { macroLog('Erro renderAllIndicators: ' + e.message, 'error'); }
-        try { loadCachedPrices(); } catch(e) {}
+        try { loadCachedPrices({ allowStale: true }); } catch(e) {}
         try { updateFedWatch(); } catch(e) { macroLog('Erro updateFedWatch: ' + e.message, 'error'); }
         try { updateEconomicCalendar(); } catch(e) { macroLog('Erro updateEconomicCalendar: ' + e.message, 'error'); }
-        try { setTimeout(() => { loadAllPricesInstant().catch(() => {}); }, 300); } catch(e) { macroLog('Erro loadAllPricesInstant: ' + e.message, 'error'); }
+        let preloadPromise = Promise.resolve(true);
+        try { preloadPromise = warmupMacroPrices(); } catch(e) { macroLog('Erro loadAllPricesInstant: ' + e.message, 'error'); }
         
         setTimeout(() => connectMacroWebSocket(), 1000);
         
         macroIntervals.fedWatch = setInterval(updateFedWatch, 30 * 60 * 1000);
-        macroIntervals.calendar = setInterval(updateEconomicCalendar, 30 * 60 * 1000); // 30 min refresh
+        macroIntervals.calendar = setInterval(updateEconomicCalendar, 10 * 60 * 1000); // 10 min refresh
+
+        return preloadPromise;
     }
 
     function stopMacroUpdates() {
@@ -4704,8 +4718,26 @@
         updateEconomicCalendar
     };
 
-    // Startup mais leve: evitar prefetch pesado antes do usuário abrir a aba Macro.
-    try { loadCachedPrices(); } catch(_) {}
+    // Startup: render cached prices INSTANTLY so Macro tab shows data without any network fetch
+    try {
+        const hadCache = loadCachedPrices({ allowStale: true });
+        if (hadCache) {
+            renderAllIndicators();
+        }
+    } catch(_) {}
+
+    // Preload em background para abrir a aba MACRO já com dados prontos.
+    setTimeout(() => {
+        try { warmupMacroPrices(); } catch(_) {}
+    }, 120);
 
     macroLog('✓ macro-section.js v22.0 carregado! (IDs ÚNICOS)', 'success');
 })();
+
+// Eager preload for early rendering
+setTimeout(() => {
+    if (window.fetchMarketIndicators) {
+        window.fetchMarketIndicators().catch(err => console.error('Early macro prices preload failed:', err));
+    }
+}, 500);
+

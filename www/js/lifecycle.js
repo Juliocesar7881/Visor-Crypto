@@ -348,6 +348,9 @@
         let admobLoaded = false;
         let _admobInitStarted = false;
         let _admobConsentGranted = false;
+        let _bannerListenersAttached = false;
+        let _bannerRetryTimer = null;
+        let _bannerRequestInFlight = false;
         let userAdConsent = localStorage.getItem('visor_ad_consent'); // 'granted' | 'denied' | null
 
         // ── Timed interstitial config ──
@@ -617,7 +620,7 @@
             
             // If ad not loaded yet, try to prepare and wait briefly
             if (!admobLoaded) {
-                console.log('[AdMob] Ad not loaded, attempting quick prepare...');
+                // console.log('[AdMob] Ad not loaded, attempting quick prepare...');
                 try {
                     await prepareInterstitial();
                     // Wait up to 5 seconds for the ad to be ready
@@ -629,13 +632,13 @@
             }
             
             if (!admobLoaded) {
-                console.log('[AdMob] Ad still not loaded after retry, skipping');
+                // console.log('[AdMob] Ad still not loaded after retry, skipping');
                 return false;
             }
             
             try {
                 await window._AdMob.showInterstitial();
-                console.log('[AdMob] Ad shown successfully');
+                // console.log('[AdMob] Ad shown successfully');
                 admobLoaded = false;
                 _lastInterstitialTime = Date.now();
                 setTimeout(() => prepareInterstitial(), 3000);
@@ -653,22 +656,36 @@
         // ═══════════════════════════════════════
         // BANNER AD (persistent bottom, above nav)
         // ═══════════════════════════════════════
+        function scheduleBannerRetry(delayMs) {
+            if (_bannerRetryTimer) return;
+            _bannerRetryTimer = setTimeout(() => {
+                _bannerRetryTimer = null;
+                showBannerAd();
+            }, delayMs);
+        }
+
         async function showBannerAd() {
-            if (!admobReady || !window._AdMob) return;
+            if (!admobReady || !window._AdMob || _bannerRequestInFlight) return;
             try {
                 // Listen for banner events to only adjust layout when banner is truly visible
                 try {
-                    window._AdMob.addListener('bannerAdSizeChanged', (info) => {
-                        if (info && info.height > 0) {
-                            document.body.classList.add('has-banner-ad');
-                        }
-                    });
-                    window._AdMob.addListener('bannerAdFailedToLoad', () => {
-                        document.body.classList.remove('has-banner-ad');
-                        setTimeout(() => showBannerAd(), 30000);
-                    });
+                    if (!_bannerListenersAttached) {
+                        _bannerListenersAttached = true;
+                        window._AdMob.addListener('bannerAdSizeChanged', (info) => {
+                            if (info && info.height > 0) {
+                                document.body.classList.add('has-banner-ad');
+                                return;
+                            }
+                            document.body.classList.remove('has-banner-ad');
+                        });
+                        window._AdMob.addListener('bannerAdFailedToLoad', () => {
+                            document.body.classList.remove('has-banner-ad');
+                            scheduleBannerRetry(30000);
+                        });
+                    }
                 } catch(e) {}
 
+                _bannerRequestInFlight = true;
                 await window._AdMob.showBanner({
                     adId: ADMOB_BANNER_ID,
                     adSize: 'ADAPTIVE_BANNER',
@@ -677,11 +694,13 @@
                     isTesting: false,
                     npa: !_admobConsentGranted
                 });
+                _bannerRequestInFlight = false;
                 _admobDebug('Banner solicitado', '#f59e0b');
             } catch (e) {
+                _bannerRequestInFlight = false;
                 _admobDebug('Banner erro: ' + (e?.message || e), '#ef4444');
                 document.body.classList.remove('has-banner-ad');
-                setTimeout(() => showBannerAd(), 30000);
+                scheduleBannerRetry(30000);
             }
         }
 
