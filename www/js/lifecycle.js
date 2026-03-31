@@ -764,6 +764,11 @@
 
         // Fallback: popstate para navegadores (suporta swipe back)
         window.addEventListener('popstate', function(e) {
+            if (window.__vcSkipNextLifecyclePopstate) {
+                window.__vcSkipNextLifecyclePopstate = false;
+                e.preventDefault();
+                return;
+            }
             e.preventDefault();
             const handled = handleBackButton();
             if (!handled) {

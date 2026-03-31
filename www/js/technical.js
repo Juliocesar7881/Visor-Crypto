@@ -10,6 +10,7 @@
         const TA_SHARED_CALLS_PERSIST_TTL = 5 * 60 * 1000;
         let taCurrentSymbol = null;
         let taNavigationStack = [];
+        const TA_POPSTATE_SKIP_FLAG = '__vcSkipNextLifecyclePopstate';
         let _taSharedCallsCache = [];
         let _taSharedCallsCacheTs = 0;
         
@@ -592,9 +593,15 @@
             // Voltar para o modal do gráfico
             taNavigationStack.pop();
 
-            // Consome o estado do modal no histórico para evitar loops no botão voltar.
+            // Consome o estado do modal no histórico e evita que o handler global
+            // de popstate interprete esse back interno como mais um "voltar" do usuário.
             if (!skipHistorySync && window.history && window.history.state?.page === 'technical-analysis') {
-                try { window.history.back(); } catch (e) {}
+                try {
+                    window[TA_POPSTATE_SKIP_FLAG] = true;
+                    window.history.back();
+                } catch (e) {
+                    window[TA_POPSTATE_SKIP_FLAG] = false;
+                }
             }
         }
         
@@ -5885,6 +5892,7 @@ Regras:
         window.addEventListener('popstate', function(event) {
             const taModal = document.getElementById('ta-modal');
             if (taModal && taModal.classList.contains('active')) {
+                window[TA_POPSTATE_SKIP_FLAG] = true;
                 closeTechnicalAnalysis(true);
                 event.preventDefault();
             }
