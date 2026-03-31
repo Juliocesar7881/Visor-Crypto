@@ -954,11 +954,7 @@
             const ctx = canvas.getContext('2d');
             
             // Ajustar canvas para DPI da tela
-            const dpr = window.devicePixelRatio || 1;
-            const rect = canvas.getBoundingClientRect();
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
-            ctx.scale(dpr, dpr);
+            const dpr = window.devicePixelRatio || 1; const rect = canvas.getBoundingClientRect(); const nw = Math.floor(rect.width * dpr); const nh = Math.floor(rect.height * dpr); if(canvas.width !== nw || canvas.height !== nh) { canvas.width = nw; canvas.height = nh; ctx.scale(dpr,dpr); } else { ctx.clearRect(0,0,nw,nh); }
             
             const width = rect.width;
             const height = rect.height;
@@ -1058,11 +1054,7 @@
             const ctx = canvas.getContext('2d');
             
             // Ajustar canvas para DPI da tela
-            const dpr = window.devicePixelRatio || 1;
-            const rect = canvas.getBoundingClientRect();
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
-            ctx.scale(dpr, dpr);
+            const dpr = window.devicePixelRatio || 1; const rect = canvas.getBoundingClientRect(); const nw = Math.floor(rect.width * dpr); const nh = Math.floor(rect.height * dpr); if(canvas.width !== nw || canvas.height !== nh) { canvas.width = nw; canvas.height = nh; ctx.scale(dpr,dpr); } else { ctx.clearRect(0,0,nw,nh); }
             
             const width = rect.width;
             const height = rect.height;

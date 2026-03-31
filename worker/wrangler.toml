@@ -2,15 +2,20 @@ name = "visor-crypto-calendar"
 main = "index.js"
 compatibility_date = "2024-01-01"
 
-# Secrets required (configure via CLI, do not commit values):
-# wrangler secret put FMP_API_KEY
-# wrangler secret put FRED_API_KEY
+# Route to the newly purchased domain
+routes = [{pattern = "visorcrypto.loan", custom_domain = true}]
 
-# KV namespace for caching calendar data
 [[kv_namespaces]]
 binding = "CALENDAR_KV"
 id = "8e2cc438aee541088ec5ca2da3496947"
 
-# Cron trigger - runs every 5 minutes for liquidation accumulation + every 3h for calendar
+[[durable_objects.bindings]]
+name = "CALL_HISTORY_DO"
+class_name = "CallHistoryDO"
+
+[[migrations]]
+tag = "v1_call_history_do"
+new_sqlite_classes = ["CallHistoryDO"]
+
 [triggers]
 crons = ["*/5 * * * *"]

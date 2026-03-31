@@ -232,9 +232,15 @@
 
         function closeNewsModal() {
             const modal = document.getElementById('news-modal');
-            modal.classList.remove('active');
-            document.body.style.overflow = '';
-            document.removeEventListener('keydown', handleModalEsc);
+            if (!modal) return;
+            if (modal.classList.contains('closing')) return;
+
+            modal.classList.add('closing');
+            setTimeout(() => {
+                modal.classList.remove('active', 'closing');
+                document.body.style.overflow = '';
+                document.removeEventListener('keydown', handleModalEsc);
+            }, 260);
         }
 
         function generateNewsSummary(news, translatedTitle) {
@@ -288,6 +294,7 @@
         let newsRetryCount = 0;
         const MAX_NEWS_RETRIES = 5;
         let newsFetchInProgress = false;
+        let newsFetchState = 'idle'; // idle | fetching | ready | error
         
         function mergeNews(newItems) {
             // Criar um Set de URLs existentes para evitar duplicatas
@@ -678,14 +685,21 @@
             if (newsFetchInProgress) {
                 if (allNews.length > 0) {
                     try { renderNews(); } catch (e) {}
+                } else {
+                    const container = document.getElementById('news-container');
+                    if (container) {
+                        container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+                    }
                 }
                 return;
             }
             newsFetchInProgress = true;
+            newsFetchState = 'fetching';
 
             const container = document.getElementById('news-container');
             if (!container) {
                 newsFetchInProgress = false;
+                newsFetchState = 'idle';
                 return;
             }
             
@@ -701,7 +715,7 @@
                         if (Array.isArray(parsed?.articles) && parsed.articles.length > 0) {
                             allNews = parsed.articles;
                             newsLoaded = true;
-                            if (!isHotFilter) renderNews();
+                            if (!isHotFilter) await renderNews();
                         }
                     }
                 } catch (_) {}
@@ -737,21 +751,12 @@
             
             try {
             
-            // Se já tem notícias carregadas, mostrar loading discreto
+            // Se já tem notícias carregadas, manter conteúdo atual enquanto atualiza.
             if (newsLoaded && allNews.length > 0) {
                 // Não mostrar loading, manter conteúdo atual enquanto atualiza em background
             } else if (!isHotFilter) {
-                // Primeira vez - mostrar skeleton loading bonito
-                container.innerHTML = Array.from({length: 6}, () => `
-                    <div class="news-skeleton">
-                        <div class="news-skeleton-thumb"></div>
-                        <div class="news-skeleton-content">
-                            <div class="news-skeleton-line"></div>
-                            <div class="news-skeleton-line"></div>
-                            <div class="news-skeleton-line"></div>
-                        </div>
-                    </div>
-                `).join('');
+                // Primeira vez: usar apenas spinner (nunca mostrar cards vazios/skeleton).
+                container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Carregando notícias...</p></div>';
             }
             
             let totalFetched = 0;
@@ -889,11 +894,12 @@
                 newsRetryCount = 0; // Reset contador de retentativas
                 newsLastFetch = Date.now(); // Marcar timestamp da última busca
                 newsLoaded = true; // Marcar que notícias foram carregadas
+                newsFetchState = 'ready';
                 
                 // TRADUZIR PRIMEIRO as notícias antes de renderizar
                 // Isso evita que apareçam em inglês e depois mudem
                 if (newsFilter !== 'hot') {
-                    renderNews();
+                    await renderNews();
 
                     // Tradução não deve bloquear o primeiro paint
                     translateNewsBeforeRender(15)
@@ -924,14 +930,16 @@
                     }
                 }).catch(() => {});
             } else {
+                newsFetchState = 'error';
+                newsFetchState = 'error';
                 newsRetryCount++;
                 if (newsRetryCount <= MAX_NEWS_RETRIES) {
                     // Tentar novamente com delay progressivo
                     container.innerHTML = `
                         <div style="text-align: center; padding: 30px;">
                             <i class="fas fa-sync fa-spin" style="font-size: 40px; color: var(--accent-blue); margin-bottom: 16px;"></i>
-                            <p style="color: var(--text-secondary);">Carregando notícias...</p>
-                            <p style="color: var(--text-muted); font-size: 12px; margin-top: 8px;">Tentativa ${newsRetryCount}/${MAX_NEWS_RETRIES} - Conectando às fontes</p>
+                            
+                            
                         </div>
                     `;
                     setTimeout(fetchNews, 2000 * newsRetryCount); // Delay progressivo
@@ -1869,11 +1877,17 @@
             if (isRenderingNews) {
                 return;
             }
+            const container = document.getElementById('news-container');
+            if (!container) return;
             isRenderingNews = true;
+
+            if (newsFetchState === 'fetching' && allNews.length === 0 && newsFilter !== 'hot') {
+                container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Carregando notícias...</p></div>';
+                isRenderingNews = false;
+                return;
+            }
             
             try {
-                const container = document.getElementById('news-container');
-                
                 // Se filtro é "hot", filtrar do allNews unificado (sem fetch separado)
                 if (newsFilter === 'hot') {
                     // Filtrar hot news do array unificado allNews
@@ -1902,7 +1916,7 @@
                     
                     if (hotFromAll.length === 0) {
                         // Se não tem hot news no allNews, fazer fetch RSS como fallback
-                        container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Buscando notícias relevantes...</p></div>';
+                        container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
                         let hotNews = await fetchHotNews();
                         if (hotNews.length === 0) {
                             container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhuma notícia relevante encontrada</p>';
@@ -1949,8 +1963,9 @@
             // Ordenar por mais recente primeiro e limitar a 200 notícias
             let sorted = [...filtered].sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 200);
             
-            // Ocultar notícias não traduzidas (só mostrar em português)
-            sorted = sorted.filter(n => !!n.translatedTitle);
+            // Não bloquear a primeira renderização por tradução.
+            // Exibe título original enquanto a tradução roda em background.
+            sorted = sorted.filter(n => !!(n.translatedTitle || n.title));
             
             // NÃO re-marcar notícias como hot aqui - elas já vêm marcadas do mergeNews()
             // Isso evita o problema de piscar/sumir
@@ -1966,7 +1981,12 @@
             }
             
             if (sorted.length === 0) {
-                container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhuma notícia nesta categoria</p>';
+                const isInitialLoading = newsFetchState === 'fetching' && allNews.length === 0;
+                if (isInitialLoading) {
+                    container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Carregando notícias...</p></div>';
+                } else {
+                    container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Nenhuma notícia nesta categoria</p>';
+                }
                 isRenderingNews = false;
                 return;
             }
@@ -2006,7 +2026,7 @@
                 }
                 
                 const timeAgo = getTimeAgo(news.published);
-                const displayTitle = sanitizeHTML(news.translatedTitle);
+                const displayTitle = sanitizeHTML(news.translatedTitle || news.title || 'Sem título');
                 const shortSource = shortenSource(news.source);
                 const safeSource = sanitizeHTML(shortSource);
                 

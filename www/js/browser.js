@@ -50,7 +50,16 @@
         async function openExternalLink(url, title) {
             // Guardar a seção atual para retornar depois
             previousSectionBeforeExternalLink = currentSection;
-            sessionStorage.setItem('returnToSection', currentSection);
+            const currentScrollY = Math.max(
+                window.scrollY || 0,
+                document.documentElement ? (document.documentElement.scrollTop || 0) : 0,
+                document.body ? (document.body.scrollTop || 0) : 0
+            );
+            sessionStorage.setItem('returnToSection', JSON.stringify({
+                section: currentSection,
+                scrollY: currentScrollY,
+                ts: Date.now()
+            }));
             // Usar o browser do Capacitor
             try {
                 if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.Browser) {
@@ -111,11 +120,37 @@
         
         // Função para restaurar a seção após fechar link externo
         function restoreSectionIfNeeded() {
-            const savedSection = sessionStorage.getItem('returnToSection');
-            if (savedSection) {
-                sessionStorage.removeItem('returnToSection');
-                // Sempre restaurar a seção salva
+            const saved = sessionStorage.getItem('returnToSection');
+            if (!saved) return;
+
+            sessionStorage.removeItem('returnToSection');
+
+            let savedSection = null;
+            let savedScrollY = 0;
+            try {
+                const parsed = JSON.parse(saved);
+                if (parsed && typeof parsed === 'object') {
+                    savedSection = parsed.section || null;
+                    savedScrollY = Number(parsed.scrollY || 0);
+                }
+            } catch (_) {
+                // Backward compatibility with old format (plain section string)
+                savedSection = saved;
+            }
+
+            if (!savedSection) return;
+
+            if (typeof currentSection === 'undefined' || currentSection !== savedSection) {
                 showSection(savedSection);
+            }
+
+            if (Number.isFinite(savedScrollY) && savedScrollY > 0) {
+                const restoreScroll = () => {
+                    try { window.scrollTo(0, savedScrollY); } catch (_) {}
+                };
+                requestAnimationFrame(restoreScroll);
+                setTimeout(restoreScroll, 120);
+                setTimeout(restoreScroll, 320);
             }
         }
         
@@ -192,4 +227,4 @@
                 return false;
             }
         };
-
+

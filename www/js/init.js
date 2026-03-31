@@ -17,6 +17,14 @@
                 fetchPricesViaREST();
             } catch (e) {
             }
+
+            // Pré-aquecer indicadores da MACRO já no startup (não esperar abrir a aba)
+            try {
+                if (typeof window.fetchMarketIndicators === 'function') {
+                    window.fetchMarketIndicators().catch(() => {});
+                }
+            } catch (e) {
+            }
             
             // Depois tentar WebSocket para updates em tempo real
             setTimeout(() => {
@@ -30,6 +38,7 @@
             setTimeout(() => {
                 const startupTasks = [
                     { delay: 0, fn: () => fetchFearGreed() },
+                    { delay: 0, fn: () => { if (window.loadMacroData) window.loadMacroData(); } },
                     { delay: 500, fn: () => fetchAltseasonIndex() },
                     { delay: 900, fn: () => fetchGlobalData() },
                     { delay: 1300, fn: () => fetchVolume() },
@@ -37,7 +46,8 @@
                     { delay: 2100, fn: () => fetchMovingAverages() },
                     { delay: 2500, fn: () => fetchOrderBook() },
                     { delay: 2900, fn: () => { fetchExchangeFlow('1h'); startExchangeFlowAutoRefresh(); } },
-                    { delay: 3600, fn: () => fetchNews() }
+                    { delay: 3600, fn: () => fetchNews() },
+                    
                 ];
 
                 startupTasks.forEach(task => {
@@ -50,23 +60,24 @@
                 });
             }, 1000);
             
-            // AI update every 30s (was 10s — reduces CPU & network load on mobile)
-            window._aiRefreshId = setInterval(() => { try { if (document.hidden) return; const r = updateAIRecommendation(); if (r && r.catch) r.catch(()=>{}); } catch(e) {} }, 30000);
+            // AI update every 60s (keeps the panel fresh with lower network pressure)
+            window._aiRefreshId = setInterval(() => { try { if (document.hidden) return; const r = updateAIRecommendation(); if (r && r.catch) r.catch(()=>{}); } catch(e) {} }, 60000);
             
             // Whale Activity: 5 min auto-refresh configurado na função startWhaleActivityAutoRefresh
             
             // v7.1: Managed auto-refresh intervals (can be paused/resumed)
-            // v8: Reduced intervals to prevent crash on low-end devices
+            // v9: Reduced fan-out to improve scalability while preserving all features
             const _autoRefreshConfigs = [
-                { fn: fetchPricesViaREST, ms: 10000, label: 'prices' },
-                { fn: fetchOrderBook, ms: 30000, label: 'orderbook' },
-                { fn: fetchAltseasonIndex, ms: 300000, label: 'altseason' },
-                { fn: fetchNews, ms: 300000, label: 'news' },
-                { fn: fetchFearGreed, ms: 300000, label: 'feargreed' },
-                { fn: fetchGlobalData, ms: 120000, label: 'globaldata' },
-                { fn: fetchVolume, ms: 30000, label: 'volume' },
-                { fn: fetchCryptoStats, ms: 120000, label: 'stats' },
-                { fn: fetchMovingAverages, ms: 60000, label: 'ma' },
+                { fn: fetchPricesViaREST, ms: 15000, label: 'prices' },
+                { fn: fetchOrderBook, ms: 5000, label: 'orderbook' },
+                { fn: fetchAltseasonIndex, ms: 600000, label: 'altseason' },
+                { fn: fetchNews, ms: 600000, label: 'news' },
+                { fn: fetchFearGreed, ms: 600000, label: 'feargreed' },
+                { fn: fetchGlobalData, ms: 180000, label: 'globaldata' },
+                { fn: fetchVolume, ms: 60000, label: 'volume' },
+                { fn: fetchCryptoStats, ms: 180000, label: 'stats' },
+                { fn: fetchMovingAverages, ms: 120000, label: 'ma' },
+                { fn: () => { if (typeof window.fetchMarketIndicators === 'function') window.fetchMarketIndicators(); if(window.loadMacroData) window.loadMacroData(); }, ms: 600000, label: 'macro' },
             ];
             window._autoRefreshIds = [];
             window._autoRefreshConfigs = _autoRefreshConfigs;
@@ -104,7 +115,7 @@
                             if (newHotNews && newHotNews.length > 0) renderHotNewsList(newHotNews);
                         }
                     } catch(e) {}
-                }, 120000);
+                }, 240000);
             }
             
             function _stopAllAutoRefresh() {

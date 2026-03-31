@@ -393,35 +393,48 @@
         }
 
         // ============================================
-        // MOVING AVERAGES - Médias Móveis
+        // MOVING AVERAGES - Médias Móveis (HOME)
+        // Perfil curto/médio para daytrade
         // ============================================
         async function fetchMovingAverages() {
             const symbol = currentOrderbookSymbol;
             const crypto = CRYPTO_DATABASE[symbol];
             
             try {
-                // Buscar dados de klines (candlesticks) - 200 dias para calcular MA200
-                const response = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=200`);
-                const klines = await response.json();
-                
-                if (!klines || klines.length < 7) {
+                // Timeframes focados em curto/médio para daytrade: 15m, 1h, 4h + 1d/1w para contexto macro
+                const [k15mRes, k1hRes, k4hRes, k1dRes, k1wRes] = await Promise.all([
+                    fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=15m&limit=380`),
+                    fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=380`),
+                    fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=4h&limit=260`),
+                    fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=260`),
+                    fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1w&limit=160`)
+                ]);
+
+                const [k15m, k1h, k4h, k1d, k1w] = await Promise.all([
+                    k15mRes.json(),
+                    k1hRes.json(),
+                    k4hRes.json(),
+                    k1dRes.json(),
+                    k1wRes.json()
+                ]);
+
+                if (!Array.isArray(k15m) || !Array.isArray(k1h) || !Array.isArray(k4h) || !Array.isArray(k1d) || !Array.isArray(k1w) || k1h.length < 120) {
                     throw new Error('Dados insuficientes');
                 }
-                
-                // Extrair preços
-                const closePrices = klines.map(k => parseFloat(k[4]));
-                const highPrices = klines.map(k => parseFloat(k[2]));
-                const lowPrices = klines.map(k => parseFloat(k[3]));
-                const currentPrice = closePrices[closePrices.length - 1];
-                
-                // Calcular MAs (Média Móvel Simples)
+
+                const close15m = k15m.map(k => parseFloat(k[4]));
+                const close1h = k1h.map(k => parseFloat(k[4]));
+                const close4h = k4h.map(k => parseFloat(k[4]));
+                const close1d = k1d.map(k => parseFloat(k[4]));
+                const close1w = k1w.map(k => parseFloat(k[4]));
+                const currentPrice = close15m[close15m.length - 1];
+
                 const calculateMA = (prices, period) => {
                     if (prices.length < period) return null;
                     const slice = prices.slice(-period);
                     return slice.reduce((a, b) => a + b, 0) / period;
                 };
-                
-                // Calcular EMA (Média Móvel Exponencial)
+
                 const calculateEMAFromPrices = (prices, period) => {
                     if (prices.length < period) return null;
                     const multiplier = 2 / (period + 1);
@@ -431,41 +444,239 @@
                     }
                     return ema;
                 };
-                
-                const ema9 = calculateEMAFromPrices(closePrices, 9);
-                const ema20 = calculateEMAFromPrices(closePrices, 20);
-                const ema50 = calculateEMAFromPrices(closePrices, 50);
-                const ma50 = calculateMA(closePrices, 50);
-                const ma99 = calculateMA(closePrices, 99);
-                const ma200 = closePrices.length >= 200 ? calculateMA(closePrices, 200) : null;
-                
-                // Calcular Suporte e Resistência por Confluência (Swing Pivots + MAs)
-                const lookback = Math.min(klines.length, 100);
-                const recentKlines = klines.slice(-lookback);
-                const swingLows = [];
-                const swingHighs = [];
-                for (let i = 2; i < recentKlines.length - 2; i++) {
-                    const low = parseFloat(recentKlines[i][3]);
-                    const high = parseFloat(recentKlines[i][2]);
-                    if (low <= parseFloat(recentKlines[i-1][3]) && low <= parseFloat(recentKlines[i-2][3]) && 
-                        low <= parseFloat(recentKlines[i+1][3]) && low <= parseFloat(recentKlines[i+2][3])) {
-                        swingLows.push(low);
+
+                // Mantemos os mesmos IDs no DOM, mas agora mapeados para curto/médio prazo
+                const ema9 = calculateEMAFromPrices(close15m, 9);    // timing de entrada
+                const ema20 = calculateEMAFromPrices(close1h, 21);    // tendência curta
+                const ema50 = calculateEMAFromPrices(close4h, 50);    // direção swing
+                const ma50 = calculateMA(close1h, 20);                // apoio rápido
+                const ma99 = calculateMA(close4h, 50);                // médio prazo
+                const ma200 = calculateMA(close1d, 200);              // referência macro
+
+                const pivotFromCandle = (candle) => {
+                    const high = parseFloat(candle[2]);
+                    const low = parseFloat(candle[3]);
+                    const close = parseFloat(candle[4]);
+                    const pivot = (high + low + close) / 3;
+                    return {
+                        pivot,
+                        s1: (2 * pivot) - high,
+                        s2: pivot - (high - low),
+                        r1: (2 * pivot) - low,
+                        r2: pivot + (high - low)
+                    };
+                };
+
+                const collectSwings = (candles, left = 2, right = 2) => {
+                    const highs = [];
+                    const lows = [];
+                    for (let i = left; i < candles.length - right; i++) {
+                        const high = parseFloat(candles[i][2]);
+                        const low = parseFloat(candles[i][3]);
+                        let isHigh = true;
+                        let isLow = true;
+                        for (let j = i - left; j <= i + right; j++) {
+                            if (j === i) continue;
+                            const h = parseFloat(candles[j][2]);
+                            const l = parseFloat(candles[j][3]);
+                            if (high < h) isHigh = false;
+                            if (low > l) isLow = false;
+                            if (!isHigh && !isLow) break;
+                        }
+                        if (isHigh) highs.push(high);
+                        if (isLow) lows.push(low);
                     }
-                    if (high >= parseFloat(recentKlines[i-1][2]) && high >= parseFloat(recentKlines[i-2][2]) && 
-                        high >= parseFloat(recentKlines[i+1][2]) && high >= parseFloat(recentKlines[i+2][2])) {
-                        swingHighs.push(high);
+                    return { highs, lows };
+                };
+
+                const clusterLevels = (levels, toleranceAbs) => {
+                    const sorted = levels
+                        .filter(v => Number.isFinite(v) && v > 0)
+                        .sort((a, b) => a - b);
+                    if (sorted.length === 0) return [];
+
+                    const clusters = [];
+                    for (const level of sorted) {
+                        const last = clusters[clusters.length - 1];
+                        if (!last || Math.abs(level - last.level) > toleranceAbs) {
+                            clusters.push({ level, count: 1 });
+                        } else {
+                            const newCount = last.count + 1;
+                            last.level = ((last.level * last.count) + level) / newCount;
+                            last.count = newCount;
+                        }
                     }
+                    return clusters;
+                };
+
+                const pickBestLevel = (clusters, direction) => {
+                    if (!clusters.length) return null;
+                    const ranked = clusters
+                        .map(c => {
+                            const distPct = Math.abs((currentPrice - c.level) / currentPrice) * 100;
+                            return {
+                                level: c.level,
+                                count: c.count,
+                                distPct,
+                                score: (c.count * 2.4) - distPct
+                            };
+                        })
+                        .filter(c => c.distPct <= 18);
+
+                    if (ranked.length === 0) return null;
+
+                    ranked.sort((a, b) => {
+                        if (b.score !== a.score) return b.score - a.score;
+                        if (direction === 'support') return b.level - a.level;
+                        return a.level - b.level;
+                    });
+
+                    return ranked[0].level;
+                };
+
+                const atr14 = (() => {
+                    const src = k4h.slice(-22);
+                    if (src.length < 15) return currentPrice * 0.012;
+                    const tr = [];
+                    for (let i = 1; i < src.length; i++) {
+                        const high = parseFloat(src[i][2]);
+                        const low = parseFloat(src[i][3]);
+                        const prevClose = parseFloat(src[i - 1][4]);
+                        tr.push(Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose)));
+                    }
+                    return tr.slice(-14).reduce((a, b) => a + b, 0) / Math.max(1, Math.min(14, tr.length));
+                })();
+
+                const swings1h = collectSwings(k1h.slice(-380));
+                const swings4h = collectSwings(k4h.slice(-260));
+                const swings1d = collectSwings(k1d.slice(-260));
+                const swings1w = collectSwings(k1w.slice(-160));
+
+                const prevDaily = k1d[k1d.length - 2] || k1d[k1d.length - 1];
+                const prevWeekly = k1w[k1w.length - 2] || k1w[k1w.length - 1] || prevDaily;
+                const dPivot = pivotFromCandle(prevDaily);
+                const wPivot = pivotFromCandle(prevWeekly);
+
+                const psychLevels = (() => {
+                    const step = currentPrice >= 50000 ? 1000
+                        : currentPrice >= 20000 ? 500
+                        : currentPrice >= 5000 ? 250
+                        : currentPrice >= 1000 ? 100
+                        : currentPrice >= 100 ? 10
+                        : 1;
+                    const base = Math.round(currentPrice / step) * step;
+                    const levels = [];
+                    for (let i = -5; i <= 5; i++) {
+                        const lvl = base + i * step;
+                        if (lvl > 0) levels.push(lvl);
+                    }
+                    return levels;
+                })();
+
+                const addCandidates = (arr, values, weight, tag) => {
+                    values.filter(Number.isFinite).forEach(v => {
+                        arr.push({ level: v, weight, tag });
+                    });
+                };
+
+                const candidates = [];
+                addCandidates(candidates, swings1w.lows, 3.2, 'swing1w');
+                addCandidates(candidates, swings1w.highs, 3.2, 'swing1w');
+                addCandidates(candidates, swings1d.lows, 2.8, 'swing1d');
+                addCandidates(candidates, swings1d.highs, 2.8, 'swing1d');
+                addCandidates(candidates, swings4h.lows, 2.0, 'swing4h');
+                addCandidates(candidates, swings4h.highs, 2.0, 'swing4h');
+                addCandidates(candidates, swings1h.lows, 1.6, 'swing1h');
+                addCandidates(candidates, swings1h.highs, 1.6, 'swing1h');
+                addCandidates(candidates, [dPivot.s1, dPivot.s2, dPivot.pivot, dPivot.r1, dPivot.r2], 1.8, 'pivotD');
+                addCandidates(candidates, [wPivot.s1, wPivot.s2, wPivot.pivot, wPivot.r1, wPivot.r2], 2.2, 'pivotW');
+                addCandidates(candidates, [ema9, ema20, ema50, ma50, ma99, ma200], 1.2, 'ma');
+                addCandidates(candidates, psychLevels, 1.5, 'psych');
+
+                const countTouches = (klines, level, bandAbs) => {
+                    if (!klines || !klines.length) return 0;
+                    return klines.reduce((acc, k) => {
+                        const high = parseFloat(k[2]);
+                        const low = parseFloat(k[3]);
+                        if (high >= level - bandAbs && low <= level + bandAbs) return acc + 1;
+                        return acc;
+                    }, 0);
+                };
+
+                const toleranceAbs = Math.max(currentPrice * 0.005, atr14 * 0.9, currentPrice * 0.0015);
+                const minDistanceAbs = Math.max(currentPrice * 0.0075, atr14 * 1.05);
+                const minDistancePct = (minDistanceAbs / currentPrice) * 100;
+                const minSpacing = Math.max(currentPrice * 0.009, atr14 * 1.2);
+
+                const clusters = clusterLevels(candidates.map(c => c.level), toleranceAbs).map(c => {
+                    const members = candidates.filter(x => Math.abs(x.level - c.level) <= toleranceAbs);
+                    const weightSum = members.reduce((s, m) => s + m.weight, 0);
+                    const tags = members.map(m => m.tag);
+                    const touchScore = (
+                        countTouches(k1h.slice(-200), c.level, toleranceAbs) * 0.4 +
+                        countTouches(k4h.slice(-140), c.level, toleranceAbs * 1.2) * 0.6 +
+                        countTouches(k1d.slice(-90), c.level, toleranceAbs * 1.4) * 0.9 +
+                        countTouches(k1w.slice(-40), c.level, toleranceAbs * 1.8) * 1.2
+                    );
+                    const psychBoost = tags.includes('psych') ? 0.8 : 0;
+                    const distPct = Math.abs((currentPrice - c.level) / currentPrice) * 100;
+                    const hasHTF = tags.some(tag => tag === 'swing1w' || tag === 'swing1d' || tag === 'pivotW');
+                    const hasMidTF = tags.some(tag => tag === 'swing4h' || tag === 'pivotD');
+                    const onlyMA = tags.length > 0 && tags.every(tag => tag === 'ma');
+                    const tfBoost = hasHTF ? 1.6 : hasMidTF ? 0.9 : 0;
+                    const maPenalty = onlyMA ? -1.1 : 0;
+                    const nearPenalty = distPct < minDistancePct ? -(minDistancePct - distPct) * 0.65 : 0;
+                    const score = weightSum * 1.35 + touchScore * 1.1 + psychBoost + tfBoost + maPenalty + nearPenalty - distPct * 0.2;
+                    return { level: c.level, score, distPct };
+                });
+
+                const pickZone = (dir, relaxed = false) => {
+                    const distanceCut = relaxed ? minDistanceAbs * 0.6 : minDistanceAbs;
+                    const filtered = clusters
+                        .filter(c => dir === 'support' ? c.level < (currentPrice - distanceCut) : c.level > (currentPrice + distanceCut))
+                        .filter(c => c.distPct <= 18)
+                        .sort((a, b) => {
+                            if (b.score !== a.score) return b.score - a.score;
+                            return dir === 'support' ? b.level - a.level : a.level - b.level;
+                        });
+                    return filtered[0]?.level || null;
+                };
+
+                let support = pickZone('support');
+                let resistance = pickZone('resistance');
+
+                if (!support) support = pickZone('support', true);
+                if (!resistance) resistance = pickZone('resistance', true);
+
+                if (support && resistance && (resistance - support) < minSpacing) {
+                    const altRes = clusters
+                        .filter(c => c.level > currentPrice && c.level > (support + minSpacing))
+                        .sort((a, b) => b.score - a.score)[0];
+                    const altSup = clusters
+                        .filter(c => c.level < currentPrice && c.level < (resistance - minSpacing))
+                        .sort((a, b) => b.score - a.score)[0];
+                    if (altRes && (!altSup || altRes.score >= altSup.score)) resistance = altRes.level;
+                    else if (altSup) support = altSup.level;
                 }
-                const supportCandidates = swingLows.filter(l => l < currentPrice);
-                if (ema50 && ema50 < currentPrice) supportCandidates.push(ema50);
-                if (ma50 && ma50 < currentPrice) supportCandidates.push(ma50);
-                if (ma200 && ma200 < currentPrice) supportCandidates.push(ma200);
-                const resistanceCandidates = swingHighs.filter(h => h > currentPrice);
-                if (ema50 && ema50 > currentPrice) resistanceCandidates.push(ema50);
-                if (ma50 && ma50 > currentPrice) resistanceCandidates.push(ma50);
-                if (ma200 && ma200 > currentPrice) resistanceCandidates.push(ma200);
-                const support = supportCandidates.length > 0 ? Math.max(...supportCandidates) : currentPrice * 0.98;
-                const resistance = resistanceCandidates.length > 0 ? Math.min(...resistanceCandidates) : currentPrice * 1.02;
+
+                if (support && (currentPrice - support) < minDistanceAbs) {
+                    const altSup = clusters
+                        .filter(c => c.level < (currentPrice - minDistanceAbs))
+                        .sort((a, b) => b.score - a.score)[0];
+                    if (altSup) support = altSup.level;
+                }
+
+                if (resistance && (resistance - currentPrice) < minDistanceAbs) {
+                    const altRes = clusters
+                        .filter(c => c.level > (currentPrice + minDistanceAbs))
+                        .sort((a, b) => b.score - a.score)[0];
+                    if (altRes) resistance = altRes.level;
+                }
+
+                if (!Number.isFinite(support)) support = currentPrice - (atr14 * 1.8);
+                if (!Number.isFinite(resistance)) resistance = currentPrice + (atr14 * 1.8);
+                if (support >= currentPrice) support = currentPrice - Math.max(minDistanceAbs, atr14 * 1.3);
+                if (resistance <= currentPrice) resistance = currentPrice + Math.max(minDistanceAbs, atr14 * 1.3);
                 
                 // Calcular confluência (quantas MAs estão próximas do suporte/resistência)
                 const allMAs = [ema9, ema20, ema50, ma50, ma99, ma200].filter(m => m !== null);
@@ -484,7 +695,7 @@
                     const diff = ((currentPrice - ma) / ma) * 100;
                     if (diff > 2) return { class: 'buy', text: '↑ ACIMA' };
                     if (diff < -2) return { class: 'sell', text: '↓ ABAIXO' };
-                    return { class: 'neutral', text: '→ AGUARDE' };
+                    return { class: 'neutral', text: '→ NEUTRO' };
                 };
                 
                 // Helper seguro para setar DOM
@@ -525,11 +736,11 @@
                 const summaryEl = document.getElementById('ma-summary');
                 if (!summaryEl) return;
                 if (buyCount > sellCount) {
-                    summaryEl.innerHTML = `<span style="color: var(--accent-green);"><i class="fas fa-arrow-trend-up"></i> TENDÊNCIA DE ALTA</span> - Preço acima de ${buyCount} de ${signals.length} MAs/EMAs`;
+                    summaryEl.innerHTML = `<span style="color: var(--accent-green);"><i class="fas fa-arrow-trend-up"></i> TENDÊNCIA DE ALTA</span> - Preço acima de ${buyCount} de ${signals.length} médias | S/R: pivots diário/semanal + swings 4h/1d + confluência`;
                 } else if (sellCount > buyCount) {
-                    summaryEl.innerHTML = `<span style="color: var(--accent-red);"><i class="fas fa-arrow-trend-down"></i> TENDÊNCIA DE BAIXA</span> - Preço abaixo de ${sellCount} de ${signals.length} MAs/EMAs`;
+                    summaryEl.innerHTML = `<span style="color: var(--accent-red);"><i class="fas fa-arrow-trend-down"></i> TENDÊNCIA DE BAIXA</span> - Preço abaixo de ${sellCount} de ${signals.length} médias | S/R: pivots diário/semanal + swings 4h/1d + confluência`;
                 } else {
-                    summaryEl.innerHTML = `<span style="color: var(--accent-yellow);"><i class="fas fa-minus"></i> CONSOLIDAÇÃO</span> - Preço próximo das médias`;
+                    summaryEl.innerHTML = `<span style="color: var(--accent-yellow);"><i class="fas fa-minus"></i> CONSOLIDAÇÃO</span> - Preço próximo das médias | S/R por clusters de toques + pivots + ATR`;
                 }
                 
             } catch (e) {

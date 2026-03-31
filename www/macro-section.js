@@ -22,8 +22,6 @@
             .map(k => k.trim())
             .filter(Boolean);
     let currentTwelveDataKeyIndex = 0;
-    const FMP_API_KEY = APP_CONFIG.FMP_API_KEY || '';
-    const FRED_API_KEY = APP_CONFIG.FRED_KEY || '';
     const ALPHA_VANTAGE_KEY = APP_CONFIG.ALPHA_VANTAGE_KEY || '';
     
     // Função para alternar chaves Twelve Data
@@ -158,22 +156,60 @@
                 renderAllIndicators(); // Renderizar com cache enquanto busca novos
             }
 
+            // Coalescer renders/cache para não travar o main-thread enquanto chegam respostas.
+            let renderScheduled = false;
+            let cacheSaveScheduled = false;
+            const scheduleProgressRender = () => {
+                if (renderScheduled) return;
+                renderScheduled = true;
+                setTimeout(() => {
+                    renderScheduled = false;
+                    try { renderAllIndicators(); } catch (_) {}
+                }, 80);
+            };
+            const scheduleCacheSave = () => {
+                if (cacheSaveScheduled) return;
+                cacheSaveScheduled = true;
+                setTimeout(() => {
+                    cacheSaveScheduled = false;
+                    savePriceCache();
+                }, 250);
+            };
+
             // 2. Buscar dados frescos em paralelo (mantém UI instantânea com cache)
             const forceRefresh = true;
             const priorityPromise = loadPricesViaTwelveData({ priorityOnly: true, fastMode: true, forceRefresh })
-                .then(() => {
-                    renderAllIndicators();
+                .then((priorityLoaded) => {
+                    if (priorityLoaded > 0) {
+                        scheduleCacheSave();
+                        scheduleProgressRender();
+                    }
                 })
                 .catch(() => {});
 
             macroLog('📊 Buscando via Yahoo Finance...', 'info');
-            const yahooSuccess = await loadPricesViaYahooV8({ forceRefresh });
+            const yahooSuccess = await loadPricesViaYahooV8({
+                forceRefresh,
+                // No primeiro boot sem cache, aumentar paralelismo para reduzir TTFD.
+                batchSize: hadCache ? 6 : 9,
+                // Timeouts mais agressivos no warmup evitam travar em endpoints lentos.
+                nativeTimeoutMs: hadCache ? 3200 : 2400,
+                proxyTimeoutMs: hadCache ? 2200 : 1800,
+                onSymbolUpdate: () => {
+                    scheduleCacheSave();
+                    scheduleProgressRender();
+                }
+            });
             await priorityPromise;
 
             // 4. Complementar com Twelve Data se necessário
             if (yahooSuccess < totalIndicators) {
                 macroLog('📦 Complementando com Twelve Data...', 'info');
-                await loadPricesViaTwelveData({ forceRefresh });
+                const tdLoaded = await loadPricesViaTwelveData({ forceRefresh });
+                if (tdLoaded > 0) {
+                    scheduleCacheSave();
+                    scheduleProgressRender();
+                }
             }
 
             const total = Object.values(indicatorPrices).filter(p => p > 0).length;
@@ -224,7 +260,13 @@
     }
 
     async function loadPricesViaYahooV8(options = {}) {
-        const { forceRefresh = false } = options;
+        const {
+            forceRefresh = false,
+            batchSize = 4,
+            nativeTimeoutMs = 3200,
+            proxyTimeoutMs = 2200,
+            onSymbolUpdate = null
+        } = options;
         let successCount = 0;
         const symbols = Object.keys(MARKET_INDICATORS);
         
@@ -239,14 +281,24 @@
 
             // 1) Native HTTP (Capacitor) primeiro para evitar CORS/proxy quando possível
             try {
-                const nativeData = await nativeHttpGet(yahooUrl);
-                if (applyYahooChartData(symbol, nativeData)) return true;
+                const nativeData = await nativeHttpGet(yahooUrl, {
+                    connectTimeout: nativeTimeoutMs,
+                    readTimeout: nativeTimeoutMs,
+                    fetchTimeoutMs: nativeTimeoutMs
+                });
+                if (applyYahooChartData(symbol, nativeData)) {
+                    if (typeof onSymbolUpdate === 'function') {
+                        try { onSymbolUpdate(symbol); } catch (_) {}
+                    }
+                    return true;
+                }
             } catch (_) {
                 // fallback para proxy
             }
 
             const sourceUrls = [
                 `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+                `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
                 `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yahooUrl)}`,
             ];
 
@@ -254,7 +306,7 @@
                 const url = sourceUrls[idx];
                 try {
                     const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), idx === 0 ? 2200 : 2800);
+                    const timeout = setTimeout(() => controller.abort(), proxyTimeoutMs + (idx * 250));
 
                     const response = await fetch(url, { signal: controller.signal });
                     clearTimeout(timeout);
@@ -262,7 +314,12 @@
                     if (!response.ok) continue;
 
                     const data = await response.json();
-                    if (applyYahooChartData(symbol, data)) return true;
+                    if (applyYahooChartData(symbol, data)) {
+                        if (typeof onSymbolUpdate === 'function') {
+                            try { onSymbolUpdate(symbol); } catch (_) {}
+                        }
+                        return true;
+                    }
                 } catch (e) {
                     // Silent fail, try next proxy
                 }
@@ -271,7 +328,7 @@
         }
 
         // Buscar em lotes para reduzir pico de memória/requisições simultâneas
-        const BATCH_SIZE = 4;
+        const BATCH_SIZE = Math.max(1, Math.min(symbols.length, Math.floor(batchSize) || 4));
         for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
             const batch = symbols.slice(i, i + BATCH_SIZE);
             const results = await Promise.all(batch.map(s => fetchSymbol(s)));
@@ -577,7 +634,7 @@
                     </div>
                     
                     <!-- Stats (skeleton placeholders to reserve height) -->
-                    <div id="indicator-stats" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                    <div id="indicator-stats" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 8px;">
                         <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 10px;">
                             <div style="color: #888; font-size: 11px;">Abertura</div>
                             <div style="font-weight: 600; color: #555; height: 20px; background: rgba(255,255,255,0.04); border-radius: 4px; width: 70%; animation: macroPulse 1.5s infinite;"></div>
@@ -2420,12 +2477,18 @@
     // Native HTTP request — Capacitor 8 patches fetch() to use native HTTP automatically
     // Multiple fallback strategies for maximum reliability
     async function nativeHttpText(url) { try { if (window.Capacitor?.Plugins?.CapacitorHttp) { const resp = await window.Capacitor.Plugins.CapacitorHttp.request({ url, method: 'GET', connectTimeout: 8000, readTimeout: 8000 }); if (resp.status >= 200 && resp.status < 300) { return typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data); } } } catch (_) {} try { if (window.CapacitorHttp?.request) { const resp = await window.CapacitorHttp.request({ url, method: 'GET', connectTimeout: 8000, readTimeout: 8000 }); if (resp.status >= 200 && resp.status < 300) { return typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data); } } } catch (_) {} const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 8000); try { const response = await fetch(url, { signal: controller.signal }); clearTimeout(timer); if (!response.ok) throw new Error('HTTP ' + response.status); return await response.text(); } catch (err) { clearTimeout(timer); throw err; } }
-    async function nativeHttpGet(url) {
+    async function nativeHttpGet(url, options = {}) {
+        const connectTimeout = Number(options.connectTimeout) > 0 ? Number(options.connectTimeout) : 8000;
+        const readTimeout = Number(options.readTimeout) > 0 ? Number(options.readTimeout) : 8000;
+        const fetchTimeoutMs = Number(options.fetchTimeoutMs) > 0
+            ? Number(options.fetchTimeoutMs)
+            : Math.max(connectTimeout, readTimeout);
+
         // Strategy 1: Capacitor.Plugins.CapacitorHttp (Capacitor 5-6 style)
         try {
             if (window.Capacitor?.Plugins?.CapacitorHttp) {
                 const resp = await window.Capacitor.Plugins.CapacitorHttp.request({
-                    url, method: 'GET', connectTimeout: 8000, readTimeout: 8000
+                    url, method: 'GET', connectTimeout, readTimeout
                 });
                 if (resp.status >= 200 && resp.status < 300) {
                     return typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
@@ -2437,7 +2500,7 @@
         try {
             if (window.CapacitorHttp?.request) {
                 const resp = await window.CapacitorHttp.request({
-                    url, method: 'GET', connectTimeout: 8000, readTimeout: 8000
+                    url, method: 'GET', connectTimeout, readTimeout
                 });
                 if (resp.status >= 200 && resp.status < 300) {
                     return typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
@@ -2447,7 +2510,7 @@
 
         // Strategy 3: Standard fetch with timeout (Capacitor 8 patches this natively)
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
+        const timer = setTimeout(() => controller.abort(), fetchTimeoutMs);
         try {
             const response = await fetch(url, { signal: controller.signal });
             clearTimeout(timer);
@@ -2465,6 +2528,8 @@
         if (lines.length <= 1) return [];
 
         const obs = [];
+        const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+        const numRe = /^-?\d+(?:\.\d+)?$/;
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i];
             const comma = line.indexOf(',');
@@ -2472,6 +2537,8 @@
             const date = line.slice(0, comma).trim();
             const raw = line.slice(comma + 1).trim();
             if (!date || !raw || raw === '.') continue;
+            if (!dateRe.test(date)) continue;
+            if (!numRe.test(raw)) continue;
             const value = parseFloat(raw);
             if (!Number.isFinite(value)) continue;
             obs.push({ date, value: String(value) });
@@ -2482,7 +2549,89 @@
         return obs.slice(0, limit);
     }
 
-    async function fetchFredCsvFallback(seriesId, sortOrder = 'desc', limit = 10) { const csvUrl = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + encodeURIComponent(seriesId); const urls = [ csvUrl, CORS_PROXY + encodeURIComponent(csvUrl), 'https://api.allorigins.win/raw?url=' + encodeURIComponent(csvUrl) ]; for (let i=0; i<urls.length; i++) { try { const text = await nativeHttpText(urls[i]); if (text && typeof text === 'string') { const observations = parseFredCsvObservations(text, sortOrder, limit); if (observations.length > 0) return { observations }; } } catch(e) {} } return { observations: [] }; }
+    function applyFredUnitsTransform(observations, units) {
+        if (!units || !Array.isArray(observations) || observations.length === 0) return observations;
+
+        const descObs = observations.slice(); // newest -> oldest
+        if (units === 'pch') {
+            const out = [];
+            for (let i = 0; i < descObs.length - 1; i++) {
+                const curr = parseFloat(descObs[i].value);
+                const prev = parseFloat(descObs[i + 1].value);
+                if (!Number.isFinite(curr) || !Number.isFinite(prev) || prev === 0) continue;
+                const pct = ((curr - prev) / Math.abs(prev)) * 100;
+                if (!Number.isFinite(pct)) continue;
+                out.push({ date: descObs[i].date, value: String(pct) });
+            }
+            return out;
+        }
+
+        if (units === 'pc1') {
+            const byYearMonth = new Map();
+            descObs.forEach((o) => {
+                if (!o || !o.date || !o.value) return;
+                byYearMonth.set(o.date.slice(0, 7), parseFloat(o.value));
+            });
+
+            const out = [];
+            for (const row of descObs) {
+                const curr = parseFloat(row.value);
+                if (!Number.isFinite(curr)) continue;
+
+                const year = parseInt(row.date.slice(0, 4), 10);
+                const month = row.date.slice(5, 7);
+                const prevKey = String(year - 1) + '-' + month;
+                const prev = byYearMonth.get(prevKey);
+                if (!Number.isFinite(prev) || prev === 0) continue;
+
+                const pct = ((curr - prev) / Math.abs(prev)) * 100;
+                if (!Number.isFinite(pct)) continue;
+                out.push({ date: row.date, value: String(pct) });
+            }
+            return out;
+        }
+
+        return observations;
+    }
+
+    function isStrictFredObservation(obs) {
+        if (!obs || typeof obs !== 'object') return false;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(obs.date || ''))) return false;
+        if (String(obs.value || '') === '.') return false;
+        const n = parseFloat(obs.value);
+        return Number.isFinite(n);
+    }
+
+    async function fetchFredCsvFallback(seriesId, sortOrder = 'desc', limit = 10, units) {
+        const csvUrl = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=' + encodeURIComponent(seriesId);
+        const urls = [
+            csvUrl,
+            CORS_PROXY + encodeURIComponent(csvUrl),
+            'https://api.allorigins.win/raw?url=' + encodeURIComponent(csvUrl)
+        ];
+
+        const rawLimit = units ? Math.max(limit + 30, limit * 3) : limit;
+
+        for (let i = 0; i < urls.length; i++) {
+            try {
+                const text = await nativeHttpText(urls[i]);
+                if (!text || typeof text !== 'string') continue;
+
+                // Parse em ordem DESC para transformar unidades corretamente.
+                const baseObservations = parseFredCsvObservations(text, 'desc', rawLimit);
+                if (baseObservations.length === 0) continue;
+
+                let observations = applyFredUnitsTransform(baseObservations, units);
+                observations = observations.filter(isStrictFredObservation);
+                if (observations.length === 0) continue;
+
+                if (sortOrder === 'asc') observations = observations.slice().reverse();
+                return { observations: observations.slice(0, limit) };
+            } catch(e) {}
+        }
+
+        return { observations: [] };
+    }
 
     // Fetch FRED series data — tries direct first, then CORS proxy as fallback
     async function fetchFredSmart(seriesId, opts = {}) {
@@ -2507,7 +2656,7 @@
                     if (workerJson && workerJson.success && Array.isArray(workerJson.data) && workerJson.data.length > 0) {
                         let observations = workerJson.data
                             .map((o) => ({ date: o.date, value: String(o.value) }))
-                            .filter((o) => o.date && o.value !== '' && o.value !== '.');
+                            .filter(isStrictFredObservation);
 
                         observations.sort((a, b) => {
                             const da = new Date(a.date + 'T00:00:00').getTime();
@@ -2525,17 +2674,13 @@
         }
 
         // Public fallback without API key (fredgraph CSV)
-        const csvFallback = await fetchFredCsvFallback(seriesId, sortOrder, limit);
+        const csvFallback = await fetchFredCsvFallback(seriesId, sortOrder, limit, units);
         if (Array.isArray(csvFallback.observations) && csvFallback.observations.length > 0) {
             return csvFallback;
         }
 
-        // Fallback: direct FRED (requires local key)
-        if (!FRED_API_KEY) {
-            return { observations: [] };
-        }
-
-        let url = ''+ APP_CONFIG.CALENDAR_WORKER_URL +'/proxy/fred/fred/series/observations?series_id=' + seriesId + '&api_key=' + FRED_API_KEY + '&file_type=json&sort_order=' + sortOrder + '&limit=' + limit;
+        // Fallback: worker proxy (server-side key only)
+        let url = ''+ APP_CONFIG.CALENDAR_WORKER_URL +'/proxy/fred/fred/series/observations?series_id=' + seriesId + '&file_type=json&sort_order=' + sortOrder + '&limit=' + limit;
         if (units) url += '&units=' + units;
 
         // Tentativa 1: direto
@@ -3240,7 +3385,18 @@
         const titleLower = eventTitle.toLowerCase();
         
         // Para FOMC/Fed/Taxa/Juros - usar histórico de decisões pré-definido
-        const isFOMCEvent = ['fomc', 'fed', 'taxa', 'juros', 'interest', 'rate decision'].some(k => titleLower.includes(k));
+        const hasFomcKeyword = [
+            'fomc',
+            'taxa de juros',
+            'rate decision',
+            'interest rate',
+            'federal funds',
+            'comunicado fomc',
+            'ata do fomc',
+            'coletiva fomc'
+        ].some(k => titleLower.includes(k));
+        const hasInflationContext = ['pce', 'cpi', 'ppi', 'infla'].some(k => titleLower.includes(k));
+        const isFOMCEvent = hasFomcKeyword && !hasInflationContext;
         
         if (isFOMCEvent) {
             macroLog(`📊 Buscando histórico de decisões FOMC via FRED`, 'info');
@@ -3294,7 +3450,16 @@
             
             if (data.observations && data.observations.length > 0) {
                 // Filtrar valores válidos
-                let validObs = data.observations.filter(o => o.value !== '.');
+                let validObs = data.observations.filter((o) => {
+                    if (!isStrictFredObservation(o)) return false;
+                    const v = parseFloat(o.value);
+                    if (!Number.isFinite(v)) return false;
+                    // Remove outliers absurdos causados por respostas corrompidas/proxy.
+                    if ((isPercentage || needsYoY || needsMoM) && Math.abs(v) > 200) return false;
+                    if (fredSeries === 'UNRATE' && (v < 0 || v > 60)) return false;
+                    if ((fredSeries === 'DFEDTARU' || fredSeries === 'DFF') && (v < -5 || v > 40)) return false;
+                    return true;
+                });
 
                 // Normalizar ordenação para mais recente -> mais antigo
                 validObs.sort((a, b) => {
@@ -3344,17 +3509,45 @@
                         const change = previous !== null && previous !== undefined ? (actual - previous) : 0;
                         return {
                             date: item.date,
-                            actual: `${change >= 0 ? '+' : ''}${Math.round(change)}K`,
-                            previous: prev ? `${Math.round(previous)}K (total)` : '-',
+                            actual: `${change >= 0 ? '+' : ''}${Math.round(change).toLocaleString('pt-BR')}K`,
+                            previous: prev ? `${Math.round(previous).toLocaleString('pt-BR')}K (total)` : '-',
                             forecast: '-',
                             impact: 'high'
                         };
                     }
+
+                    // ADP também deve ser mostrado como variação mensal em milhares (não valor absoluto gigante).
+                    if (fredSeries === 'ADPWNUSNERSA') {
+                        const change = previous !== null && previous !== undefined ? (actual - previous) : 0;
+                        return {
+                            date: item.date,
+                            actual: `${change >= 0 ? '+' : ''}${Math.round(change).toLocaleString('pt-BR')}K`,
+                            previous: prev ? `${Math.round(previous).toLocaleString('pt-BR')}K (total)` : '-',
+                            forecast: '-',
+                            impact: 'high'
+                        };
+                    }
+
+                    const formattedActual = (isPercentage || needsYoY || needsMoM)
+                        ? (actual.toFixed(decimals) + suffix)
+                        : actual.toLocaleString('pt-BR', {
+                            minimumFractionDigits: decimals,
+                            maximumFractionDigits: decimals
+                        });
+
+                    const formattedPrevious = prev
+                        ? ((isPercentage || needsYoY || needsMoM)
+                            ? (previous.toFixed(decimals) + suffix)
+                            : previous.toLocaleString('pt-BR', {
+                                minimumFractionDigits: decimals,
+                                maximumFractionDigits: decimals
+                            }))
+                        : '-';
                     
                     return {
                         date: item.date,
-                        actual: actual.toFixed(decimals) + suffix,
-                        previous: prev ? previous.toFixed(decimals) + suffix : '-',
+                        actual: formattedActual,
+                        previous: formattedPrevious,
                         forecast: '-',
                         impact: 'high'
                     };
@@ -3744,7 +3937,7 @@
         const fetchPromises = Object.entries(FRED_RELEASE_IDS).map(async ([key, releaseId]) => {
             try {
                 const url = ''+ APP_CONFIG.CALENDAR_WORKER_URL +'/proxy/fred/fred/release/dates?release_id=' + releaseId +
-                    '&api_key=' + FRED_API_KEY + '&file_type=json&sort_order=desc&limit=30' +
+                    '&file_type=json&sort_order=desc&limit=30' +
                     '&include_release_dates_with_no_data=true';
                 const response = await _fetchWithTimeout(url, {}, 10000);
                 if (!response.ok) return;
@@ -4666,8 +4859,8 @@
 
         try { pruneChartCache(); } catch(e) {}
         
-        try { renderAllIndicators(); } catch(e) { macroLog('Erro renderAllIndicators: ' + e.message, 'error'); }
         try { loadCachedPrices({ allowStale: true }); } catch(e) {}
+        try { renderAllIndicators(); } catch(e) { macroLog('Erro renderAllIndicators: ' + e.message, 'error'); }
         try { updateFedWatch(); } catch(e) { macroLog('Erro updateFedWatch: ' + e.message, 'error'); }
         try { updateEconomicCalendar(); } catch(e) { macroLog('Erro updateEconomicCalendar: ' + e.message, 'error'); }
         let preloadPromise = Promise.resolve(true);

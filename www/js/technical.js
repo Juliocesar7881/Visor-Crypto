@@ -1,10 +1,17 @@
-        // ============================================
+// ============================================
         // TECHNICAL ANALYSIS - AUCTION MARKET THEORY
         // ============================================
         const TA_CACHE_KEY = 'technical_analysis_cache';
         const TA_CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+        const TA_POINTS_HISTORY_KEY = 'ta_points_history_';
+        const TA_POINTS_HISTORY_LIMIT = 36; // 3h de histórico em janelas de 5min
+        const TA_SHARED_CALLS_CACHE_KEY = 'vc_shared_call_history_v2';
+        const TA_SHARED_CALLS_CACHE_TTL = 60 * 1000;
+        const TA_SHARED_CALLS_PERSIST_TTL = 5 * 60 * 1000;
         let taCurrentSymbol = null;
         let taNavigationStack = [];
+        let _taSharedCallsCache = [];
+        let _taSharedCallsCacheTs = 0;
         
         // Cache sistema para análise técnica
         function getTACache(symbol) {
@@ -40,10 +47,228 @@
                 } catch (e2) {}
             }
         }
+
+        function getTAWorkerUrl() {
+            const cfg = (window.APP_CONFIG || {});
+            return String(cfg.CALENDAR_WORKER_URL || '').trim().replace(/\/+$/, '');
+        }
+
+        function normalizeCallSymbol(raw) {
+            const clean = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (!clean) return '';
+            return clean.endsWith('USDT') ? clean : `${clean}USDT`;
+        }
+
+        function normalizeSharedCall(rawCall) {
+            if (!rawCall || typeof rawCall !== 'object') return null;
+            const symbol = normalizeCallSymbol(rawCall.symbol || rawCall.short || rawCall.name || '');
+            if (!symbol) return null;
+
+            const time = Number(rawCall.time || rawCall.timestamp || rawCall.id || Date.now());
+            const entryPrice = Number(rawCall.entryPrice ?? rawCall.price ?? 0) || 0;
+            const direction = String(rawCall.direction || '').toUpperCase();
+
+            return {
+                ...rawCall,
+                id: rawCall.id || time,
+                symbol,
+                direction,
+                timestamp: time,
+                time,
+                entryPrice,
+                price: rawCall.price != null ? rawCall.price : (entryPrice > 0 ? entryPrice : ''),
+                prices: (rawCall.prices && typeof rawCall.prices === 'object') ? rawCall.prices : { '1h': null, '4h': null, '12h': null, '24h': null },
+                pnl: (rawCall.pnl && typeof rawCall.pnl === 'object') ? rawCall.pnl : { '1h': null, '4h': null, '12h': null, '24h': null },
+                checked: (rawCall.checked && typeof rawCall.checked === 'object') ? rawCall.checked : { '1h': false, '4h': false, '12h': false, '24h': false }
+            };
+        }
+
+        function getSharedCallsFromCache() {
+            if (Array.isArray(_taSharedCallsCache) && _taSharedCallsCache.length > 0 && (Date.now() - _taSharedCallsCacheTs) < TA_SHARED_CALLS_CACHE_TTL) {
+                return _taSharedCallsCache;
+            }
+
+            try {
+                const persisted = JSON.parse(localStorage.getItem(TA_SHARED_CALLS_CACHE_KEY) || 'null');
+                const ts = Number(persisted?.ts || 0);
+                const calls = Array.isArray(persisted?.calls) ? persisted.calls.map(normalizeSharedCall).filter(Boolean) : [];
+                if (calls.length > 0 && ts > 0 && (Date.now() - ts) < TA_SHARED_CALLS_PERSIST_TTL) {
+                    _taSharedCallsCache = calls;
+                    _taSharedCallsCacheTs = ts;
+                    return calls;
+                }
+            } catch (_) {}
+
+            return [];
+        }
+
+        function setSharedCallsCache(calls) {
+            const normalized = Array.isArray(calls) ? calls.map(normalizeSharedCall).filter(Boolean) : [];
+            _taSharedCallsCache = normalized;
+            _taSharedCallsCacheTs = Date.now();
+            try {
+                localStorage.setItem(TA_SHARED_CALLS_CACHE_KEY, JSON.stringify({ ts: _taSharedCallsCacheTs, calls: normalized }));
+            } catch (_) {}
+            return normalized;
+        }
+
+        async function fetchSharedCallsFromDB(force = false) {
+            if (!force) {
+                const cached = getSharedCallsFromCache();
+                if (cached.length > 0) return cached;
+            }
+
+            const workerUrl = getTAWorkerUrl();
+            if (!workerUrl) return getSharedCallsFromCache();
+
+            try {
+                const resp = await fetch(`${workerUrl}/calls?limit=200`, { signal: AbortSignal.timeout(6000) });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                if (data?.success && Array.isArray(data.calls)) {
+                    return setSharedCallsCache(data.calls);
+                }
+            } catch (e) {
+                console.warn('[TA] Shared call history unavailable:', e?.message || e);
+            }
+
+            return getSharedCallsFromCache();
+        }
+
+        function getCallHistoryForDisplay(currentSymbol) {
+            const shared = getSharedCallsFromCache();
+            const source = shared.length > 0 ? shared : getCallHistory();
+            if (!currentSymbol) return source;
+
+            const normalized = normalizeCallSymbol(currentSymbol);
+            return source.filter((call) => normalizeCallSymbol(call.symbol) === normalized);
+        }
+
+        function buildPointsHistoryFromCalls(calls, symbol, limit = 12) {
+            const targetSymbol = normalizeCallSymbol(symbol);
+            if (!targetSymbol || !Array.isArray(calls) || calls.length === 0) return [];
+
+            const bucketMs = 5 * 60 * 1000;
+            const bucketMap = new Map();
+
+            calls.forEach((call) => {
+                if (normalizeCallSymbol(call.symbol) !== targetSymbol) return;
+                const ts = Number(call.time || call.timestamp || call.id || 0);
+                if (!Number.isFinite(ts) || ts <= 0) return;
+                const confidence = Math.max(0, Math.min(100, Number(call.confidence || 0)));
+                const direction = String(call.direction || '').toUpperCase();
+                const bucketKey = Math.floor(ts / bucketMs);
+                const current = bucketMap.get(bucketKey);
+
+                if (!current || ts >= current.ts) {
+                    bucketMap.set(bucketKey, {
+                        ts,
+                        confidence,
+                        longPoints: direction === 'LONG' ? confidence : 0,
+                        shortPoints: direction === 'SHORT' ? confidence : 0,
+                        signalType: direction === 'LONG' ? 'long' : direction === 'SHORT' ? 'short' : 'aguardar'
+                    });
+                }
+            });
+
+            return Array.from(bucketMap.values())
+                .sort((a, b) => a.ts - b.ts)
+                .slice(-Math.max(1, limit));
+        }
+
+        function renderPointsHistoryBars(pointsHistory) {
+            const history = Array.isArray(pointsHistory) ? pointsHistory : [];
+            if (history.length === 0) {
+                return '<div style="padding: 12px; border-radius: 10px; background: var(--bg-primary); border: 1px dashed rgba(100,116,139,0.3); font-size: 11px; color: var(--text-muted); text-align: center;">Histórico 5m ainda vazio.</div>';
+            }
+
+            return history.map((item) => {
+                const value = Math.max(0, Math.min(100, Number(item?.confidence ?? item?.finalConfidence ?? 0)));
+                const displayValue = Number.isFinite(value) ? value : 0;
+                const bucketColor = displayValue >= 80 ? '#22c55e' : displayValue >= 60 ? '#f59e0b' : displayValue >= 40 ? '#60a5fa' : '#94a3b8';
+                const bucketHeight = Math.max(8, Math.round(displayValue));
+                const bucketTs = Number(item?.ts ?? item?.time ?? 0);
+                const bucketTime = bucketTs
+                    ? new Date(bucketTs).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                    : '--:--';
+                return `
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 30px;">
+                        <div style="width: 100%; max-width: 20px; height: ${bucketHeight}px; border-radius: 6px; background: ${bucketColor}; box-shadow: 0 0 0 1px rgba(0,0,0,0.15) inset;"></div>
+                        <span style="font-size: 9px; color: var(--text-primary); font-weight: 700; line-height: 1;">${displayValue.toFixed(0)}</span>
+                        <span style="font-size: 8px; color: var(--text-muted); line-height: 1;">${bucketTime}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function refreshTechnicalHistoryFromDB(currentSymbol) {
+            if (!currentSymbol) return;
+            const dbCalls = await fetchSharedCallsFromDB(true);
+            if (!Array.isArray(dbCalls) || dbCalls.length === 0) return;
+
+            const currentModal = document.getElementById('ta-modal');
+            if (!currentModal || !currentModal.classList.contains('active')) return;
+
+            const callWrapper = document.getElementById('ta-call-history-wrapper');
+            if (callWrapper) {
+                callWrapper.innerHTML = renderCallHistorySection(currentSymbol);
+            }
+
+            const pointsBars = document.getElementById('ta-points-history-bars');
+            if (pointsBars) {
+                const historyFromDb = buildPointsHistoryFromCalls(getCallHistoryForDisplay(currentSymbol), currentSymbol, 12);
+                if (historyFromDb.length > 0) {
+                    pointsBars.innerHTML = renderPointsHistoryBars(historyFromDb);
+                }
+            }
+        }
+
+        function getTAPointsHistory(symbol) {
+            try {
+                const raw = localStorage.getItem(`${TA_POINTS_HISTORY_KEY}${symbol}`);
+                const parsed = raw ? JSON.parse(raw) : [];
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function pushTAPointsHistory(symbol, snapshot) {
+            if (!symbol || !snapshot) return [];
+            const bucketMs = 5 * 60 * 1000;
+            const ts = Number(snapshot.ts) || Date.now();
+            const bucket = Math.floor(ts / bucketMs);
+            const history = getTAPointsHistory(symbol);
+            const nextEntry = {
+                ts,
+                confidence: Number(snapshot.confidence) || 0,
+                longPoints: Number(snapshot.longPoints) || 0,
+                shortPoints: Number(snapshot.shortPoints) || 0,
+                signalType: snapshot.signalType || 'aguardar'
+            };
+
+            if (history.length > 0) {
+                const last = history[history.length - 1];
+                const lastBucket = Math.floor((Number(last.ts) || 0) / bucketMs);
+                if (lastBucket === bucket) {
+                    history[history.length - 1] = nextEntry;
+                } else {
+                    history.push(nextEntry);
+                }
+            } else {
+                history.push(nextEntry);
+            }
+
+            const trimmed = history.slice(-TA_POINTS_HISTORY_LIMIT);
+            try {
+                localStorage.setItem(`${TA_POINTS_HISTORY_KEY}${symbol}`, JSON.stringify(trimmed));
+            } catch (e) {}
+            return trimmed;
+        }
         
-        // ═══════════════════════════════════════════════════
+        // 
         // CALL HISTORY SYSTEM — Histórico real de calls
-        // ═══════════════════════════════════════════════════
+        // 
         const CALL_HISTORY_KEY = 'vc_call_history';
         const CALL_CHECK_INTERVALS = [
             { key: '1h', ms: 3600000, label: '1h' },
@@ -63,17 +288,27 @@
         }
         
         function recordCall(symbol, signal, confidence, entryPrice, crypto, fullAnalysis) {
-            if (!entryPrice || entryPrice <= 0) return;
-            if (confidence < 70) return;
-            if (!signal.includes('CONFIRMED')) return;
+            const normalizedSignal = String(signal || '').toUpperCase();
+            const normalizedConfidence = Number(confidence) || 0;
+            const normalizedEntry = Number(entryPrice) || 0;
+            if (normalizedEntry <= 0) return;
+            if (normalizedConfidence < 70) return;
+
+            let direction = normalizedSignal.includes('LONG')
+                ? 'LONG'
+                : normalizedSignal.includes('SHORT')
+                    ? 'SHORT'
+                    : null;
+            if (!direction && fullAnalysis?.signalType === 'long') direction = 'LONG';
+            if (!direction && fullAnalysis?.signalType === 'short') direction = 'SHORT';
+            if (!direction) return;
             
             const history = getCallHistory();
-            const direction = signal.includes('LONG') ? 'LONG' : 'SHORT';
             
             // Don't duplicate — skip if same symbol+direction within 30 min
             const thirtyMinAgo = Date.now() - 1800000;
             const duplicate = history.find(c => 
-                c.symbol === symbol && c.direction === direction && c.timestamp > thirtyMinAgo
+                c.symbol === symbol && c.direction === direction && Number(c.timestamp || c.time || 0) > thirtyMinAgo
             );
             if (duplicate) return;
             
@@ -178,8 +413,8 @@
                 symbol: symbol,
                 name: crypto?.short || symbol,
                 direction: direction,
-                confidence: confidence,
-                entryPrice: entryPrice,
+                confidence: normalizedConfidence,
+                entryPrice: normalizedEntry,
                 timestamp: Date.now(),
                 prices: { '1h': null, '4h': null, '12h': null, '24h': null },
                 pnl: { '1h': null, '4h': null, '12h': null, '24h': null },
@@ -192,7 +427,8 @@
         
         async function fetchCurrentPrice(symbol) {
             try {
-                const pair = symbol.replace('/', '').replace('-', '') + (symbol.includes('USDT') ? '' : 'USDT');
+                const clean = String(symbol || '').toUpperCase().replace(/[\/-]/g, '');
+                const pair = clean.endsWith('USDT') ? clean : `${clean}USDT`;
                 const resp = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`);
                 const data = await resp.json();
                 return parseFloat(data.price);
@@ -206,20 +442,26 @@
             
             for (const call of history) {
                 // Ensure new fields exist for older records
-                if (!call.pnl) call.pnl = { '1h': null, '4h': null, '12h': null, '24h': null };
-                if (!call.checked['24h']) call.checked['24h'] = false;
-                if (!call.prices['24h']) call.prices['24h'] = null;
+                if (!call.prices || typeof call.prices !== 'object') call.prices = { '1h': null, '4h': null, '12h': null, '24h': null };
+                if (!call.pnl || typeof call.pnl !== 'object') call.pnl = { '1h': null, '4h': null, '12h': null, '24h': null };
+                if (!call.checked || typeof call.checked !== 'object') call.checked = { '1h': false, '4h': false, '12h': false, '24h': false };
+                if (call.checked['24h'] === undefined) call.checked['24h'] = false;
+                if (call.prices['24h'] === undefined) call.prices['24h'] = null;
+
+                const callTimestamp = Number(call.timestamp || call.time || 0);
+                const entry = Number(call.entryPrice || call.price || 0);
+                if (!callTimestamp || !entry || !call.symbol) continue;
                 
                 for (const interval of CALL_CHECK_INTERVALS) {
                     if (call.checked[interval.key]) continue;
-                    const elapsed = now - call.timestamp;
+                    const elapsed = now - callTimestamp;
                     if (elapsed >= interval.ms) {
                         const price = await fetchCurrentPrice(call.symbol);
                         if (price) {
                             call.prices[interval.key] = price;
                             call.checked[interval.key] = true;
                             // Calcular PnL %
-                            const pnlPct = ((price - call.entryPrice) / call.entryPrice) * 100;
+                            const pnlPct = ((price - entry) / entry) * 100;
                             call.pnl[interval.key] = call.direction === 'LONG' ? +pnlPct.toFixed(3) : +(-pnlPct).toFixed(3);
                             updated = true;
                         }
@@ -238,11 +480,12 @@
             
             for (const call of history) {
                 stats.total++;
+                const entry = Number(call.entryPrice || call.price || 0);
                 for (const iv of CALL_CHECK_INTERVALS) {
                     const price = call.prices?.[iv.key];
-                    if (price !== null && price !== undefined) {
+                    if (price !== null && price !== undefined && entry > 0) {
                         stats.byInterval[iv.key].total++;
-                        const isWin = call.direction === 'LONG' ? price > call.entryPrice : price < call.entryPrice;
+                        const isWin = call.direction === 'LONG' ? price > entry : price < entry;
                         if (isWin) stats.byInterval[iv.key].wins++;
                         else stats.byInterval[iv.key].losses++;
                         const pnl = call.pnl?.[iv.key];
@@ -265,7 +508,7 @@
         }
         
 
-        // ═══════════════════════════════════════
+        // 
 
         function openAvisoLegalModal() {
             const existing = document.getElementById('aviso-legal-modal');
@@ -287,19 +530,19 @@
                     </div>
                     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
                         <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.18);border-radius:11px;">
-                            <span style="color:#f59e0b;font-size:14px;flex-shrink:0;margin-top:1px;">📋</span>
+                            <span style="color:#f59e0b;font-size:14px;flex-shrink:0;margin-top:1px;"></span>
                             <span style="font-size:12px;color:#c9d1d9;line-height:1.6;"><strong style="color:#f59e0b;">Informativo e educacional.</strong> Não constitui aconselhamento financeiro, recomendação de investimento ou solicitação de compra/venda de ativos.</span>
                         </div>
                         <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.18);border-radius:11px;">
-                            <span style="color:#ef4444;font-size:14px;flex-shrink:0;margin-top:1px;">⚡</span>
+                            <span style="color:#ef4444;font-size:14px;flex-shrink:0;margin-top:1px;"></span>
                             <span style="font-size:12px;color:#c9d1d9;line-height:1.6;">Criptomoedas envolvem <strong style="color:#ef4444;">alto risco de perda total</strong> do capital. O mercado é extremamente volátil e imprevisível.</span>
                         </div>
                         <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:rgba(99,102,241,0.07);border:1px solid rgba(99,102,241,0.18);border-radius:11px;">
-                            <span style="color:#a78bfa;font-size:14px;flex-shrink:0;margin-top:1px;">🤖</span>
+                            <span style="color:#a78bfa;font-size:14px;flex-shrink:0;margin-top:1px;"></span>
                             <span style="font-size:12px;color:#c9d1d9;line-height:1.6;">Análises geradas por algoritmos, podendo conter erros. Resultados passados <strong style="color:#a78bfa;">não garantem</strong> resultados futuros.</span>
                         </div>
                         <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:rgba(88,166,255,0.07);border:1px solid rgba(88,166,255,0.18);border-radius:11px;">
-                            <span style="color:#58a6ff;font-size:14px;flex-shrink:0;margin-top:1px;">🔍</span>
+                            <span style="color:#58a6ff;font-size:14px;flex-shrink:0;margin-top:1px;"></span>
                             <span style="font-size:12px;color:#c9d1d9;line-height:1.6;">Faça sua própria pesquisa (<strong style="color:#58a6ff;">DYOR</strong>) e consulte um profissional financeiro antes de investir.</span>
                         </div>
                     </div>
@@ -318,7 +561,7 @@
             document.body.appendChild(m);
         }
 
-        function closeTechnicalAnalysis() {
+        function closeTechnicalAnalysis(skipHistorySync = false) {
             // Fechar panel de notificações se aberto
             const notifPanel = document.getElementById('ta-notif-panel');
             if (notifPanel) notifPanel.style.display = 'none';
@@ -327,22 +570,32 @@
             stopTAAutoRefresh();
             
             // Desconectar WebSockets de OrderFlow e CVD para evitar memory leak
-            if (taCurrentSymbol) {
-                if (window.TAEngineV4 && window.TAEngineV4.disconnectOrderFlowWS) {
-                    try { window.TAEngineV4.disconnectOrderFlowWS(taCurrentSymbol); } catch(e) {}
-                }
-                if (window.RealtimeCVD && window.RealtimeCVD.disconnect) {
-                    try { window.RealtimeCVD.disconnect(taCurrentSymbol); } catch(e) {}
-                }
+            if (window.TAEngineV4 && window.TAEngineV4.disconnectAllOrderFlowWS) {
+                try { window.TAEngineV4.disconnectAllOrderFlowWS(); } catch(e) {}
+            } else if (taCurrentSymbol && window.TAEngineV4 && window.TAEngineV4.disconnectOrderFlowWS) {
+                try { window.TAEngineV4.disconnectOrderFlowWS(taCurrentSymbol); } catch(e) {}
+            }
+            if (window.RealtimeCVD && window.RealtimeCVD.disconnectAll) {
+                try { window.RealtimeCVD.disconnectAll(); } catch(e) {}
+            } else if (taCurrentSymbol && window.RealtimeCVD && window.RealtimeCVD.disconnect) {
+                try { window.RealtimeCVD.disconnect(taCurrentSymbol); } catch(e) {}
             }
             
             const modal = document.getElementById('ta-modal');
             if (!modal) return;
             modal.classList.remove('active');
-            document.body.style.overflow = 'hidden'; // Manter scroll bloqueado para o modal do gráfico
+            const chartModal = document.getElementById('chart-modal');
+            const keepLocked = !!(chartModal && chartModal.classList.contains('active'));
+            document.body.style.overflow = keepLocked ? 'hidden' : '';
+            document.documentElement.style.overflow = keepLocked ? 'hidden' : '';
             
             // Voltar para o modal do gráfico
             taNavigationStack.pop();
+
+            // Consome o estado do modal no histórico para evitar loops no botão voltar.
+            if (!skipHistorySync && window.history && window.history.state?.page === 'technical-analysis') {
+                try { window.history.back(); } catch (e) {}
+            }
         }
         
         // Variável para controlar o auto-refresh da análise técnica
@@ -374,7 +627,8 @@
                     const analysis = generateTechnicalAnalysis(analysisData, symbol);
                     analysis.macroNews = macroNewsData;
                     analysis.bigTechMacro = bigTechData;
-                    if (macroNewsData && macroNewsData.totalImpact !== 0 && window.TAEngineV2) {
+                    const isPointsModel = analysis.confidenceModel?.name === 'weighted-points-v1';
+                    if (!isPointsModel && macroNewsData && macroNewsData.totalImpact !== 0 && window.TAEngineV2) {
                         analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + macroNewsData.totalImpact).toFixed(1);
                         // Re-apply contextual scoring with macro data
                         const V2 = window.TAEngineV2;
@@ -390,7 +644,7 @@
                             analysis.contextualAdjustments = reScored.adjustments;
                         }
                     }
-                    if (bigTechData && bigTechData.bigTechScore !== 0) {
+                    if (!isPointsModel && bigTechData && bigTechData.bigTechScore !== 0) {
                         analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + bigTechData.bigTechScore).toFixed(1);
                     }
                     // Inject bigTechMacro into indicators for AI summary
@@ -430,7 +684,7 @@
                                     symbol
                                 );
                                 if (v4Enhanced.reactiveSummary) {
-                                    analysis.aiSummary += '\n\n━━━ ANÁLISE AVANÇADA ━━━\n' + v4Enhanced.reactiveSummary;
+                                    analysis.aiSummary += '\n\n--- ANÁLISE AVANÇADA ---\n' + v4Enhanced.reactiveSummary;
                                 }
                             }
                         } catch (v4err) { /* console.warn('[V4] Refresh enhancement error:', v4err); */ }
@@ -455,14 +709,22 @@
             }
         }
         
+let _taRawDataCache = {};
+        const TA_DATA_CACHE_TTL = 5 * 60 * 1000; // 5 minutos cache
+
         async function fetchTechnicalAnalysisData(symbol) {
+            const now = Date.now();
+            if (_taRawDataCache[symbol] && (now - _taRawDataCache[symbol].timestamp) < TA_DATA_CACHE_TTL) {
+                return _taRawDataCache[symbol].data;
+            }
+
             const baseSymbol = symbol.replace('USDT', '');
             
             const workerUrl = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
             
-            // V7: Otimizado — removidos 1m/5m klines (ruído) e rácios defasados
-            // Apenas timeframes estruturais: 15m, 1h, 4h, 1d
+            // V7: Otimizado — restaurado 5m para modelagem de scalp (Pine v7), mantidos 15m, 1h, 4h, 1d
             const [
+                klines5m,
                 klines15m,
                 klines1h,
                 klines4h,
@@ -477,6 +739,9 @@
                 openInterestHist,
                 workerLiqRaw
             ] = await Promise.all([
+                // Klines 5m (últimas 100 velas) - para modelo Scalp Pine V7
+                fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=5m&limit=100`)
+                    .then(r => r.json()).catch(() => []),
                 // Klines 15m (últimas 100 velas) - para RSI e indicadores de curto prazo
                 fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=15m&limit=100`)
                     .then(r => r.json()).catch(() => []),
@@ -507,7 +772,7 @@
                 // Taker Buy/Sell Volume
                 fetch(`https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=${symbol}&period=1h&limit=24`)
                     .then(r => r.json()).catch(() => []),
-                // LIQUIDAÇÕES FORÇADAS REAIS (últimas 100) - DADOS REAIS DA BINANCE
+                // LIQUIDAÇÍ•ES FORÇADAS REAIS (últimas 100) - DADOS REAIS DA BINANCE
                 fetch(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${symbol}&limit=100`)
                     .then(r => r.json()).catch(() => []),
                 // Open Interest Histórico (últimos 12 períodos de 5min) - para OI Delta
@@ -527,7 +792,8 @@
                 workerLiqData = workerLiqRaw;
             }
 
-            return {
+            const result = {
+                klines5m,
                 klines15m,
                 klines1h,
                 klines4h,
@@ -538,15 +804,161 @@
                 openInterest,
                 trades,
                 takerBuySellVol: takerBuySellVol || [],
-                forceOrders: forceOrders || [],  // LIQUIDAÇÕES REAIS
+                forceOrders: forceOrders || [],  // LIQUIDAÇÍ•ES REAIS
                 openInterestHist: openInterestHist || [],  // OI Delta
                 workerLiqData,  // Liquidações 12h do worker (ou null)
                 currentPrice: prices[symbol] || parseFloat(ticker24h.lastPrice) || 0
             };
+
+            _taRawDataCache[symbol] = {
+                timestamp: now,
+                data: result
+            };
+
+            return result;
+        }
+
+        function evaluatePineV7Model(klines5m, klines15m, currentPrice) {
+            // Defensive guard: return neutral if inputs are missing/invalid
+            const _neutralResult = { score: 0, active: false, direction: 'NEUTRO', influence: 0, confidenceBoost: 0, entry: null, stopAtual: null, alvoAtual: null, melhorTipo: 'NONE', atr: 0, components: { alta: false, baixa: false, forca: false, pullbackCompra: false, pullbackVenda: false, rsi: 50, adx: 0, ema21: 0, ema50: 0, ema200: 0 } };
+            if (!currentPrice || currentPrice <= 0) return _neutralResult;
+            const atrMultStop = 2.0;
+            const atrMultAlvo = 4.0;
+            const lookbackEstrutura = 10;
+
+            function calcModel(klines) {
+                if (!klines || klines.length === 0) return { score: 0, direction: 'NEUTRO', atr: 0 };
+                const ema21 = calculateEMA(klines, 21);
+                const ema50 = calculateEMA(klines, 50);
+                const ema200 = calculateEMA(klines, 200);
+                const rsi = calculateRSI(klines);
+                const adxPack = calculateADX(klines);
+                const adx = adxPack?.adx || 0;
+                const atr = calculateATR(klines);
+
+                const alta = ema21 > ema50 && ema50 > ema200;
+                const baixa = ema21 < ema50 && ema50 < ema200;
+                const forca = adx > 20;
+
+                const pullbackCompra = currentPrice > ema21 * 0.99 && currentPrice < ema50 * 1.01;
+                const pullbackVenda = currentPrice < ema21 * 1.01 && currentPrice > ema50 * 0.99;
+
+                const conditionsBuy = [
+                    ema21 > ema50,
+                    ema50 > ema200,
+                    pullbackCompra,
+                    rsi > 50,
+                    adx > 20
+                ];
+                
+                const conditionsSell = [
+                    ema21 < ema50,
+                    ema50 < ema200,
+                    pullbackVenda,
+                    rsi < 50,
+                    adx > 20
+                ];
+                
+                const scoreBuyRaw = conditionsBuy.filter(Boolean).length / conditionsBuy.length;
+                const scoreSellRaw = conditionsSell.filter(Boolean).length / conditionsSell.length;
+
+                // Transforma em valor de 0 a 100
+                const rawScore = Math.max(scoreBuyRaw, scoreSellRaw) * 100;
+                let score = rawScore;
+
+                const compra = scoreBuyRaw >= 0.6;
+                const venda = scoreSellRaw >= 0.6;
+
+                const highs = klines.slice(-lookbackEstrutura).map(k => parseFloat(k[2]));
+                const lows = klines.slice(-lookbackEstrutura).map(k => parseFloat(k[3]));
+                const topo = highs.length ? Math.max(...highs) : currentPrice;
+                const fundo = lows.length ? Math.min(...lows) : currentPrice;
+
+                return {
+                    score,
+                    compra, venda,
+                    atr, topo, fundo,
+                    ema21, ema50, ema200, rsi, adx, forca, pullbackCompra, pullbackVenda, alta, baixa
+                };
+            }
+
+            // Calculando ambos os timeframes (5m focado em scalp, 15m estrutural)
+            const m5 = calcModel(klines5m);
+            const m15 = calcModel(klines15m);
+
+            // Blended Score (Pesos: 60% para 5m porque o foco é scalp e timing, 40% para 15m)
+            const score = Math.round((m5.score * 0.6) + (m15.score * 0.4));
+
+            const stopCompraATR = currentPrice - m5.atr * atrMultStop;
+            const stopVendaATR = currentPrice + m5.atr * atrMultStop;
+            const stopCompraEstrutura = m5.fundo;
+            const stopVendaEstrutura = m5.topo;
+
+            const melhorStopCompra = Math.min(stopCompraATR, stopCompraEstrutura);
+            const melhorStopVenda = Math.max(stopVendaATR, stopVendaEstrutura);
+
+            let melhorTipo = 'NONE';
+            let direction = 'NEUTRO';
+            let stopAtual = null;
+            let alvoAtual = null;
+            let entry = null;
+
+            // Se 5m e 15m cravarem compra = FORTE BUY. Se só o 5m der compra e o score geral for bom = SCALP BUY
+            if ((m5.compra && m15.compra) || (m5.compra && score >= 75)) {
+                direction = 'LONG';
+                melhorTipo = stopCompraATR < stopCompraEstrutura ? 'ATR' : 'ESTRUTURA';
+                entry = currentPrice;
+                stopAtual = melhorStopCompra;
+                alvoAtual = currentPrice + m5.atr * atrMultAlvo;
+            } else if ((m5.venda && m15.venda) || (m5.venda && score >= 75)) {
+                direction = 'SHORT';
+                melhorTipo = stopVendaATR > stopVendaEstrutura ? 'ATR' : 'ESTRUTURA';
+                entry = currentPrice;
+                stopAtual = melhorStopVenda;
+                alvoAtual = currentPrice - m5.atr * atrMultAlvo;
+            }
+
+            const active = score >= 75 && direction !== 'NEUTRO';
+            let influence = 0;
+            let confidenceBoost = 0;
+            if (active) {
+                if (score >= 90) {
+                    influence = direction === 'LONG' ? 3.5 : -3.5;
+                    confidenceBoost = 15; // Reforçado para scalp
+                } else {
+                    influence = direction === 'LONG' ? 1.8 : -1.8;
+                    confidenceBoost = 8;
+                }
+            }
+
+            return {
+                score,
+                active,
+                direction,
+                influence,
+                confidenceBoost,
+                entry,
+                stopAtual,
+                alvoAtual,
+                melhorTipo,
+                atr: m5.atr,
+                components: {
+                    alta: m5.alta,
+                    baixa: m5.baixa,
+                    forca: m5.forca,
+                    pullbackCompra: m5.pullbackCompra,
+                    pullbackVenda: m5.pullbackVenda,
+                    rsi: m5.rsi,
+                    adx: m5.adx,
+                    ema21: m5.ema21,
+                    ema50: m5.ema50,
+                    ema200: m5.ema200
+                }
+            };
         }
         
         function generateTechnicalAnalysis(data, symbol) {
-            const { klines15m, klines1h, klines4h, klines1d, ticker24h, orderBook, fundingRate, openInterest, trades, takerBuySellVol, forceOrders, openInterestHist, workerLiqData: _workerLiqRaw, currentPrice } = data;
+            const { klines5m, klines15m, klines1h, klines4h, klines1d, ticker24h, orderBook, fundingRate, openInterest, trades, takerBuySellVol, forceOrders, openInterestHist, workerLiqData: _workerLiqRaw, currentPrice } = data;
             
             // ============================================
             // MULTI-TIMEFRAME TECHNICAL INDICATORS
@@ -557,6 +969,19 @@
             const rsi15m = calculateRSI(klines15m);
             const rsi1h = calculateRSI(klines1h);
             const rsi4h = calculateRSI(klines4h);
+            const macd1h = calculateMACD(klines1h) || { histogram: 0, macd: 0, signal: 0 };
+            const macd4h = calculateMACD(klines4h) || { histogram: 0, macd: 0, signal: 0 };
+            const vwap = calculateVWAP(klines15m) || currentPrice;
+            const adx1h = calculateADX(klines1h) || { adx: 0, plusDI: 0, minusDI: 0 };
+            const adx4h = calculateADX(klines4h) || { adx: 0, plusDI: 0, minusDI: 0 };
+            const netVolume1h = calculateNetVolume(klines1h) || { delta: 0, ratio: 0, total: 0 };
+            const netVolume4h = calculateNetVolume(klines4h) || { delta: 0, ratio: 0, total: 0 };
+            const stoch1h = calculateStochastic(klines1h) || { k: 50, d: 50 };
+            const stoch4h = calculateStochastic(klines4h) || { k: 50, d: 50 };
+                                    
+            
+            
+            
             
             // EMA 200 em múltiplos timeframes (peso: 1.5 cada)
             const ema200_1h = calculateEMA(klines1h, 200);
@@ -574,9 +999,10 @@
             // ANÁLISE GRÁFICA MULTI-TIMEFRAME (1m, 5m, 15m, 1h)
             // ============================================
             const chartAnalysis = analyzeChartPatterns(klines15m, klines1h, currentPrice);
+            const pineV7 = evaluatePineV7Model(klines5m, klines15m, currentPrice);
             
             // ============================================
-            // HEATMAP DE LIQUIDAÇÕES (estilo Coinglass)
+            // HEATMAP DE LIQUIDAÇÍ•ES (estilo Coinglass)
             // ============================================
             const workerLiqData = data.workerLiqData || null;
             const fallbackLSRatio = (() => {
@@ -616,27 +1042,8 @@
             // Manter heatmap estimado para referência
             const liquidationHeatmap = calculateLiquidationHeatmap(currentPrice, openInterest, orderBook, takerBuySellVol);
             
-            // VWAP (peso: 1.5)
-            const vwap = calculateVWAP(klines1h);
-            
-            // MACD (peso: 1.5)
-            const macd1h = calculateMACD(klines1h);
-            const macd4h = calculateMACD(klines4h);
-            
-            // ADX - Força da tendência (peso: 1)
-            const adx1h = calculateADX(klines1h);
-            const adx4h = calculateADX(klines4h);
-            
-            // Stochastic (peso: 1)
-            const stoch1h = calculateStochastic(klines1h);
-            const stoch4h = calculateStochastic(klines4h);
-            
-            // Net Volume / Volume Delta (peso: 1.5)
-            const netVolume1h = calculateNetVolume(klines1h);
-            const netVolume4h = calculateNetVolume(klines4h);
-            
             // ============================================
-            // CONFLUENCE SCORING SYSTEM (Gradient — sem thresholds binários)
+                        // CONFLUENCE SCORING SYSTEM (Gradient — sem thresholds binários)
             // ============================================
             let confluenceScore = 0;
             const confluenceDetails = [];
@@ -669,14 +1076,14 @@
             const rsi4hSignal = rsi4hContrib > 0.3 ? 'LONG' : rsi4hContrib < -0.3 ? 'SHORT' : 'NEUTRO';
             confluenceDetails.push({ name: 'RSI 4h', value: rsi4h.toFixed(1), signal: rsi4hSignal, weight: +rsi4hContrib.toFixed(2), color: rsi4hSignal === 'LONG' ? '#22c55e' : rsi4hSignal === 'SHORT' ? '#ef4444' : '#94a3b8' });
             
-            // EMA 200 1h (peso 1.5 — distância ponderada)
+            // EMA 200 1h (peso 1.5 — dist ponderada)
             const ema1hDist = ema200_1h !== 0 ? ((currentPrice - ema200_1h) / ema200_1h) * 100 : 0;
             const ema1hContrib = 1.5 * Math.tanh(ema1hDist / 3); // smooth -1.5 to +1.5, saturates at ~3% distance
             confluenceScore += ema1hContrib;
             const ema1hSignal = ema1hContrib > 0.2 ? 'LONG' : ema1hContrib < -0.2 ? 'SHORT' : 'NEUTRO';
             confluenceDetails.push({ name: 'EMA 200 (1h)', value: `${ema1hDist > 0 ? '+' : ''}${ema1hDist.toFixed(1)}%`, signal: ema1hSignal, weight: +ema1hContrib.toFixed(2), color: ema1hSignal === 'LONG' ? '#22c55e' : ema1hSignal === 'SHORT' ? '#ef4444' : '#94a3b8' });
             
-            // EMA 200 4h (peso 1.5 — distância ponderada)
+            // EMA 200 4h (peso 1.5 — dist ponderada)
             const ema4hDist = ema200_4h !== 0 ? ((currentPrice - ema200_4h) / ema200_4h) * 100 : 0;
             const ema4hContrib = 1.5 * Math.tanh(ema4hDist / 3);
             confluenceScore += ema4hContrib;
@@ -783,7 +1190,7 @@
             }
             
             // ============================================
-            // MAPA DE RISCO DE LIQUIDAÇÃO PENDENTE (peso variável até 2.2)
+            // MAPA DE RISCO DE LIQUIDAÇÍO PENDENTE (peso variável até 2.2)
             // ============================================
             if (liquidationRiskMap.hasData) {
                 const liqImpact = Math.abs(liquidationRiskMap.confluenceImpact || 0);
@@ -862,7 +1269,7 @@
             }
             
             // ============================================
-            // S/R BREAKOUT DETECTION → Confluence
+            // S/R BREAKOUT DETECTION  Confluence
             // ============================================
             const sr = calculateSupportResistance(klines1h, currentPrice, ema50, sma50, sma200, val, vah, klines4h, klines1d);
             const srSupport = sr.support || currentPrice * 0.98;
@@ -922,6 +1329,29 @@
                     signal: 'SHORT',
                     weight: 0.5,
                     color: '#fca5a5'
+                });
+            }
+
+            // ============================================
+            // PINE V7 (BTC PRO) - Impacto condicional na confluência
+            // score < 75: ignorar | 75-89: moderado | >= 90: forte
+            // ============================================
+            if (pineV7.active) {
+                confluenceScore += pineV7.influence;
+                confluenceDetails.push({
+                    name: 'Pine BTC PRO v7',
+                    value: `${pineV7.score}/100 (${pineV7.direction})`,
+                    signal: pineV7.direction,
+                    weight: Math.abs(pineV7.influence),
+                    color: pineV7.direction === 'LONG' ? '#22c55e' : '#ef4444'
+                });
+            } else {
+                confluenceDetails.push({
+                    name: 'Pine BTC PRO v7',
+                    value: `${pineV7.score}/100 (inativo)`,
+                    signal: 'NEUTRO',
+                    weight: 0,
+                    color: '#94a3b8'
                 });
             }
             
@@ -1050,52 +1480,317 @@
                 V2.applyContextualScoring(confluenceDetails, marketRegime, marketStructure, cvdAdvanced, null, volatilityMetrics) :
                 { adjustedScore: confluenceScore, adjustedDetails: confluenceDetails, adjustments: [], originalScore: confluenceScore };
             
-            // Combinar scores
-            const orderFlowScore = priceLocationScore + fundingScore + cvdScore + bookScore + rsiScore + lsScore;
-            const totalScore = contextual.adjustedScore + orderFlowScore;
-            const maxScore = 37; // Updated: added ADX 4h (1) + Stochastic 4h (1)
             
-            // Contar indicadores alinhados
-            const longIndicators = confluenceDetails.filter(i => i.signal === 'LONG').length;
-            const shortIndicators = confluenceDetails.filter(i => i.signal === 'SHORT').length;
-            const neutralIndicators = confluenceDetails.filter(i => i.signal === 'NEUTRO').length;
-            const totalIndicators = confluenceDetails.length;
-            
-            // Probabilidade baseada em confluência contextual
-            let probability = 50;
-            if (totalScore > 0) {
-                probability = Math.min(50 + (totalScore / maxScore) * 45, 95);
-            } else if (totalScore < 0) {
-                probability = Math.max(50 + (totalScore / maxScore) * 45, 5);
-            }
-            
-            // Confiança baseada em quantos indicadores concordam + regime alignment
-            const alignedIndicators = Math.max(longIndicators, shortIndicators);
-            const alignmentRatio = alignedIndicators / totalIndicators;
-            let confidence = Math.round(Math.min(alignmentRatio * 100 + Math.abs(totalScore) * 2, 95));
-            
-            // Regime alignment bonus/penalty
-            if (marketRegime.isTrending) {
-                const trendDirection = marketRegime.regime === 'TRENDING_UP' ? 1 : -1;
-                if ((totalScore > 0 && trendDirection > 0) || (totalScore < 0 && trendDirection < 0)) {
-                    confidence = Math.min(confidence + 10, 95); // Aligned with trend
-                } else {
-                    confidence = Math.max(confidence - 10, 10); // Counter-trend
+            // ============================================
+            // NOVOS SINAIS DE ALTA ASSERTIVIDADE
+            // ============================================
+            // 1. Volume Breakout (Volume atual > 1.5x média dos ultimos 20)
+            const recentVols = klines1h.slice(-21).map(k => parseFloat(k[5]));
+            if (recentVols.length >= 21) {
+                const currentVol = recentVols[recentVols.length - 1];
+                const avgVol20 = recentVols.slice(0, 20).reduce((a, b) => a + b, 0) / 20;
+                
+                if (currentVol > avgVol20 * 1.5) {
+                    const priceDiff = currentPrice - parseFloat(klines1h[klines1h.length - 1][1]);
+                    if (priceDiff > 0) {
+                        confluenceScore += 2;
+                        confluenceDetails.push({ name: 'Volume Breakout', value: `${(currentVol/avgVol20).toFixed(1)}x média`, signal: 'LONG', weight: 2, color: '#22c55e' });
+                    } else if (priceDiff < 0) {
+                        confluenceScore -= 2;
+                        confluenceDetails.push({ name: 'Volume Breakout', value: `${(currentVol/avgVol20).toFixed(1)}x média`, signal: 'SHORT', weight: 2, color: '#ef4444' });
+                    }
                 }
             }
-            
+
+            // 2. Divergência RSI x Preço
+            const rsiValues = [];
+            const closePrices = klines1h.map(k => parseFloat(k[4]));
+            // Calculação básica de historico de RSI (aproximada para detecção de divergência)
+            for(let i = closePrices.length - 20; i <= closePrices.length; i++) {
+                if(i > 14) {
+                    // pseudo-historico RSI
+                    rsiValues.push({ val: rsi1h, idx: i }); 
+                }
+            }
+            if (klines1h.length >= 10) {
+                const prevHigh = Math.max(...closePrices.slice(-10, -3));
+                const currentHigh = Math.max(...closePrices.slice(-3));
+                
+                // bearish divergence
+                if (currentHigh > prevHigh && rsi1h < 50) {
+                    confluenceScore -= 2.5; 
+                    confluenceDetails.push({ name: 'Divergência Bearish', value: 'Preço sobe, RSI não', signal: 'SHORT', weight: 2.5, color: '#ef4444' });
+                }
+                // bullish divergence
+                const prevLow = Math.min(...closePrices.slice(-10, -3));
+                const currentLow = Math.min(...closePrices.slice(-3));
+                if (currentLow < prevLow && rsi1h > 50) {
+                    confluenceScore += 2.5;
+                    confluenceDetails.push({ name: 'Divergência Bullish', value: 'Preço cai, RSI não', signal: 'LONG', weight: 2.5, color: '#22c55e' });
+                }
+            }
+
+            // 3. Bollinger Squeeze 
+            const bb1h = (window.TAEngineV2 && window.TAEngineV2.calculateBollingerBands) ? window.TAEngineV2.calculateBollingerBands(klines1h, 20, 2) : null;
+            if (bb1h) {
+                const bbWidth = (bb1h.upper - bb1h.lower) / bb1h.middle;
+                // Identifica se está estreito (< 2%) 
+                if (bbWidth < 0.02) {
+                    if (currentPrice > bb1h.upper) {
+                        confluenceScore += 2;
+                        confluenceDetails.push({ name: 'BB Squeeze Breakout', value: 'Banda expandindo cima', signal: 'LONG', weight: 2, color: '#22c55e' });
+                    } else if (currentPrice < bb1h.lower) {
+                        confluenceScore -= 2;
+                        confluenceDetails.push({ name: 'BB Squeeze Breakout', value: 'Banda expandindo baixo', signal: 'SHORT', weight: 2, color: '#ef4444' });
+                    }
+                }
+            }
+
+            // 4. S/R Histórico (estimado via repetição de toques)
+            if (sr && sr.supportCount >= 3 && currentPrice < sr.support * 1.01 && currentPrice > sr.support * 0.99) {
+                confluenceScore += 2.5;
+                confluenceDetails.push({ name: 'Suporte Histórico', value: `>= 3 toques nÍvel ${sr.support}`, signal: 'LONG', weight: 2.5, color: '#22c55e' });
+            }
+            if (sr && sr.resistanceCount >= 3 && currentPrice > sr.resistance * 0.99 && currentPrice < sr.resistance * 1.01) {
+                confluenceScore -= 2.5;
+                confluenceDetails.push({ name: 'Resistência Histórica', value: `>= 3 toques nÍvel ${sr.resistance}`, signal: 'SHORT', weight: 2.5, color: '#ef4444' });
+            }
+
+            // ============================================
+            // SCORE FINAL EM PONTOS (0-100)
+            // Pesos fixos + consenso de 4/5 sinais principais
+            // ============================================
+            const scoreWeights = {
+                orderBookImbalance: 22,
+                volumeDelta: 22,
+                candlePattern: 20,
+                rsi15m: 16,
+                vwap: 12,
+                emaContext15m: 8
+            };
+
+            const clamp01 = (v) => Math.max(0, Math.min(1, Number(v) || 0));
+            const clamp100 = (v) => Math.max(0, Math.min(100, Number(v) || 0));
+            const atr = calculateATR(klines1h);
+            const srContext = buildSRContextForScoring(sr, currentPrice, atr);
+            const ema21_15m = calculateEMA(klines15m, 21);
+
+            const componentScores = [];
+            const weightedConfluenceDetails = [];
+            let longPoints = 0;
+            let shortPoints = 0;
+
+            const pushComponent = (id, name, direction, strength, valueText) => {
+                const maxPoints = scoreWeights[id] || 0;
+                const rawPoints = maxPoints * clamp01(strength);
+                const srAdj = resolveSRMultiplier(srContext, direction);
+                const adjustedPoints = direction === 'NEUTRO'
+                    ? 0
+                    : Math.min(maxPoints * 1.3, rawPoints * srAdj.multiplier);
+                const points = +adjustedPoints.toFixed(2);
+
+                if (direction === 'LONG') longPoints += points;
+                if (direction === 'SHORT') shortPoints += points;
+
+                const color = direction === 'LONG' ? '#22c55e' : direction === 'SHORT' ? '#ef4444' : '#94a3b8';
+                const signedWeight = direction === 'LONG' ? points : direction === 'SHORT' ? -points : 0;
+
+                componentScores.push({
+                    id,
+                    name,
+                    direction,
+                    value: valueText,
+                    maxPoints,
+                    rawPoints: +rawPoints.toFixed(2),
+                    points,
+                    srMultiplier: direction === 'NEUTRO' ? 1 : srAdj.multiplier,
+                    srReason: srAdj.reason,
+                    color
+                });
+
+                weightedConfluenceDetails.push({
+                    name,
+                    value: valueText,
+                    signal: direction,
+                    weight: +signedWeight.toFixed(2),
+                    color
+                });
+            };
+
+            // 1) Order Book Imbalance (22)
+            const bidVol = Number(bookImbalance.bidVolume) || 0;
+            const askVol = Number(bookImbalance.askVolume) || 0;
+            const bookShare = (bidVol + askVol) > 0 ? bidVol / (bidVol + askVol) : 0.5;
+            let bookDirection = 'NEUTRO';
+            let bookStrength = 0;
+            if (bookShare > 0.6) {
+                bookDirection = 'LONG';
+                bookStrength = clamp01(0.45 + ((bookShare - 0.6) / 0.4));
+            } else if (bookShare < 0.4) {
+                bookDirection = 'SHORT';
+                bookStrength = clamp01(0.45 + ((0.4 - bookShare) / 0.4));
+            }
+            pushComponent(
+                'orderBookImbalance',
+                'Order Book Imbalance',
+                bookDirection,
+                bookStrength,
+                `Bids ${(bookShare * 100).toFixed(1)}% / Asks ${(100 - (bookShare * 100)).toFixed(1)}%`
+            );
+
+            // 2) Delta de Volume 5m + 15m (22)
+            const delta5m = calculateSignedVolumeDelta(klines5m, 5);
+            const delta15m = calculateSignedVolumeDelta(klines15m, 5);
+            const sameDeltaDirection = Math.sign(delta5m.norm) !== 0 && Math.sign(delta5m.norm) === Math.sign(delta15m.norm);
+            const oppositeDeltaDirection = Math.sign(delta5m.norm) !== 0 && Math.sign(delta15m.norm) !== 0 && Math.sign(delta5m.norm) !== Math.sign(delta15m.norm);
+            let signedDelta = (delta5m.norm * 0.6) + (delta15m.norm * 0.4);
+            if (sameDeltaDirection) {
+                signedDelta *= (delta5m.growing || delta15m.growing) ? 1.15 : 1.05;
+            } else if (oppositeDeltaDirection) {
+                signedDelta *= 0.65;
+            }
+            let deltaDirection = 'NEUTRO';
+            if (signedDelta > 0.05) deltaDirection = 'LONG';
+            else if (signedDelta < -0.05) deltaDirection = 'SHORT';
+            const deltaStrength = deltaDirection === 'NEUTRO' ? 0 : clamp01(Math.abs(signedDelta) * 1.7 + (sameDeltaDirection ? 0.12 : 0));
+            pushComponent(
+                'volumeDelta',
+                'Delta Volume 5m/15m',
+                deltaDirection,
+                deltaStrength,
+                `5m ${(delta5m.norm * 100).toFixed(1)}% | 15m ${(delta15m.norm * 100).toFixed(1)}%`
+            );
+
+            // 3) Padrões de candle 5m + 15m (20)
+            const candle5m = detectRecentCandlesSignal(klines5m, srContext, '5m');
+            const candle15m = detectRecentCandlesSignal(klines15m, srContext, '15m');
+            const candle5Signed = candle5m.direction === 'LONG' ? candle5m.strength : candle5m.direction === 'SHORT' ? -candle5m.strength : 0;
+            const candle15Signed = candle15m.direction === 'LONG' ? candle15m.strength : candle15m.direction === 'SHORT' ? -candle15m.strength : 0;
+            const candleSame = candle5m.direction !== 'NEUTRO' && candle5m.direction === candle15m.direction;
+            const candleOpposite = candle5m.direction !== 'NEUTRO' && candle15m.direction !== 'NEUTRO' && candle5m.direction !== candle15m.direction;
+            let candleSigned = (candle5Signed * 0.55) + (candle15Signed * 0.45);
+            if (candleSame) candleSigned *= 1.15;
+            if (candleOpposite) candleSigned *= 0.65;
+            let candleDirection = 'NEUTRO';
+            if (candleSigned > 0.12) candleDirection = 'LONG';
+            else if (candleSigned < -0.12) candleDirection = 'SHORT';
+            const candleStrength = candleDirection === 'NEUTRO' ? 0 : clamp01(Math.abs(candleSigned));
+            pushComponent(
+                'candlePattern',
+                'Padrão Candle 5m/15m',
+                candleDirection,
+                candleStrength,
+                `${candle5m.label} | ${candle15m.label}`
+            );
+
+            // 4) RSI 15m (16)
+            let rsi15mDirection = 'NEUTRO';
+            let rsi15mStrength = 0;
+            if (rsi15m < 35) {
+                rsi15mDirection = 'LONG';
+                rsi15mStrength = clamp01(((35 - rsi15m) / 20) + 0.45);
+            } else if (rsi15m > 65) {
+                rsi15mDirection = 'SHORT';
+                rsi15mStrength = clamp01(((rsi15m - 65) / 20) + 0.45);
+            }
+            pushComponent('rsi15m', 'RSI 14 (15m)', rsi15mDirection, rsi15mStrength, `RSI ${rsi15m.toFixed(1)}`);
+
+            // 5) VWAP diário (12)
+            const vwapDirection = currentPrice >= vwap ? 'LONG' : 'SHORT';
+            const vwapDistPct = Math.abs(((currentPrice - vwap) / Math.max(vwap, 1e-9)) * 100);
+            const vwapStrength = clamp01(0.45 + (vwapDistPct / 1.8));
+            pushComponent('vwap', 'VWAP do Dia', vwapDirection, vwapStrength, `$${(vwap || 0).toFixed(2)} (${vwapDistPct.toFixed(2)}%)`);
+
+            // 6) EMA 9/21 (15m) contexto (8)
+            const emaSpreadPct = ema21_15m > 0 ? ((ema9 - ema21_15m) / ema21_15m) * 100 : 0;
+            const emaPriceBiasPct = ema9 > 0 ? ((currentPrice - ema9) / ema9) * 100 : 0;
+            const emaSigned = (emaSpreadPct * 1.2) + (emaPriceBiasPct * 0.8);
+            let emaDirection = 'NEUTRO';
+            if (emaSigned > 0.04) emaDirection = 'LONG';
+            else if (emaSigned < -0.04) emaDirection = 'SHORT';
+            const emaStrength = emaDirection === 'NEUTRO' ? 0 : clamp01(Math.abs(emaSigned) / 0.55);
+            pushComponent(
+                'emaContext15m',
+                'EMA 9/21 (15m)',
+                emaDirection,
+                emaStrength,
+                `EMA9 ${ema9.toFixed(2)} / EMA21 ${ema21_15m.toFixed(2)}`
+            );
+
+            const totalWeightPoints = Object.values(scoreWeights).reduce((sum, w) => sum + w, 0);
+            longPoints = +Math.min(totalWeightPoints * 1.3, longPoints).toFixed(2);
+            shortPoints = +Math.min(totalWeightPoints * 1.3, shortPoints).toFixed(2);
+            const dominantDirection = longPoints > shortPoints ? 'LONG' : shortPoints > longPoints ? 'SHORT' : 'NEUTRO';
+            const dominantPoints = Math.max(longPoints, shortPoints);
+            const oppositePoints = Math.min(longPoints, shortPoints);
+            const totalScore = +(longPoints - shortPoints).toFixed(2);
+
+            const coreIds = ['orderBookImbalance', 'volumeDelta', 'candlePattern', 'rsi15m', 'vwap'];
+            const alignedCore = coreIds
+                .map(id => componentScores.find(c => c.id === id))
+                .filter(Boolean)
+                .filter(c => c.direction === dominantDirection && c.points > 0)
+                .length;
+
+            let confidence = dominantPoints - (oppositePoints * 0.35);
+            if (dominantDirection === 'NEUTRO') confidence -= 12;
+            if (alignedCore >= 4) confidence += alignedCore === 5 ? 10 : 6;
+            else if (alignedCore === 3) confidence -= 2;
+            else confidence -= 10;
+
+            confidence = clamp100(Math.round(confidence));
+            if (alignedCore < 4) {
+                confidence = Math.min(confidence, alignedCore === 3 ? 79 : 59);
+            }
+            if (dominantPoints < 25) confidence = Math.min(confidence, 39);
+
             let signal = 'NEUTRO';
             let signalType = 'neutral';
-            if (totalScore >= 2) {
+            if (confidence >= 40 && dominantDirection === 'LONG') {
                 signal = 'LONG';
                 signalType = 'long';
-            } else if (totalScore <= -2) {
+            } else if (confidence >= 40 && dominantDirection === 'SHORT') {
                 signal = 'SHORT';
                 signalType = 'short';
             }
+
+            const confidenceBand = confidence < 40
+                ? 'AGUARDAR'
+                : confidence < 60
+                    ? 'SINAL_FRACO'
+                    : confidence < 80
+                        ? 'SINAL_MODERADO'
+                        : 'SINAL_FORTE';
+            const confidenceBandLabel = confidenceBand === 'AGUARDAR'
+                ? 'AGUARDAR'
+                : confidenceBand === 'SINAL_FRACO'
+                    ? 'Sinal fraco'
+                    : confidenceBand === 'SINAL_MODERADO'
+                        ? 'Sinal moderado'
+                        : 'Sinal forte';
+            const dominantSRAdjustment = resolveSRMultiplier(srContext, dominantDirection);
+
+            let probability = 50;
+            if (signalType === 'long' || signalType === 'short') {
+                probability = Math.round(clamp100(50 + (Math.abs(totalScore) * 0.45) + (alignedCore * 2)));
+            } else {
+                probability = Math.max(35, Math.round(confidence * 0.9));
+            }
+
+            const longIndicators = componentScores.filter(i => i.direction === 'LONG' && i.points > 0).length;
+            const shortIndicators = componentScores.filter(i => i.direction === 'SHORT' && i.points > 0).length;
+            const neutralIndicators = componentScores.filter(i => i.direction === 'NEUTRO' || i.points <= 0).length;
+            const totalIndicators = componentScores.length;
+
+            const pointsHistory = pushTAPointsHistory(symbol, {
+                ts: Date.now(),
+                confidence,
+                longPoints,
+                shortPoints,
+                signalType: signalType === 'neutral' ? 'aguardar' : signalType
+            });
             
             // 5f. Dynamic Targets (ATR-based with multi-TP)
-            const atr = calculateATR(klines1h);
             const dynamicTargets = V2.calculateDynamicTargets ?
                 V2.calculateDynamicTargets(signalType, currentPrice, volatilityMetrics.atr1h || atr, volatilityMetrics.atr4h || atr, poc, vah, val) :
                 null;
@@ -1124,10 +1819,10 @@
             // Generate AI Summary (enhanced)
             const aiSummary = generateAISummary(signalType, confidence, {
                 priceLocation, fundingSignal, cvdSignal, bookSignal, rsiSignal, lsSignal, poc, vah, val,
-                confluenceDetails, longIndicators, shortIndicators, totalIndicators,
+                confluenceDetails: weightedConfluenceDetails, longIndicators, shortIndicators, totalIndicators,
                 movingAverages: { ema9, ema21, ema50, sma50, sma99, sma200, currentPrice },
                 bookImbalance: bookImbalance,
-                whaleActivity: whaleActivity,
+                whaleActivity: window.WhaleIntegration ? window.WhaleIntegration.lastWhaleData || null : null,
                 // V2 data for enhanced summary
                 marketRegime, marketStructure, cvdAdvanced, volatilityMetrics,
                 bigTechMacro: null // Will be set post-generation when data arrives
@@ -1143,14 +1838,37 @@
                 takeProfit,
                 riskReward: riskReward !== null ? (typeof riskReward === 'string' ? riskReward : riskReward.toFixed(2)) : null,
                 dynamicTargets,
-                confluenceDetails: contextual.adjustedDetails || confluenceDetails,
+                confluenceDetails: weightedConfluenceDetails,
                 confluenceSummary: {
                     long: longIndicators,
                     short: shortIndicators,
                     neutral: neutralIndicators,
                     total: totalIndicators,
                     score: totalScore.toFixed(1),
-                    originalScore: contextual.originalScore?.toFixed(1) || confluenceScore.toFixed(1)
+                    originalScore: totalScore.toFixed(1),
+                    confidenceBand,
+                    confidenceBandLabel,
+                    alignedCore: `${alignedCore}/5`
+                },
+                confidenceModel: {
+                    name: 'weighted-points-v1',
+                    minSignalConfidence: 40,
+                    strongSignalConfidence: 80
+                },
+                confidencePoints: {
+                    confidence,
+                    totalPossible: totalWeightPoints,
+                    longPoints,
+                    shortPoints,
+                    dominantDirection,
+                    confidenceBand,
+                    confidenceBandLabel,
+                    alignedCore,
+                    srMultiplier: dominantSRAdjustment.multiplier,
+                    srContextDetail: dominantSRAdjustment.reason,
+                    srContext,
+                    components: componentScores,
+                    history: pointsHistory
                 },
                 // V2 additions
                 marketRegime,
@@ -1180,6 +1898,18 @@
                         rsiSignal,
                         takerRatio: (takerRatio || 0).toFixed(2),
                         lsSignal
+                    },
+                    pineV7: {
+                        score: pineV7.score,
+                        active: pineV7.active,
+                        direction: pineV7.direction,
+                        confidenceBoost: pineV7.confidenceBoost,
+                        entry: pineV7.entry,
+                        stopAtual: pineV7.stopAtual,
+                        alvoAtual: pineV7.alvoAtual,
+                        melhorTipo: pineV7.melhorTipo,
+                        atr: pineV7.atr,
+                        components: pineV7.components
                     },
                     multiTimeframe: {
                         rsi15m: (rsi15m || 0).toFixed(1),
@@ -1220,7 +1950,7 @@
         }
         
         // ============================================
-        // ANÁLISE DE PADRÕES GRÁFICOS MULTI-TIMEFRAME
+        // ANÁLISE DE PADRÍ•ES GRÁFICOS MULTI-TIMEFRAME
         // ============================================
         function analyzeChartPatterns(klines15m, klines1h, currentPrice) {
             const result = {
@@ -1317,7 +2047,7 @@
             const volRatio = avgVol > 0 ? ((recentVol / avgVol) * 100).toFixed(0) : 100;
             const volTrend = recentVol > avgVol * 1.2 ? 'AUMENTANDO' : recentVol < avgVol * 0.8 ? 'DIMINUINDO' : 'ESTÁVEL';
             
-            // ===== DETECÇÃO DE PADRÕES DE CANDLESTICK =====
+            // ===== DETECÇÍO DE PADRÍ•ES DE CANDLESTICK =====
             const patterns = [];
             const len = opens.length;
             if (len >= 3) {
@@ -1332,44 +2062,44 @@
                 
                 // Doji (corpo < 10% da range)
                 if (fullRange > 0 && body / fullRange < 0.1) {
-                    patterns.push({ name: 'Doji', icon: '✚', type: 'reversal', bias: 'neutro' });
+                    patterns.push({ name: 'Doji', icon: '', type: 'reversal', bias: 'neutro' });
                 }
                 // Hammer / Inverted Hammer
                 if (fullRange > 0 && lowerWick > body * 2 && upperWick < body * 0.5) {
                     const isBull = c > o;
-                    patterns.push({ name: 'Martelo', icon: '🔨', type: 'reversal', bias: isBull ? 'alta' : 'alta' });
+                    patterns.push({ name: 'Martelo', icon: '', type: 'reversal', bias: isBull ? 'alta' : 'alta' });
                 }
                 if (fullRange > 0 && upperWick > body * 2 && lowerWick < body * 0.5) {
-                    patterns.push({ name: 'Shooting Star', icon: '⭐', type: 'reversal', bias: 'baixa' });
+                    patterns.push({ name: 'Shooting Star', icon: '', type: 'reversal', bias: 'baixa' });
                 }
                 // Engulfing
                 if (c > o && prev_c < prev_o && c > prev_o && o < prev_c) {
-                    patterns.push({ name: 'Engolfo Alta', icon: '🟢', type: 'reversal', bias: 'alta' });
+                    patterns.push({ name: 'Engolfo Alta', icon: '', type: 'reversal', bias: 'alta' });
                 }
                 if (c < o && prev_c > prev_o && c < prev_o && o > prev_c) {
-                    patterns.push({ name: 'Engolfo Baixa', icon: '🔴', type: 'reversal', bias: 'baixa' });
+                    patterns.push({ name: 'Engolfo Baixa', icon: '', type: 'reversal', bias: 'baixa' });
                 }
                 // Pin Bar
                 if (fullRange > 0 && lowerWick / fullRange > 0.6 && body / fullRange < 0.2) {
-                    patterns.push({ name: 'Pin Bar Alta', icon: '📌', type: 'reversal', bias: 'alta' });
+                    patterns.push({ name: 'Pin Bar Alta', icon: '', type: 'reversal', bias: 'alta' });
                 }
                 if (fullRange > 0 && upperWick / fullRange > 0.6 && body / fullRange < 0.2) {
-                    patterns.push({ name: 'Pin Bar Baixa', icon: '📌', type: 'reversal', bias: 'baixa' });
+                    patterns.push({ name: 'Pin Bar Baixa', icon: '', type: 'reversal', bias: 'baixa' });
                 }
                 // Marubozu (corpo > 90% da range)
                 if (fullRange > 0 && body / fullRange > 0.9) {
                     const isBull = c > o;
-                    patterns.push({ name: isBull ? 'Marubozu Alta' : 'Marubozu Baixa', icon: isBull ? '💪' : '💀', type: 'continuation', bias: isBull ? 'alta' : 'baixa' });
+                    patterns.push({ name: isBull ? 'Marubozu Alta' : 'Marubozu Baixa', icon: isBull ? '' : '', type: 'continuation', bias: isBull ? 'alta' : 'baixa' });
                 }
                 // Three White Soldiers / Three Black Crows (últimas 3 velas)
                 if (len >= 4) {
                     const c3 = [closes[last-2], closes[last-1], closes[last]];
                     const o3 = [opens[last-2], opens[last-1], opens[last]];
                     if (c3[0] > o3[0] && c3[1] > o3[1] && c3[2] > o3[2] && c3[1] > c3[0] && c3[2] > c3[1]) {
-                        patterns.push({ name: '3 Soldados', icon: '🟢🟢🟢', type: 'continuation', bias: 'alta' });
+                        patterns.push({ name: '3 Soldados', icon: '', type: 'continuation', bias: 'alta' });
                     }
                     if (c3[0] < o3[0] && c3[1] < o3[1] && c3[2] < o3[2] && c3[1] < c3[0] && c3[2] < c3[1]) {
-                        patterns.push({ name: '3 Corvos', icon: '🔴🔴🔴', type: 'continuation', bias: 'baixa' });
+                        patterns.push({ name: '3 Corvos', icon: '', type: 'continuation', bias: 'baixa' });
                     }
                 }
                 // Morning Star / Evening Star
@@ -1377,10 +2107,10 @@
                     const pp = { o: opens[last-2], c: closes[last-2] };
                     const mid = { o: opens[last-1], c: closes[last-1], body: Math.abs(closes[last-1] - opens[last-1]) };
                     if (pp.c < pp.o && mid.body < prevBody * 0.3 && c > o && c > (pp.o + pp.c) / 2) {
-                        patterns.push({ name: 'Morning Star', icon: '🌅', type: 'reversal', bias: 'alta' });
+                        patterns.push({ name: 'Morning Star', icon: '', type: 'reversal', bias: 'alta' });
                     }
                     if (pp.c > pp.o && mid.body < prevBody * 0.3 && c < o && c < (pp.o + pp.c) / 2) {
-                        patterns.push({ name: 'Evening Star', icon: '🌆', type: 'reversal', bias: 'baixa' });
+                        patterns.push({ name: 'Evening Star', icon: '', type: 'reversal', bias: 'baixa' });
                     }
                 }
             }
@@ -1483,7 +2213,7 @@
         }
         
         // ============================================
-        // HEATMAP DE LIQUIDAÇÕES
+        // HEATMAP DE LIQUIDAÇÍ•ES
         // ============================================
         function calculateLiquidationHeatmap(currentPrice, openInterest, orderBook, takerBuySellVol) {
             const result = {
@@ -1572,7 +2302,7 @@
         function estimateVolumeAtLevel(orderBook, targetPrice, side) {
             const orders = side === 'bid' ? (orderBook?.bids || []) : (orderBook?.asks || []);
             let volume = 0;
-            const tolerance = targetPrice * 0.005; // 0.5% de tolerância
+            const tolerance = targetPrice * 0.005; // 0.5% de toler
             
             orders.forEach(order => {
                 const price = parseFloat(order[0]);
@@ -1585,7 +2315,7 @@
         }
         
         // ============================================
-        // DETECÇÃO DE INÍCIO DE TENDÊNCIA (REAL)
+        // DETECÇÍO DE INÍCIO DE TENDÊNCIA (REAL)
         // Identifica quando uma nova tendência está começando
         // ============================================
         function detectTrendStart(klines1m, klines5m, klines15m, klines1h, currentPrice) {
@@ -1617,7 +2347,7 @@
                 result.triggers.push({ trigger: 'Death Cross (EMA8 cruzou EMA21)', direction: 'DOWN', weight: 3 });
             }
             
-            // 2. BREAKOUT DE CONSOLIDAÇÃO
+            // 2. BREAKOUT DE CONSOLIDAÇÍO
             const highs1h = klines1h.slice(-20).map(k => parseFloat(k[2]));
             const lows1h = klines1h.slice(-20).map(k => parseFloat(k[3]));
             const recentHigh = Math.max(...highs1h.slice(-10));
@@ -1700,11 +2430,11 @@
             const totalScore = Math.max(upScore, downScore);
             if (upScore >= 3 && upScore > downScore * 1.5) {
                 result.isStartingUp = true;
-                result.signal = 'INÍCIO DE ALTA';
+                result.signal = 'INÍCIO DE ALTA';
                 result.confidence = Math.min(upScore / 10 * 100, 95);
             } else if (downScore >= 3 && downScore > upScore * 1.5) {
                 result.isStartingDown = true;
-                result.signal = 'INÍCIO DE QUEDA';
+                result.signal = 'INÍCIO DE QUEDA';
                 result.confidence = Math.min(downScore / 10 * 100, 95);
             }
             
@@ -1732,7 +2462,7 @@
         }
         
         // ============================================
-        // HEATMAP DE LIQUIDAÇÕES — DADOS REAIS
+        // HEATMAP DE LIQUIDAÇÍ•ES — DADOS REAIS
         // Baseado em ordens forçadas (allForceOrders) da Binance
         // + agregação via CoinGlass public endpoints
         // Dados acumulados server-side via Cloudflare KV (compartilhado entre todos os usuários)
@@ -1772,7 +2502,7 @@
             
             if (!currentPrice || currentPrice <= 0) return result;
             
-            // ─── FONTE PRIMÁRIA: Ordens forçadas reais da Binance ───
+            // ——— FONTE PRIMÁRIA: Ordens forçadas reais da Binance ———
             const validForceOrders = Array.isArray(forceOrders) ? forceOrders.filter(o => 
                 o && o.price && o.executedQty && o.side && o.time
             ) : [];
@@ -1795,8 +2525,8 @@
                     const orderTime = parseInt(order.time);
                     const isRecent = (now - orderTime) < recentWindow;
                     
-                    // side=BUY → SHORT foi liquidado (compra forçada p/ fechar short)
-                    // side=SELL → LONG foi liquidado (venda forçada p/ fechar long)
+                    // side=BUY  SHORT foi liquidado (compra forçada p/ fechar short)
+                    // side=SELL  LONG foi liquidado (venda forçada p/ fechar long)
                     const isSHORTLiq = order.side === 'BUY';
                     const isLONGLiq = order.side === 'SELL';
                     
@@ -1845,7 +2575,7 @@
                 return result;
             }
             
-            // ─── FALLBACK: Estimativa via Open Interest ───
+            // ——— FALLBACK: Estimativa via Open Interest ———
             const oiValue = parseFloat(openInterest?.openInterest || 0) * currentPrice;
             if (oiValue <= 0) return result;
             
@@ -1953,14 +2683,28 @@
             }
 
             const bucketDefs = [
-                { label: '0-1%', min: 0, max: 1 },
-                { label: '1-2%', min: 1, max: 2 },
-                { label: '2-3%', min: 2, max: 3 },
-                { label: '3-5%', min: 3, max: 5 },
-                { label: '5-8%', min: 5, max: 8 },
-                { label: '8-12%', min: 8, max: 12 },
-                { label: '12%+', min: 12, max: Number.POSITIVE_INFINITY }
+                { pctLabel: '0-1%', min: 0, max: 1 },
+                { pctLabel: '1-2%', min: 1, max: 2 },
+                { pctLabel: '2-3%', min: 2, max: 3 },
+                { pctLabel: '3-5%', min: 3, max: 5 },
+                { pctLabel: '5-8%', min: 5, max: 8 },
+                { pctLabel: '8-12%', min: 8, max: 12 },
+                { pctLabel: '12%+', min: 12, max: Number.POSITIVE_INFINITY }
             ];
+
+            // Build human-readable price range labels
+            const _fmtP = (v) => v >= 1000 ? '$' + Math.round(v).toLocaleString('en') : '$' + v.toFixed(2);
+            bucketDefs.forEach(def => {
+                const lo = currentPrice * (1 - def.max / 100);
+                const hi = currentPrice * (1 - def.min / 100);
+                const loUp = currentPrice * (1 + def.min / 100);
+                const hiUp = currentPrice * (1 + def.max / 100);
+                if (def.max === Number.POSITIVE_INFINITY) {
+                    def.label = '>' + _fmtP(currentPrice * 0.12);
+                } else {
+                    def.label = _fmtP(lo) + '  ' + _fmtP(hiUp);
+                }
+            });
 
             const normalizeType = (type) => String(type || '').toUpperCase();
             const pendingLevels = Array.isArray(realLiquidations.pendingLevels)
@@ -2012,6 +2756,7 @@
 
             const buckets = bucketDefs.map(def => ({
                 label: def.label,
+                pctLabel: def.pctLabel,
                 longUSD: 0,
                 shortUSD: 0,
                 totalUSD: 0
@@ -2027,7 +2772,7 @@
                     buckets[bucketIndex].totalUSD += level.volumeUSD;
                 });
             } else {
-                // Distribuição sintética quando só temos agregados (sem níveis por distância)
+                // Distribuição sintética quando só temos agregados (sem níveis por dist)
                 const syntheticDist = [0.06, 0.10, 0.14, 0.24, 0.22, 0.14, 0.10];
                 buckets.forEach((bucket, idx) => {
                     bucket.longUSD = pendingLongUSD * syntheticDist[idx];
@@ -2303,7 +3048,11 @@
             if (!klines || klines.length < 20) {
                 return {
                     support: Math.min(ema50 || currentPrice * 0.98, sma50 || currentPrice * 0.98, val || currentPrice * 0.98),
-                    resistance: Math.max(ema50 || currentPrice * 1.02, sma50 || currentPrice * 1.02, vah || currentPrice * 1.02)
+                    resistance: Math.max(ema50 || currentPrice * 1.02, sma50 || currentPrice * 1.02, vah || currentPrice * 1.02),
+                    supportStrength: 1,
+                    resistanceStrength: 1,
+                    supportCount: 1,
+                    resistanceCount: 1
                 };
             }
             
@@ -2362,13 +3111,22 @@
             
             // Support = strongest cluster below price
             const supportClusters = clusters.filter(c => c.price < currentPrice).sort((a, b) => b.totalWeight - a.totalWeight);
-            const support = supportClusters.length > 0 ? supportClusters[0].price : currentPrice * 0.98;
+            const supportCluster = supportClusters.length > 0 ? supportClusters[0] : null;
+            const support = supportCluster ? supportCluster.price : currentPrice * 0.98;
             
             // Resistance = strongest cluster above price
             const resistanceClusters = clusters.filter(c => c.price > currentPrice).sort((a, b) => b.totalWeight - a.totalWeight);
-            const resistance = resistanceClusters.length > 0 ? resistanceClusters[0].price : currentPrice * 1.02;
+            const resistanceCluster = resistanceClusters.length > 0 ? resistanceClusters[0] : null;
+            const resistance = resistanceCluster ? resistanceCluster.price : currentPrice * 1.02;
             
-            return { support, resistance };
+            return {
+                support,
+                resistance,
+                supportStrength: supportCluster ? supportCluster.totalWeight : 1,
+                resistanceStrength: resistanceCluster ? resistanceCluster.totalWeight : 1,
+                supportCount: supportCluster ? supportCluster.count : 1,
+                resistanceCount: resistanceCluster ? resistanceCluster.count : 1
+            };
         }
         
         // EMA - Exponential Moving Average (seed correto via SMA dos primeiros N períodos)
@@ -2415,6 +3173,204 @@
             const closes = klines.slice(-period).map(k => parseFloat(k[4]));
             const sum = closes.reduce((a, b) => a + b, 0);
             return sum / period;
+        }
+
+        function buildSRContextForScoring(sr, currentPrice, atr) {
+            const support = Number(sr?.support) || 0;
+            const resistance = Number(sr?.resistance) || 0;
+            const supportStrength = Number(sr?.supportStrength || sr?.supportCount || 0);
+            const resistanceStrength = Number(sr?.resistanceStrength || sr?.resistanceCount || 0);
+            const safePrice = Math.max(Number(currentPrice) || 0, 1e-9);
+            const atrPct = ((Number(atr) || (safePrice * 0.01)) / safePrice) * 100;
+            const nearThresholdPct = Math.max(0.35, Math.min(1.2, atrPct * 0.7));
+            const supportDistPct = support > 0 ? Math.abs((safePrice - support) / safePrice) * 100 : 999;
+            const resistanceDistPct = resistance > 0 ? Math.abs((resistance - safePrice) / safePrice) * 100 : 999;
+
+            const nearSupportStrong = support > 0 && supportDistPct <= nearThresholdPct && supportStrength >= 2.5;
+            const nearResistanceStrong = resistance > 0 && resistanceDistPct <= nearThresholdPct && resistanceStrength >= 2.5;
+
+            return {
+                support,
+                resistance,
+                supportStrength,
+                resistanceStrength,
+                nearThresholdPct,
+                supportDistPct,
+                resistanceDistPct,
+                nearSupportStrong,
+                nearResistanceStrong,
+                hasStrongNearby: nearSupportStrong || nearResistanceStrong,
+                label: nearSupportStrong
+                    ? 'Suporte forte próximo'
+                    : nearResistanceStrong
+                        ? 'Resistência forte próxima'
+                        : 'Sem S/R forte próximo'
+            };
+        }
+
+        function resolveSRMultiplier(srContext, direction) {
+            if (!srContext || !direction || direction === 'NEUTRO') {
+                return { multiplier: 1, reason: 'Sem ajuste de S/R' };
+            }
+
+            if (direction === 'LONG' && srContext.nearSupportStrong) {
+                return { multiplier: 1.3, reason: 'Long sobre suporte forte (+30%)' };
+            }
+            if (direction === 'SHORT' && srContext.nearResistanceStrong) {
+                return { multiplier: 1.3, reason: 'Short sob resistência forte (+30%)' };
+            }
+
+            if (!srContext.hasStrongNearby) {
+                return { multiplier: 0.8, reason: 'Sem S/R próximo (-20%)' };
+            }
+
+            if ((direction === 'LONG' && srContext.nearResistanceStrong) || (direction === 'SHORT' && srContext.nearSupportStrong)) {
+                return { multiplier: 0.8, reason: 'Direção contra S/R próximo (-20%)' };
+            }
+
+            return { multiplier: 1, reason: 'Contexto S/R neutro' };
+        }
+
+        function calculateSignedVolumeDelta(klines, window = 5) {
+            if (!Array.isArray(klines) || klines.length < window) {
+                return {
+                    direction: 'NEUTRO',
+                    strength: 0,
+                    norm: 0,
+                    prevNorm: 0,
+                    growing: false,
+                    raw: 0,
+                    rawPrev: 0
+                };
+            }
+
+            const signedDelta = (slice) => {
+                let signed = 0;
+                let total = 0;
+                slice.forEach(k => {
+                    const open = parseFloat(k[1]);
+                    const close = parseFloat(k[4]);
+                    const vol = parseFloat(k[5]);
+                    if (!Number.isFinite(open) || !Number.isFinite(close) || !Number.isFinite(vol)) return;
+                    const dir = close >= open ? 1 : -1;
+                    signed += dir * vol;
+                    total += Math.abs(vol);
+                });
+                return { raw: signed, norm: total > 0 ? signed / total : 0 };
+            };
+
+            const recent = klines.slice(-window);
+            const previous = klines.length >= window * 2 ? klines.slice(-(window * 2), -window) : klines.slice(-window);
+            const nowDelta = signedDelta(recent);
+            const prevDelta = signedDelta(previous);
+
+            const sameDirection = Math.sign(nowDelta.norm) !== 0 && Math.sign(nowDelta.norm) === Math.sign(prevDelta.norm);
+            const growing = sameDirection && Math.abs(nowDelta.norm) > Math.abs(prevDelta.norm) + 0.03;
+
+            let direction = 'NEUTRO';
+            if (nowDelta.norm > 0.06) direction = 'LONG';
+            else if (nowDelta.norm < -0.06) direction = 'SHORT';
+
+            let strength = Math.min(Math.abs(nowDelta.norm) * 1.35 + (growing ? 0.18 : 0), 1);
+            if (direction === 'NEUTRO') strength = 0;
+
+            return {
+                direction,
+                strength,
+                norm: nowDelta.norm,
+                prevNorm: prevDelta.norm,
+                growing,
+                raw: nowDelta.raw,
+                rawPrev: prevDelta.raw
+            };
+        }
+
+        function detectRecentCandlesSignal(klines, srContext, timeframeLabel) {
+            if (!Array.isArray(klines) || klines.length < 4) {
+                return {
+                    direction: 'NEUTRO',
+                    strength: 0,
+                    label: `${timeframeLabel}: sem padrão`,
+                    scoreLong: 0,
+                    scoreShort: 0
+                };
+            }
+
+            const candles = klines.slice(-4).map(k => {
+                const open = parseFloat(k[1]);
+                const high = parseFloat(k[2]);
+                const low = parseFloat(k[3]);
+                const close = parseFloat(k[4]);
+                const range = Math.max(high - low, 1e-9);
+                const body = Math.abs(close - open);
+                const upperWick = high - Math.max(open, close);
+                const lowerWick = Math.min(open, close) - low;
+                return { open, high, low, close, range, body, upperWick, lowerWick, bullish: close > open, bearish: close < open };
+            });
+
+            const last = candles[candles.length - 1];
+            const prev = candles[candles.length - 2];
+            const prev2 = candles[candles.length - 3];
+
+            const candidates = [];
+            const add = (direction, strength, label) => {
+                if (!direction || strength <= 0) return;
+                candidates.push({ direction, strength, label });
+            };
+
+            const bullishEngulfing = prev.bearish && last.bullish && last.open <= prev.close && last.close >= prev.open;
+            const bearishEngulfing = prev.bullish && last.bearish && last.open >= prev.close && last.close <= prev.open;
+            if (bullishEngulfing) add('LONG', 1.0, `${timeframeLabel}: Engolfo de Alta`);
+            if (bearishEngulfing) add('SHORT', 1.0, `${timeframeLabel}: Engolfo de Baixa`);
+
+            const lastBodyRatio = last.body / last.range;
+            const lastLowerRatio = last.lowerWick / last.range;
+            const lastUpperRatio = last.upperWick / last.range;
+
+            const isHammer = lastLowerRatio >= 0.55 && lastUpperRatio <= 0.2 && lastBodyRatio <= 0.45;
+            const isShootingStar = lastUpperRatio >= 0.55 && lastLowerRatio <= 0.2 && lastBodyRatio <= 0.45;
+            const isBullMarubozu = last.bullish && lastBodyRatio >= 0.82 && lastUpperRatio <= 0.1 && lastLowerRatio <= 0.1;
+            const isBearMarubozu = last.bearish && lastBodyRatio >= 0.82 && lastUpperRatio <= 0.1 && lastLowerRatio <= 0.1;
+            const isDoji = lastBodyRatio <= 0.1;
+
+            if (isHammer) add('LONG', 0.75, `${timeframeLabel}: Martelo (Pin Bar)`);
+            if (isShootingStar) add('SHORT', 0.75, `${timeframeLabel}: Shooting Star`);
+            if (isBullMarubozu) add('LONG', 0.85, `${timeframeLabel}: Marubozu de Alta`);
+            if (isBearMarubozu) add('SHORT', 0.85, `${timeframeLabel}: Marubozu de Baixa`);
+
+            if (isDoji) {
+                if (srContext?.nearSupportStrong) {
+                    add('LONG', 0.45, `${timeframeLabel}: Doji em Suporte`);
+                } else if (srContext?.nearResistanceStrong) {
+                    add('SHORT', 0.45, `${timeframeLabel}: Doji em Resistência`);
+                }
+            }
+
+            if (candidates.length === 0) {
+                const momentum = ((last.close - prev2.close) / Math.max(prev2.close, 1e-9)) * 100;
+                if (momentum > 0.35 && last.bullish) add('LONG', 0.35, `${timeframeLabel}: Sequência de Alta`);
+                if (momentum < -0.35 && last.bearish) add('SHORT', 0.35, `${timeframeLabel}: Sequência de Baixa`);
+            }
+
+            const scoreLong = candidates.filter(c => c.direction === 'LONG').reduce((sum, c) => sum + c.strength, 0);
+            const scoreShort = candidates.filter(c => c.direction === 'SHORT').reduce((sum, c) => sum + c.strength, 0);
+            const top = [...candidates].sort((a, b) => b.strength - a.strength)[0];
+
+            let direction = 'NEUTRO';
+            const net = scoreLong - scoreShort;
+            if (net > 0.12) direction = 'LONG';
+            else if (net < -0.12) direction = 'SHORT';
+
+            const strength = direction === 'NEUTRO' ? 0 : Math.min(Math.max(Math.abs(net), top?.strength || 0), 1);
+            const label = top ? top.label : `${timeframeLabel}: sem padrão`;
+
+            return {
+                direction,
+                strength,
+                label,
+                scoreLong,
+                scoreShort
+            };
         }
         
         // MACD - Moving Average Convergence Divergence
@@ -2613,14 +3569,14 @@
                 const whale = indicators.whaleActivity;
                 if (whale.level === 'muito_alta' || whale.level === 'alta') {
                     if (whale.direction === 'compra') {
-                        whaleAnalysis = '🐋 Baleias: Atividade ALTA com predominância de COMPRA - institucionais acumulando.';
+                        whaleAnalysis = ' Baleias: Atividade ALTA com predomin de COMPRA - institucionais acumulando.';
                     } else if (whale.direction === 'venda') {
-                        whaleAnalysis = '🐋 Baleias: Atividade ALTA com predominância de VENDA - institucionais distribuindo.';
+                        whaleAnalysis = ' Baleias: Atividade ALTA com predomin de VENDA - institucionais distribuindo.';
                     } else {
-                        whaleAnalysis = '🐋 Baleias: Atividade ALTA detectada - monitorar direção.';
+                        whaleAnalysis = ' Baleias: Atividade ALTA detectada - monitorar direção.';
                     }
                 } else if (whale.level === 'moderada') {
-                    whaleAnalysis = '🐋 Baleias: Atividade moderada no mercado.';
+                    whaleAnalysis = ' Baleias: Atividade moderada no mercado.';
                 }
             }
             
@@ -2629,9 +3585,9 @@
             if (indicators.bookImbalance) {
                 const ratio = indicators.bookImbalance.ratio;
                 if (ratio > 1.5) {
-                    bookAnalysis = '📗 Order Book: Forte pressão compradora (${ratio.toFixed(2)}x mais bids que asks).';
+                    bookAnalysis = ' Order Book: Forte pressão compradora (${ratio.toFixed(2)}x mais bids que asks).';
                 } else if (ratio < 0.67) {
-                    bookAnalysis = '📕 Order Book: Forte pressão vendedora (${(1/ratio).toFixed(2)}x mais asks que bids).';
+                    bookAnalysis = ' Order Book: Forte pressão vendedora (${(1/ratio).toFixed(2)}x mais asks que bids).';
                 }
             }
             
@@ -2651,17 +3607,17 @@
             if (indicators.marketStructure) {
                 const s = indicators.marketStructure;
                 if (s.structureDescription) {
-                    structureAnalysis = `📐 Estrutura: ${s.structureDescription}`;
+                    structureAnalysis = ` Estrutura: ${s.structureDescription}`;
                 }
                 if (s.liquiditySweeps?.detected) {
-                    structureAnalysis += `\n🎯 ${s.liquiditySweeps.description}`;
+                    structureAnalysis += `\n ${s.liquiditySweeps.description}`;
                 }
             }
             if (indicators.cvdAdvanced) {
                 const c = indicators.cvdAdvanced;
                 if (c.divergence) cvdAdvAnalysis += `${c.divergence.icon} CVD: ${c.divergence.description}\n`;
-                if (c.absorption) cvdAdvAnalysis += `🐋 CVD: ${c.absorption.description}\n`;
-                if (c.breakout) cvdAdvAnalysis += `💥 CVD: ${c.breakout.description}\n`;
+                if (c.absorption) cvdAdvAnalysis += ` CVD: ${c.absorption.description}\n`;
+                if (c.breakout) cvdAdvAnalysis += ` CVD: ${c.breakout.description}\n`;
             }
             if (indicators.volatilityMetrics) {
                 const v = indicators.volatilityMetrics;
@@ -2673,15 +3629,15 @@
             if (indicators.bigTechMacro) {
                 const bt = indicators.bigTechMacro;
                 const techSummary = bt.bigTech?.map(t => `${t.symbol}: ${t.changePercent > 0 ? '+' : ''}${t.changePercent.toFixed(1)}%`).join(', ') || '';
-                bigTechAnalysis = `🏢 Big Tech: ${bt.bigTechSentiment} (${techSummary})`;
+                bigTechAnalysis = ` Big Tech: ${bt.bigTechSentiment} (${techSummary})`;
                 if (bt.fearGreed) {
-                    bigTechAnalysis += `\n🎭 Fear & Greed: ${bt.fearGreed.value}/100 — ${bt.fearGreed.classification}`;
+                    bigTechAnalysis += `\n Fear & Greed: ${bt.fearGreed.value}/100 — ${bt.fearGreed.classification}`;
                 }
                 if (bt.indices?.length > 0) {
                     const sp = bt.indices.find(i => i.symbol === '^GSPC');
                     const vix = bt.indices.find(i => i.symbol === '^VIX');
                     if (sp) bigTechAnalysis += `\n📈 S&P 500: ${sp.changePercent > 0 ? '+' : ''}${sp.changePercent.toFixed(2)}%`;
-                    if (vix) bigTechAnalysis += ` | 😱 VIX: ${vix.price.toFixed(1)}`;
+                    if (vix) bigTechAnalysis += ` |  VIX: ${vix.price.toFixed(1)}`;
                 }
                 if (bt.treasuryYields?.isInverted) {
                     bigTechAnalysis += '\n⚠️ CURVA DE JUROS INVERTIDA — sinal de recessão que pressiona risk assets';
@@ -2703,7 +3659,7 @@ ${maAnalysis}
 ${whaleAnalysis}
 
 ${indicators.rsiSignal === 'oversold' ? '⚠️ RSI em sobrevenda - momento ótimo para entrada!' : ''}
-${indicators.lsSignal === 'bullish' ? '💡 Long/Short Ratio indica shorts excessivos - potencial short squeeze.' : ''}
+${indicators.lsSignal === 'bullish' ? ' Long/Short Ratio indica shorts excessivos - potencial short squeeze.' : ''}
 
 ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n' : ''}
 Confiança: ${confidence}%`;
@@ -2720,7 +3676,7 @@ ${maAnalysis}
 ${whaleAnalysis}
 
 ${indicators.rsiSignal === 'overbought' ? '⚠️ RSI em sobrecompra - momento ótimo para short!' : ''}
-${indicators.lsSignal === 'bearish' ? '💡 Long/Short Ratio indica longs excessivos - potencial long squeeze.' : ''}
+${indicators.lsSignal === 'bearish' ? ' Long/Short Ratio indica longs excessivos - potencial long squeeze.' : ''}
 
 ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n' : ''}
 Confiança: ${confidence}%`;
@@ -2732,24 +3688,24 @@ Confiança: ${confidence}%`;
                 
                 if (currentPrice > indicators.vah) {
                     pricePositionMsg = `O preço atual ($${currentPrice.toFixed(2)}) está ACIMA da VAH ($${indicators.vah?.toFixed(2)}), mas não há confluência suficiente para confirmar continuação de alta.`;
-                    recommendationMsg = `🚫 Recomendação: NÃO OPERAR agora.
-• O preço JÁ rompeu VAH - aguarde reteste da VAH ($${indicators.vah?.toFixed(2)}) como SUPORTE para LONG
-• Ou aguarde retorno para dentro da área de valor para SHORT
-• Evite comprar no topo sem confirmação de volume`;
+                    recommendationMsg = ` Recomendação: NÃO OPERAR agora.
+- O preço JÁ rompeu VAH - aguarde reteste da VAH ($${indicators.vah?.toFixed(2)}) como SUPORTE para LONG
+- Ou aguarde retorno para dentro da área de valor para SHORT
+- Evite comprar no topo sem confirmação de volume`;
                 } else if (currentPrice < indicators.val) {
                     pricePositionMsg = `O preço atual ($${currentPrice.toFixed(2)}) está ABAIXO da VAL ($${indicators.val?.toFixed(2)}), mas não há confluência suficiente para confirmar continuação de baixa.`;
-                    recommendationMsg = `🚫 Recomendação: NÃO OPERAR agora.
-• O preço JÁ rompeu VAL - aguarde reteste da VAL ($${indicators.val?.toFixed(2)}) como RESISTÊNCIA para SHORT
-• Ou aguarde retorno para dentro da área de valor para LONG
-• Evite vender no fundo sem confirmação de volume`;
+                    recommendationMsg = ` Recomendação: NÃO OPERAR agora.
+- O preço JÁ rompeu VAL - aguarde reteste da VAL ($${indicators.val?.toFixed(2)}) como RESISTÊNCIA para SHORT
+- Ou aguarde retorno para dentro da área de valor para LONG
+- Evite vender no fundo sem confirmação de volume`;
                 } else {
                     pricePositionMsg = `O preço atual ($${currentPrice.toFixed(2)}) está DENTRO da área de valor (VAL: $${indicators.val?.toFixed(2)} | VAH: $${indicators.vah?.toFixed(2)}).`;
-                    recommendationMsg = `🚫 Recomendação: NÃO OPERAR agora.
-• Aguarde rompimento claro da VAH ($${indicators.vah?.toFixed(2)}) com volume para LONG
-• Aguarde rompimento claro da VAL ($${indicators.val?.toFixed(2)}) com volume para SHORT`;
+                    recommendationMsg = ` Recomendação: NÃO OPERAR agora.
+- Aguarde rompimento claro da VAH ($${indicators.vah?.toFixed(2)}) com volume para LONG
+- Aguarde rompimento claro da VAL ($${indicators.val?.toFixed(2)}) com volume para SHORT`;
                 }
                 
-                return `⏳ NEUTRO — ${crypto}
+                return ` NEUTRO — ${crypto}
 
 ${pricePositionMsg}
 
@@ -2761,26 +3717,21 @@ ${whaleAnalysis}
 ${recommendationMsg}
 
 ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores atuais:
-• Funding Rate: ${indicators.fundingSignal}
-• CVD: ${indicators.cvdSignal}
-• Order Book: ${indicators.bookSignal}
+- Funding Rate: ${indicators.fundingSignal}
+- CVD: ${indicators.cvdSignal}
+- Order Book: ${indicators.bookSignal}
 
 ⚠️ Confiança para operação: BAIXA. Sem sinal direcional.`;
             }
         }
 
-        // ═══════════════════════════════════════════════════════════
+        // 
         // GROQ AI — Relatório de IA real via Llama 3.3 70B
-        // ═══════════════════════════════════════════════════════════
-        const GROQ_API_KEY = (window.APP_CONFIG && window.APP_CONFIG.GROQ_API_KEY) || '';
-        const GROQ_REMOTE_ENABLED = !!(
-            GROQ_API_KEY &&
-            GROQ_API_KEY !== 'COLE_SUA_CHAVE_GROQ_AQUI' &&
-            GROQ_API_KEY !== 'YOUR_GROQ_API_KEY'
-        );
-        const AI_WORKER_URL = String((window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '').trim().replace(/\/+$/, '');
+        // 
+        const APP_CONFIG = (typeof window !== 'undefined' && window.APP_CONFIG) ? window.APP_CONFIG : {};
+        const DEFAULT_AI_WORKER_URL = 'https://visorcrypto.loan';
+        const AI_WORKER_URL = String(APP_CONFIG.CALENDAR_WORKER_URL || DEFAULT_AI_WORKER_URL).trim().replace(/\/+$/, '');
         const GROQ_MODEL = 'llama-3.3-70b-versatile';
-        const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
         const _aiSummaryCache = {};
 
         // Evitar acúmulo de memória no cache de AI summaries
@@ -2798,7 +3749,7 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
         }
 
         async function fetchAISummary(analysis, symbol) {
-            if (!GROQ_REMOTE_ENABLED && !AI_WORKER_URL) return null;
+            if (!AI_WORKER_URL) return null;
             _cleanAISummaryCache();
             const cacheKey = `${symbol}_${Math.floor(Date.now() / 300000)}`;
             if (_aiSummaryCache[cacheKey]) return _aiSummaryCache[cacheKey];
@@ -2852,9 +3803,9 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
 Regras:
 - Máximo 800 caracteres
 - Não use markdown, apenas texto limpo com emojis para seções
-- Comece com o sinal (📈 LONG / 📉 SHORT / ⏳ NEUTRO), a confiança e a probabilidade
+- Comece com o sinal (📈 LONG / 📉 SHORT /  NEUTRO)
 - A confiança DEVE ser EXATAMENTE ${dataPayload.confidence}% — este valor já foi calculado pelo motor de confluência, NÃO calcule nem invente outro valor
-- A probabilidade DEVE ser EXATAMENTE ${dataPayload.probability}% — este valor já foi calculado pelo motor de análise, NÃO calcule nem invente outro valor
+- NUNCA mencione probabilidade, apenas a Confiança.
 - Analise: regime de mercado, volume profile, order flow (CVD, funding), microestrutura, sentimento
 - Dê uma conclusão objetiva: operar ou não, e por quê
 - Se NEUTRO, explique o que esperar para entrar
@@ -2865,43 +3816,68 @@ Regras:
                 const userPrompt = `Dados da análise técnica de ${crypto} (${symbol}):\n${JSON.stringify(dataPayload)}`;
                 let aiText = null;
 
-                if (GROQ_REMOTE_ENABLED) {
-                    const resp = await fetch(GROQ_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${GROQ_API_KEY}`
-                        },
-                        body: JSON.stringify({
-                            model: GROQ_MODEL,
-                            messages: [
-                                { role: 'system', content: systemPrompt },
-                                { role: 'user', content: userPrompt }
-                            ],
-                            temperature: 0.4,
-                            max_tokens: 500,
-                            stream: false
-                        })
-                    });
-                    if (!resp.ok) throw new Error(`Groq API ${resp.status}`);
-                    const data = await resp.json();
-                    aiText = data.choices?.[0]?.message?.content?.trim();
-                } else {
-                    const proxyResp = await fetch(`${AI_WORKER_URL}/ai-summary`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model: GROQ_MODEL,
-                            systemPrompt,
-                            userPrompt
-                        }),
-                        signal: AbortSignal.timeout(12000)
-                    });
-                    if (!proxyResp.ok) throw new Error(`AI proxy ${proxyResp.status}`);
-                    const proxyData = await proxyResp.json();
-                    if (!proxyData?.success) throw new Error(proxyData?.error || 'AI proxy failed');
-                    aiText = String(proxyData.content || '').trim();
+                let headers = { 'Content-Type': 'application/json' };
+                if (window.AuthClient && typeof window.AuthClient.getWriteAuthHeaders === 'function') {
+                    try {
+                        Object.assign(headers, await window.AuthClient.getWriteAuthHeaders());
+                    } catch (authErr) {
+                        console.warn('[AI Auth]', authErr.message);
+                    }
                 }
+
+                const requestBody = JSON.stringify({
+                    model: GROQ_MODEL,
+                    systemPrompt,
+                    userPrompt
+                });
+
+                let proxyData = null;
+                let lastProxyErr = null;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        const proxyResp = await fetch(`${AI_WORKER_URL}/ai-summary`, {
+                            method: 'POST',
+                            headers,
+                            body: requestBody,
+                            signal: AbortSignal.timeout(12000)
+                        });
+
+                        if ((proxyResp.status === 401 || proxyResp.status === 403) && window.AuthClient && typeof window.AuthClient.getWriteAuthHeaders === 'function') {
+                            try {
+                                headers = {
+                                    'Content-Type': 'application/json',
+                                    ...(await window.AuthClient.getWriteAuthHeaders({ forceRefresh: true }))
+                                };
+                            } catch (refreshErr) {
+                                console.warn('[AI Auth Refresh]', refreshErr.message);
+                            }
+                            if (attempt < 3) {
+                                await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+                                continue;
+                            }
+                        }
+
+                        if (proxyResp.status === 503 && attempt < 3) {
+                            await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+                            continue;
+                        }
+
+                        if (!proxyResp.ok) throw new Error(`AI proxy ${proxyResp.status}`);
+                        proxyData = await proxyResp.json();
+                        break;
+                    } catch (proxyErr) {
+                        lastProxyErr = proxyErr;
+                        if (attempt < 3) {
+                            await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+                        }
+                    }
+                }
+
+                if (!proxyData) {
+                    throw (lastProxyErr || new Error('AI proxy unavailable'));
+                }
+                if (!proxyData?.success) throw new Error(proxyData?.error || 'AI proxy failed');
+                aiText = String(proxyData.content || '').trim();
 
                 if (aiText) {
                     // Post-process: force the correct confidence % from the engine
@@ -2963,16 +3939,8 @@ Regras:
             if (aiResult) {
                 currentTextEl.textContent = aiResult;
             } else {
-                // Groq failed — show local fallback with blended confidence
-                const localText = generateLocalSummary(
-                    finalSigType, finalConf,
-                    analysis.indicators || {}, symbol
-                );
-                const noKey = !GROQ_REMOTE_ENABLED;
-                const prefix = noKey
-                    ? 'ℹ️ Relatório em modo local. Para IA remota via Groq, configure CALENDAR_WORKER_URL e GROQ_API_KEY no Worker.\n\n'
-                    : '⚠️ IA indisponível — análise local:\n\n';
-                currentTextEl.textContent = prefix + localText;
+                const localFallback = generateLocalSummary(finalSigType, finalConf, analysis.indicators || {}, symbol || taCurrentSymbol || 'BTCUSDT');
+                currentTextEl.textContent = localFallback || 'IA indisponível no momento. Tente novamente em alguns minutos.';
             }
         }
 
@@ -3011,22 +3979,56 @@ Regras:
                 ? 'Níveis reais por distância do preço'
                 : 'Distribuição agregada por Open Interest';
 
-            const bucketRows = (liquidationRiskMap.bucketData || []).map((bucket) => {
-                const maxBucket = Math.max(1, liquidationRiskMap.maxBucketUSD || 1);
-                const shortWidth = bucket.shortUSD > 0 ? Math.max(3, (bucket.shortUSD / maxBucket) * 100) : 0;
-                const longWidth = bucket.longUSD > 0 ? Math.max(3, (bucket.longUSD / maxBucket) * 100) : 0;
+            const rawBuckets = Array.isArray(liquidationRiskMap.bucketData) ? liquidationRiskMap.bucketData : [];
+            const hasBucketVolume = rawBuckets.some(bucket => ((bucket.shortUSD || 0) + (bucket.longUSD || 0)) > 0);
+            const syntheticWeights = [0.16, 0.18, 0.16, 0.18, 0.14, 0.10, 0.08];
+            const fallbackLabels = ['0-1%', '1-2%', '2-3%', '3-5%', '5-8%', '8-12%', '12%+'];
+
+            const buckets = (hasBucketVolume
+                ? rawBuckets
+                : fallbackLabels.map((pctLabel, idx) => ({
+                    pctLabel,
+                    label: pctLabel,
+                    shortUSD: (liquidationRiskMap.pendingShortUSD || 0) * syntheticWeights[idx],
+                    longUSD: (liquidationRiskMap.pendingLongUSD || 0) * syntheticWeights[idx]
+                })))
+                .map((bucket, idx) => {
+                    const shortUSD = Math.max(0, Number(bucket.shortUSD) || 0);
+                    const longUSD = Math.max(0, Number(bucket.longUSD) || 0);
+                    return {
+                        pctLabel: bucket.pctLabel || fallbackLabels[idx] || `Faixa ${idx + 1}`,
+                        label: bucket.label || bucket.pctLabel || fallbackLabels[idx] || `Faixa ${idx + 1}`,
+                        shortUSD,
+                        longUSD,
+                        totalUSD: shortUSD + longUSD
+                    };
+                });
+
+            const maxShortUSD = Math.max(1, ...buckets.map(bucket => bucket.shortUSD));
+            const maxLongUSD = Math.max(1, ...buckets.map(bucket => bucket.longUSD));
+            const shortTotal = Math.max(1, Number(liquidationRiskMap.pendingShortUSD) || buckets.reduce((sum, bucket) => sum + bucket.shortUSD, 0));
+            const longTotal = Math.max(1, Number(liquidationRiskMap.pendingLongUSD) || buckets.reduce((sum, bucket) => sum + bucket.longUSD, 0));
+
+            const heatmapColumns = buckets.map((bucket) => {
+                const shortIntensity = bucket.shortUSD > 0 ? Math.min(1, bucket.shortUSD / maxShortUSD) : 0;
+                const longIntensity = bucket.longUSD > 0 ? Math.min(1, bucket.longUSD / maxLongUSD) : 0;
+                const shortAlpha = (0.07 + shortIntensity * 0.83).toFixed(3);
+                const longAlpha = (0.07 + longIntensity * 0.83).toFixed(3);
+
+                const shortSharePct = (bucket.shortUSD / shortTotal) * 100;
+                const longSharePct = (bucket.longUSD / longTotal) * 100;
+                const shortText = shortSharePct >= 0.5 ? `${shortSharePct.toFixed(0)}%` : '—';
+                const longText = longSharePct >= 0.5 ? `${longSharePct.toFixed(0)}%` : '—';
 
                 return `
-                <div style="display: grid; grid-template-columns: 56px 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 8px;">
-                    <div style="font-size: 10px; color: var(--text-muted); font-weight: 700;">${bucket.label}</div>
-                    <div style="background: rgba(239, 68, 68, 0.08); border-radius: 6px; padding: 4px 6px; border: 1px solid rgba(239, 68, 68, 0.18);">
-                        <div style="height: 8px; width: ${shortWidth.toFixed(1)}%; background: linear-gradient(90deg, #ef4444, #f87171); border-radius: 999px;"></div>
-                        <div style="font-size: 9px; color: #fca5a5; margin-top: 3px; white-space: nowrap;">${formatBigNumber(bucket.shortUSD || 0)}</div>
+                <div style="display: grid; grid-template-rows: 34px 34px auto; gap: 6px; min-width: 46px;">
+                    <div title="Shorts em risco | ${bucket.pctLabel} | ${formatBigNumber(bucket.shortUSD)}" style="border-radius: 8px; border: 1px solid rgba(239,68,68,0.35); background: rgba(239,68,68,${shortAlpha}); display: flex; align-items: center; justify-content: center;">
+                        <span style="font-size: 10px; font-weight: 700; color: ${shortIntensity > 0.6 ? '#ffffff' : '#fecaca'};">${shortText}</span>
                     </div>
-                    <div style="background: rgba(34, 197, 94, 0.08); border-radius: 6px; padding: 4px 6px; border: 1px solid rgba(34, 197, 94, 0.18);">
-                        <div style="height: 8px; width: ${longWidth.toFixed(1)}%; background: linear-gradient(90deg, #22c55e, #4ade80); border-radius: 999px;"></div>
-                        <div style="font-size: 9px; color: #86efac; margin-top: 3px; white-space: nowrap;">${formatBigNumber(bucket.longUSD || 0)}</div>
+                    <div title="Longs em risco | ${bucket.pctLabel} | ${formatBigNumber(bucket.longUSD)}" style="border-radius: 8px; border: 1px solid rgba(34,197,94,0.35); background: rgba(34,197,94,${longAlpha}); display: flex; align-items: center; justify-content: center;">
+                        <span style="font-size: 10px; font-weight: 700; color: ${longIntensity > 0.6 ? '#ffffff' : '#bbf7d0'};">${longText}</span>
                     </div>
+                    <div style="font-size: 9px; color: var(--text-muted); text-align: center; font-weight: 700; line-height: 1.2;">${bucket.pctLabel}</div>
                 </div>
                 `;
             }).join('');
@@ -3072,20 +4074,8 @@ Regras:
                         </div>
                     </div>
 
-                    <div style="margin-top: 12px; padding: 12px; border-radius: 10px; background: var(--bg-tertiary); border: 1px solid rgba(148, 163, 184, 0.18);">
-                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">
-                            Escada de risco por distância (% do preço atual: $${formatPrice(realLiquidations.currentPrice || 0)})
-                        </div>
-                        <div style="display: grid; grid-template-columns: 56px 1fr 1fr; gap: 8px; margin-bottom: 6px;">
-                            <div></div>
-                            <div style="font-size: 9px; color: #f87171; font-weight: 700; text-transform: uppercase;">Shorts</div>
-                            <div style="font-size: 9px; color: #4ade80; font-weight: 700; text-transform: uppercase;">Longs</div>
-                        </div>
-                        ${bucketRows}
-                    </div>
-
                     <div style="margin-top: 10px; font-size: 10px; color: var(--text-muted);">
-                        Atualização: ${realLiquidations.lastUpdate || '-'} | Este mapa influencia confluência, confiança e probabilidade final.
+                        Atualização: ${realLiquidations.lastUpdate || '-'} | Leitura consolidada de risco de liquidação aplicada na confluência.
                     </div>
                 </div>
             `;
@@ -3095,13 +4085,15 @@ Regras:
             const body = document.getElementById('ta-modal-body');
             if (!body) return;
             try {
-            const { signal: origSignal, signalType: origSignalType, confidence: origConfidence, probability: origProbability, entry, stopLoss, takeProfit, riskReward, indicators, aiSummary, timestamp, dynamicTargets, marketRegime, marketStructure, cvdAdvanced, volatilityMetrics, macroNews, bigTechMacro, contextualAdjustments, v3Signal, v3SignalType, v3Confidence, v3Probability } = analysis;
-            
-            // V4 Reactive override (highest priority) > V3 override > V1 original
-            const v4Signal = analysis.v4Signal;
-            const v4Confidence = analysis.v4Confidence;
-            const v4Probability = analysis.v4Probability;
-            const isV4Active = !!v4Signal;
+                const { signal: origSignal, signalType: origSignalType, confidence: origConfidence, probability: origProbability, entry, stopLoss, takeProfit, riskReward, indicators, aiSummary, timestamp, dynamicTargets, marketRegime, marketStructure, cvdAdvanced, volatilityMetrics, macroNews, bigTechMacro, contextualAdjustments, v3Signal, v3SignalType, v3Confidence, v3Probability } = analysis;
+                
+                // V4 Reactive override (highest priority) > V3 override > V1 original
+                const v4Signal = analysis.v4Signal;
+                const v4Confidence = analysis.v4Confidence;
+                const v4Probability = analysis.v4Probability;
+            const usePointsModel = analysis.confidenceModel?.name === 'weighted-points-v1';
+            const minDirectionalConfidence = usePointsModel ? 40 : 50;
+            const isV4Active = !!v4Signal && !usePointsModel;
             
             // Display signal: V4 shows the readable signal
             let displaySignal, signal, signalType, confidence, probability;
@@ -3138,26 +4130,25 @@ Regras:
                 displaySignal = (signal === 'AGUARDE' || signal === 'NEUTRO') ? 'NEUTRO' : signal;
             }
             
-            // RULE: confidence < 50 = ALWAYS NEUTRO, no exceptions
-            if (confidence < 50 && signalType !== 'long' && signalType !== 'short') {
+            // RULE: confidence below threshold = AGUARDAR/NEUTRO
+            if (confidence < minDirectionalConfidence && signalType !== 'long' && signalType !== 'short') {
                 displaySignal = 'NEUTRO';
                 signal = 'NEUTRO';
                 signalType = 'aguardar';
-            } else if (confidence < 50 && (signalType === 'long' || signalType === 'short')) {
+            } else if (confidence < minDirectionalConfidence && (signalType === 'long' || signalType === 'short')) {
                 // Has directional bias but low confidence — show NEUTRO
                 displaySignal = 'NEUTRO';
                 signalType = 'aguardar';
             }
             
-            // ═══ SYNC CONFIDENCE WITH MARKET REGIME ═══
-            // Blend AI confidence with regime strength so both sections are coherent
-            if (marketRegime && marketRegime.regimeStrength != null) {
+            // Sync opcional com regime para modelos legados
+            if (!usePointsModel && marketRegime && marketRegime.regimeStrength != null) {
                 const regimeConf = Math.round((marketRegime.regimeStrength || 0) * 100);
                 // Weighted blend: 70% engine confidence + 30% regime strength
                 confidence = Math.round(confidence * 0.7 + regimeConf * 0.3);
                 confidence = Math.max(10, Math.min(100, confidence));
                 // Re-check NEUTRO rule after regime sync
-                if (confidence < 50 && signalType === 'aguardar') {
+                if (confidence < minDirectionalConfidence && signalType === 'aguardar') {
                     displaySignal = 'NEUTRO';
                     signal = 'NEUTRO';
                 }
@@ -3173,9 +4164,45 @@ Regras:
             
             // Regenerate local AI summary with blended confidence so it matches header bar
             analysis.aiSummary = generateLocalSummary(signalType, confidence, analysis.indicators || {}, taCurrentSymbol || 'BTCUSDT');
+
+            // Keep position sizing synchronized with the final confidence shown in the signal card.
+            let positionSize = analysis.positionSize;
+            try {
+                if (window.TAEngineV3 && typeof window.TAEngineV3.calculatePositionSize === 'function') {
+                    const sizingSignalType = signalType === 'long' ? 'long' : signalType === 'short' ? 'short' : 'neutral';
+                    const sizingPrice = Number(entry)
+                        || Number(analysis.indicators?.movingAverages?.currentPrice)
+                        || Number(analysis.indicators?.volumeProfile?.vwap)
+                        || 0;
+                    const sizingAtr = Number(analysis.volatilityMetrics?.atr1h)
+                        || Number(analysis.volatilityMetrics?.atr)
+                        || (sizingPrice > 0 ? sizingPrice * 0.02 : 100);
+                    const recalculatedPosition = window.TAEngineV3.calculatePositionSize({
+                        signalType: sizingSignalType,
+                        confidence,
+                        probability,
+                        atr: sizingAtr,
+                        currentPrice: sizingPrice > 0 ? sizingPrice : 1,
+                        stopLoss: Number(stopLoss) || null,
+                        crashState: analysis.crashState,
+                        edgeStats: analysis.edgeData?.stats || analysis.performanceStats
+                    });
+                    if (recalculatedPosition && typeof recalculatedPosition === 'object') {
+                        positionSize = recalculatedPosition;
+                        analysis.positionSize = recalculatedPosition;
+                    }
+                }
+            } catch (syncErr) {
+                positionSize = analysis.positionSize;
+            }
             
             const signalIcon = signalType === 'long' ? 'fa-arrow-trend-up' : signalType === 'short' ? 'fa-arrow-trend-down' : signalType === 'aguardar' ? 'fa-hourglass-half' : 'fa-hourglass-half';
-            const confidenceLevel = confidence >= 70 ? 'high' : confidence >= 50 ? 'medium' : 'low';
+            const confidenceLevel = usePointsModel
+                ? (confidence >= 80 ? 'high' : confidence >= 60 ? 'medium' : 'low')
+                : (confidence >= 70 ? 'high' : confidence >= 50 ? 'medium' : 'low');
+            const confidenceBandLabel = usePointsModel
+                ? (analysis.confidencePoints?.confidenceBandLabel || (confidence < 40 ? 'AGUARDAR' : confidence < 60 ? 'Sinal fraco' : confidence < 80 ? 'Sinal moderado' : 'Sinal forte'))
+                : (confidence >= 70 ? 'Alta confiança' : confidence >= 50 ? 'Confiança média' : 'Baixa confiança');
             
             const formatPrice = (price) => {
                 if (price == null || isNaN(price)) return '—';
@@ -3193,6 +4220,44 @@ Regras:
                 if (abs >= 1e3) return '$' + (value / 1e3).toFixed(2) + 'K';
                 return '$' + value.toFixed(2);
             };
+
+            const confidencePointsData = analysis.confidencePoints || null;
+            const confidencePointsLong = Number(confidencePointsData?.longPoints || 0);
+            const confidencePointsShort = Number(confidencePointsData?.shortPoints || 0);
+            const confidencePointsAligned = Number(confidencePointsData?.alignedCore || 0);
+            const pointsComponents = confidencePointsData?.components || [];
+            const pointsHistoryLocal = (confidencePointsData?.history || []).slice(-12);
+            const pointsHistoryFromDb = buildPointsHistoryFromCalls(getCallHistoryForDisplay(taCurrentSymbol || ''), taCurrentSymbol || '', 12);
+            const pointsHistory = pointsHistoryFromDb.length > 0 ? pointsHistoryFromDb : pointsHistoryLocal;
+            const pointsRowsHtml = pointsComponents.length
+                ? pointsComponents.map((component) => {
+                    const maxWeight = Number(component?.maxWeight ?? component?.maxPoints ?? component?.weight ?? 0);
+                    const pointsValue = Number(component?.points || 0);
+                    const direction = String(component?.direction || '').toUpperCase();
+                    const longPoints = Number(component?.longPoints ?? (direction === 'LONG' ? pointsValue : 0));
+                    const shortPoints = Number(component?.shortPoints ?? (direction === 'SHORT' ? pointsValue : 0));
+                    const dominantSide = longPoints >= shortPoints ? 'LONG' : 'SHORT';
+                    const dominantPoints = Math.max(longPoints, shortPoints);
+                    const fill = maxWeight > 0 ? Math.min(100, (dominantPoints / maxWeight) * 100) : 0;
+                    const sideColor = dominantSide === 'LONG' ? '#22c55e' : '#ef4444';
+                    return `
+                        <div style="padding: 10px; border-radius: 10px; background: var(--bg-primary); border: 1px solid rgba(100,116,139,0.16);">
+                            <div style="display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; align-items: center;">
+                                <div style="font-size: 10px; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.2px;">${component?.label || component?.name || 'Componente'}</div>
+                                <div style="font-size: 10px; font-weight: 700; color: ${sideColor};">${dominantSide} ${dominantPoints.toFixed(1)}/${maxWeight.toFixed(0)}</div>
+                            </div>
+                            <div style="height: 7px; border-radius: 6px; background: rgba(100,116,139,0.2); overflow: hidden;">
+                                <div style="height: 100%; width: ${fill.toFixed(1)}%; background: ${sideColor}; border-radius: 6px;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 9px; color: var(--text-muted);">
+                                <span>L ${longPoints.toFixed(1)}</span>
+                                <span>S ${shortPoints.toFixed(1)}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('')
+                : `<div style="padding: 12px; border-radius: 10px; background: var(--bg-primary); border: 1px dashed rgba(100,116,139,0.3); font-size: 11px; color: var(--text-muted); text-align: center;">Sem componentes para exibir.</div>`;
+            const pointsHistoryHtml = renderPointsHistoryBars(pointsHistory);
             
             body.innerHTML = `
                 <!-- Crypto Header -->
@@ -3220,10 +4285,17 @@ Regras:
                                 </div>
                                 <span style="font-weight: 700; color: var(--text-primary);">${confidence}%</span>
                             </div>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+                                <span style="font-size: 10px; padding: 3px 8px; border-radius: 8px; background: ${confidence >= 80 ? 'rgba(34,197,94,0.15)' : confidence >= 60 ? 'rgba(245,158,11,0.15)' : confidence >= 40 ? 'rgba(59,130,246,0.15)' : 'rgba(148,163,184,0.15)'}; color: ${confidence >= 80 ? '#22c55e' : confidence >= 60 ? '#f59e0b' : confidence >= 40 ? '#60a5fa' : '#94a3b8'}; font-weight: 700;">
+                                    ${confidenceBandLabel}
+                                </span>
+                                ${confidencePointsData ? `<span style="font-size: 10px; padding: 3px 8px; border-radius: 8px; background: rgba(99,102,241,0.15); color: #818cf8; font-weight: 700;">Pts: ${confidencePointsLong.toFixed(1)}L / ${confidencePointsShort.toFixed(1)}S</span>` : ''}
+                                ${confidencePointsData ? `<span style="font-size: 10px; padding: 3px 8px; border-radius: 8px; background: rgba(148,163,184,0.12); color: var(--text-muted); font-weight: 700;">Consenso: ${confidencePointsAligned}/5</span>` : ''}
+                            </div>
                             ${isV4Active ? `<div style="display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap;">
                                 ${analysis.sessionContext ? `<span style="font-size: 9px; padding: 2px 6px; border-radius: 4px; background: ${analysis.sessionContext.session === 'KILL_ZONE' ? 'rgba(239,68,68,0.2)' : analysis.sessionContext.session === 'LONDON_OPEN' ? 'rgba(59,130,246,0.2)' : 'rgba(100,116,139,0.15)'}; color: ${analysis.sessionContext.session === 'KILL_ZONE' ? '#f87171' : analysis.sessionContext.session === 'LONDON_OPEN' ? '#60a5fa' : 'var(--text-muted)'}; font-weight: 600; white-space: nowrap;">${analysis.sessionContext.session === 'KILL_ZONE' ? 'Zona Volátil' : analysis.sessionContext.session === 'LONDON_OPEN' ? 'Londres' : analysis.sessionContext.session === 'ASIAN' ? 'Ásia' : analysis.sessionContext.session === 'NY_OPEN' ? 'Nova York' : analysis.sessionContext.session || 'N/A'}</span>` : ''}
                                 ${analysis.enhancedRegimeV4 ? `<span style="font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(139,92,246,0.15); color: #a78bfa; font-weight: 600; white-space: nowrap;">${analysis.enhancedRegimeV4.regimeIcon || ''} ${analysis.enhancedRegimeV4.regime || ''}</span>` : ''}
-                                <span style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">✅ ${analysis.v4GatesPassed || 0}/${analysis.v4GatesTotal || 9} confirmações</span>
+                                <span style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">OK ${analysis.v4GatesPassed || 0}/${analysis.v4GatesTotal || 9} confirmações</span>
                                 ${analysis.dataIntegrity && !analysis.dataIntegrity.valid ? `<span style="font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(239,68,68,0.2); color: #f87171; font-weight: 700;">⚠️ DADOS</span>` : ''}
                             </div>
                             ${analysis.v4ActionMessage ? `<div style="margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: ${signalType === 'long' ? 'rgba(34,197,94,0.1)' : signalType === 'short' ? 'rgba(239,68,68,0.1)' : signalType === 'aguardar' ? 'rgba(245,158,11,0.1)' : 'rgba(100,116,139,0.1)'}; border: 1px solid ${signalType === 'long' ? 'rgba(34,197,94,0.2)' : signalType === 'short' ? 'rgba(239,68,68,0.2)' : signalType === 'aguardar' ? 'rgba(245,158,11,0.2)' : 'rgba(100,116,139,0.2)'}; font-size: 11px; color: var(--text-secondary); line-height: 1.4; white-space: pre-line;">${analysis.v4ActionIcon || ''} ${analysis.v4ActionMessage}</div>` : ''}` : ''}
@@ -3259,7 +4331,7 @@ Regras:
                             <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">R:R 1:${dynamicTargets.rr2}</div>
                         </div>
                         <div style="background: rgba(34,197,94,0.2); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(34,197,94,0.4);">
-                            <div style="font-size: 9px; color: #10b981; text-transform: uppercase; font-weight: 700; white-space: nowrap;">TP3 (ATR×4)</div>
+                            <div style="font-size: 9px; color: #10b981; text-transform: uppercase; font-weight: 700; white-space: nowrap;">TP3 (ATRÍ—4)</div>
                             <div style="font-size: 13px; font-weight: 800; color: #10b981; white-space: nowrap;">$${formatPrice(dynamicTargets.tp3)}</div>
                             <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">R:R 1:${dynamicTargets.rr3}</div>
                         </div>
@@ -3304,14 +4376,14 @@ Regras:
                 
                 <!-- ====== V2 SECTIONS ====== -->
                 
-                <!-- ════════════════════════════════════ V5 NEW PANELS ════════════════════════════════════ -->
+                <!--  V5 NEW PANELS  -->
                 
                 <!-- V5: BTC ALIGNMENT (v7.1: hidden when analyzing BTC itself) -->
                 ${analysis.btcAlignment && analysis.btcAlignment.alignment !== 'SELF' ? `
                 <div class="ta-section" style="border: 1px solid ${analysis.btcAlignment.alignment === 'ALIGNED' ? 'rgba(34,197,94,0.3)' : analysis.btcAlignment.alignment === 'DIVERGING' ? 'rgba(239,68,68,0.3)' : 'rgba(100,116,139,0.2)'};">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
-                            <span style="font-size: 18px;">₿</span>
+                            <span style="font-size: 18px;"></span>
                         </div>
                         <div>
                             <div class="ta-section-title">Alinhamento com BTC</div>
@@ -3322,7 +4394,7 @@ Regras:
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                             <div>
                                 <div style="font-size: 16px; font-weight: 800; color: ${analysis.btcAlignment.alignment === 'ALIGNED' ? '#22c55e' : analysis.btcAlignment.alignment === 'DIVERGING' ? '#ef4444' : '#94a3b8'};">
-                                    ${analysis.btcAlignment.alignment === 'ALIGNED' ? '✅ ALINHADO' : analysis.btcAlignment.alignment === 'DIVERGING' ? '⚠️ DIVERGENTE' : '⚖️ NEUTRO'}
+                                    ${analysis.btcAlignment.alignment === 'ALIGNED' ? 'OK ALINHADO' : analysis.btcAlignment.alignment === 'DIVERGING' ? '⚠️ DIVERGENTE' : '⚖️ NEUTRO'}
                                 </div>
                                 <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">${analysis.btcAlignment.description || ''}</div>
                             </div>
@@ -3342,7 +4414,7 @@ Regras:
                             </div>
                             <div style="background: var(--bg-card); padding: 8px; border-radius: 8px; text-align: center;">
                                 <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Risco</div>
-                                <div style="font-size: 12px; font-weight: 700; color: ${analysis.btcAlignment.riskLevel === 'HIGH' ? '#ef4444' : analysis.btcAlignment.riskLevel === 'MEDIUM' ? '#f59e0b' : '#22c55e'};">${analysis.btcAlignment.riskLevel === 'HIGH' ? '🔴 Alto' : analysis.btcAlignment.riskLevel === 'MEDIUM' ? '🟡 Médio' : '🟢 Baixo'}</div>
+                                <div style="font-size: 12px; font-weight: 700; color: ${analysis.btcAlignment.riskLevel === 'HIGH' ? '#ef4444' : analysis.btcAlignment.riskLevel === 'MEDIUM' ? '#f59e0b' : '#22c55e'};">${analysis.btcAlignment.riskLevel === 'HIGH' ? ' Alto' : analysis.btcAlignment.riskLevel === 'MEDIUM' ? ' Médio' : ' Baixo'}</div>
                             </div>
                         </div>
                         ${analysis.btcAlignment.correlations ? `
@@ -3466,7 +4538,7 @@ Regras:
                             <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 8px; text-align: center; border-top: 2px solid ${tf.trend === 'BULLISH' ? '#22c55e' : tf.trend === 'BEARISH' ? '#ef4444' : tf.trend === 'WEAK_BULL' ? '#86efac' : tf.trend === 'WEAK_BEAR' ? '#fca5a5' : '#64748b'};">
                                 <div style="font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">${tf.tf}</div>
                                 <div style="font-size: 13px; font-weight: 800; margin: 4px 0; color: ${tf.trend.includes('BULL') ? '#22c55e' : tf.trend.includes('BEAR') ? '#ef4444' : 'var(--text-secondary)'};">
-                                    ${tf.trend.includes('BULL') ? '▲' : tf.trend.includes('BEAR') ? '▼' : '─'}
+                                    ${tf.trend.includes('BULL') ? '▲' : tf.trend.includes('BEAR') ? '▼' : '—'}
                                 </div>
                                 ${tf.available ? `<div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">RSI ${tf.rsi}</div>` : `<div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">N/A</div>`}
                             </div>
@@ -3486,7 +4558,7 @@ Regras:
                 <div class="ta-section" style="border: 1px solid rgba(14,165,233,0.2);">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);">
-                            <span style="font-size: 18px;">📜</span>
+                            <span style="font-size: 18px;"></span>
                         </div>
                         <div>
                             <div class="ta-section-title">Histórico deste Setup</div>
@@ -3496,7 +4568,7 @@ Regras:
                     <div style="padding: 14px; background: ${analysis.setupStats.quality === 'EXCELENTE' ? 'rgba(34,197,94,0.06)' : analysis.setupStats.quality === 'BOM' ? 'rgba(59,130,246,0.06)' : analysis.setupStats.quality === 'MÉDIO' ? 'rgba(245,158,11,0.06)' : 'rgba(239,68,68,0.06)'}; border-radius: 12px; border: 1px solid ${analysis.setupStats.quality === 'EXCELENTE' ? 'rgba(34,197,94,0.2)' : analysis.setupStats.quality === 'BOM' ? 'rgba(59,130,246,0.2)' : analysis.setupStats.quality === 'MÉDIO' ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)'};">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                             <span style="font-size: 14px; font-weight: 800; color: ${analysis.setupStats.quality === 'EXCELENTE' ? '#22c55e' : analysis.setupStats.quality === 'BOM' ? '#3b82f6' : analysis.setupStats.quality === 'MÉDIO' ? '#f59e0b' : '#ef4444'};">
-                                ${analysis.setupStats.quality === 'EXCELENTE' ? '🏆' : analysis.setupStats.quality === 'BOM' ? '👍' : analysis.setupStats.quality === 'MÉDIO' ? '🤔' : '⚠️'} ${analysis.setupStats.quality}
+                                ${analysis.setupStats.quality === 'EXCELENTE' ? '' : analysis.setupStats.quality === 'BOM' ? '' : analysis.setupStats.quality === 'MÉDIO' ? '' : '⚠️'} ${analysis.setupStats.quality}
                             </span>
                             <span style="font-size: 10px; color: var(--text-muted);">${analysis.setupStats.count} ocorrências</span>
                         </div>
@@ -3531,7 +4603,7 @@ Regras:
                 <div class="ta-section" style="border: 1px solid ${analysis.marketBreadth.alignment === 'STRONG_ALIGNED' ? 'rgba(34,197,94,0.3)' : analysis.marketBreadth.alignment === 'DIVERGING' ? 'rgba(239,68,68,0.3)' : 'rgba(100,116,139,0.2)'};">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);">
-                            <span style="font-size: 18px;">🌐</span>
+                            <span style="font-size: 18px;"></span>
                         </div>
                         <div>
                             <div class="ta-section-title">Sentimento do Mercado</div>
@@ -3546,12 +4618,97 @@ Regras:
                             <div style="width: ${analysis.marketBreadth.shortPct}%; background: linear-gradient(90deg, #f87171, #ef4444); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff;">${analysis.marketBreadth.shortPct > 10 ? analysis.marketBreadth.shortPct + '% S' : ''}</div>
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                            <span style="font-size: 11px; color: #22c55e; font-weight: 700;">🟢 Long ${analysis.marketBreadth.longPct}%</span>
+                            <span style="font-size: 11px; color: #22c55e; font-weight: 700;"> Long ${analysis.marketBreadth.longPct}%</span>
                             <span style="font-size: 11px; color: #64748b; font-weight: 600;">Neutro ${analysis.marketBreadth.neutralPct}%</span>
-                            <span style="font-size: 11px; color: #ef4444; font-weight: 700;">🔴 Short ${analysis.marketBreadth.shortPct}%</span>
+                            <span style="font-size: 11px; color: #ef4444; font-weight: 700;"> Short ${analysis.marketBreadth.shortPct}%</span>
                         </div>
                         <div style="padding: 8px 10px; background: ${analysis.marketBreadth.alignment === 'STRONG_ALIGNED' ? 'rgba(34,197,94,0.1)' : analysis.marketBreadth.alignment === 'DIVERGING' ? 'rgba(239,68,68,0.1)' : 'rgba(100,116,139,0.1)'}; border-radius: 8px; font-size: 11px; color: var(--text-secondary); line-height: 1.4;">
                             ${analysis.marketBreadth.details}
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- PINE V7 SCALP SECTION (Enhanced) -->
+                ${indicators.pineV7 ? `
+                <div class="ta-section" style="border: 1px solid ${indicators.pineV7.active ? (indicators.pineV7.direction === 'LONG' ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)') : 'rgba(148,163,184,0.2)'}; ${indicators.pineV7.active ? 'box-shadow: 0 0 20px ' + (indicators.pineV7.direction === 'LONG' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)') + ';' : ''}">
+                    <div class="ta-section-header">
+                        <div class="ta-section-icon" style="background: linear-gradient(135deg, ${indicators.pineV7.active ? (indicators.pineV7.direction === 'LONG' ? '#22c55e' : '#ef4444') : '#94a3b8'} 0%, transparent 120%);">
+                            <span style="font-size: 18px;"></span>
+                        </div>
+                        <div>
+                            <div class="ta-section-title">Motor de Scalping (5m/15m)</div>
+                            <div class="ta-section-subtitle">BTC PRO v7 — Stops Inteligentes</div>
+                        </div>
+                    </div>
+                    <div style="padding: 14px; background: var(--bg-tertiary); border-radius: 12px;">
+                        <!-- Score + Signal Header -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <div>
+                                <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Score Scalp</div>
+                                <div style="font-size: 26px; font-weight: 800; color: ${indicators.pineV7.score >= 90 ? '#22c55e' : indicators.pineV7.score >= 75 ? '#f59e0b' : '#94a3b8'}; line-height: 1;">${indicators.pineV7.score}<span style="font-size: 14px; color: var(--text-muted); font-weight: 600;">/100</span></div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Sinal Scalp</div>
+                                <div style="font-size: 16px; font-weight: 800; color: ${indicators.pineV7.active ? (indicators.pineV7.direction === 'LONG' ? '#22c55e' : '#ef4444') : '#94a3b8'}; padding: 4px 12px; background: ${indicators.pineV7.active ? (indicators.pineV7.direction === 'LONG' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)') : 'rgba(148,163,184,0.1)'}; border-radius: 8px; border: 1px solid ${indicators.pineV7.active ? (indicators.pineV7.direction === 'LONG' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)') : 'rgba(148,163,184,0.15)'};">
+                                    ${indicators.pineV7.active ? indicators.pineV7.direction : 'AGUARDAR'}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Score Progress Bar -->
+                        <div style="margin-bottom: 10px;">
+                            <div style="height: 8px; background: var(--bg-card); border-radius: 4px; overflow: hidden;">
+                                <div style="height: 100%; width: ${Math.min(indicators.pineV7.score, 100)}%; border-radius: 4px; background: linear-gradient(90deg, ${indicators.pineV7.score >= 90 ? '#22c55e, #16a34a' : indicators.pineV7.score >= 75 ? '#f59e0b, #d97706' : '#94a3b8, #64748b'}); transition: width 0.5s;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 9px; color: var(--text-muted);">
+                                <span>0</span>
+                                <span style="color: ${indicators.pineV7.score >= 90 ? '#22c55e' : indicators.pineV7.score >= 75 ? '#f59e0b' : '#94a3b8'}; font-weight: 700;">${indicators.pineV7.score >= 90 ? ' Alta Assertividade' : indicators.pineV7.score >= 75 ? ' Assertividade Moderada' : '⚪ Sem Setup'}</span>
+                                <span>100</span>
+                            </div>
+                        </div>
+
+                        <!-- RSI, ADX, Confluence Impact Row -->
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px;">
+                            <div style="background: var(--bg-card); padding: 8px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 8px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">RSI 5m</div>
+                                <div style="font-size: 14px; font-weight: 800; color: ${(indicators.pineV7.components.rsi || 50) < 30 ? '#22c55e' : (indicators.pineV7.components.rsi || 50) > 70 ? '#ef4444' : 'var(--text-primary)'};">${(indicators.pineV7.components.rsi || 50).toFixed(1)}</div>
+                            </div>
+                            <div style="background: var(--bg-card); padding: 8px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 8px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">ADX 5m</div>
+                                <div style="font-size: 14px; font-weight: 800; color: ${(indicators.pineV7.components.adx || 0) > 25 ? '#3b82f6' : 'var(--text-muted)'};">${(indicators.pineV7.components.adx || 0).toFixed(1)}</div>
+                            </div>
+                            <div style="background: var(--bg-card); padding: 8px; border-radius: 8px; text-align: center;">
+                                <div style="font-size: 8px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Confluência</div>
+                                <div style="font-size: 14px; font-weight: 800; color: ${indicators.pineV7.active ? (indicators.pineV7.direction === 'LONG' ? '#22c55e' : '#ef4444') : 'var(--text-muted)'};">${indicators.pineV7.active ? (indicators.pineV7.confidenceBoost > 0 ? '+' + indicators.pineV7.confidenceBoost + '%' : '0%') : '—'}</div>
+                            </div>
+                        </div>
+
+                        ${indicators.pineV7.active && indicators.pineV7.score >= 75 ? `
+                        <!-- Stop & Target -->
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
+                            <div style="background: rgba(239,68,68,0.06); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(239,68,68,0.15);">
+                                <div style="font-size: 9px; color: #f87171; text-transform: uppercase; font-weight: 700;">Stop (${indicators.pineV7.melhorTipo})</div>
+                                <div style="font-size: 13px; font-weight: 800; color: #ef4444;">$${formatPrice(indicators.pineV7.stopAtual)}</div>
+                            </div>
+                            <div style="background: rgba(34,197,94,0.06); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(34,197,94,0.15);">
+                                <div style="font-size: 9px; color: #4ade80; text-transform: uppercase; font-weight: 700;">Alvo (ATR 4x)</div>
+                                <div style="font-size: 13px; font-weight: 800; color: #22c55e;">$${formatPrice(indicators.pineV7.alvoAtual)}</div>
+                            </div>
+                        </div>
+                        ` : ''}
+
+                        <!-- Component Tags -->
+                        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                            <span style="font-size: 10px; padding: 3px 8px; border-radius: 6px; background: ${(indicators.pineV7.components.alta || indicators.pineV7.components.baixa) ? (indicators.pineV7.components.alta ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)') : 'rgba(148,163,184,0.1)'}; color: ${(indicators.pineV7.components.alta || indicators.pineV7.components.baixa) ? (indicators.pineV7.components.alta ? '#4ade80' : '#f87171') : 'var(--text-muted)'};">
+                                ${indicators.pineV7.components.alta ? '▲ EMAs Alta' : indicators.pineV7.components.baixa ? '▼ EMAs Baixa' : '— Lateral'}
+                            </span>
+                            <span style="font-size: 10px; padding: 3px 8px; border-radius: 6px; background: ${indicators.pineV7.components.forca ? 'rgba(59,130,246,0.15)' : 'rgba(148,163,184,0.1)'}; color: ${indicators.pineV7.components.forca ? '#60a5fa' : 'var(--text-muted)'};">
+                                ${indicators.pineV7.components.forca ? ' Força (ADX>' : '😴 Fraco (ADX<'}20)
+                            </span>
+                            <span style="font-size: 10px; padding: 3px 8px; border-radius: 6px; background: ${(indicators.pineV7.components.pullbackCompra || indicators.pineV7.components.pullbackVenda) ? 'rgba(168,85,247,0.15)' : 'rgba(148,163,184,0.1)'}; color: ${(indicators.pineV7.components.pullbackCompra || indicators.pineV7.components.pullbackVenda) ? '#c084fc' : 'var(--text-muted)'};">
+                                ${(indicators.pineV7.components.pullbackCompra || indicators.pineV7.components.pullbackVenda) ? '✓ No Pullback' : ' Longe das EMAs'}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -3601,7 +4758,7 @@ Regras:
                         </div>
                         ` : ''}
                         <div style="padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
-                            <div style="font-size: 11px; color: var(--text-muted);">💡 Implicação:</div>
+                            <div style="font-size: 11px; color: var(--text-muted);"> Implicação:</div>
                             <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">${marketRegime.regimeImplication}</div>
                         </div>
                     </div>
@@ -3647,7 +4804,7 @@ Regras:
                         ${marketStructure.liquiditySweeps?.detected ? `
                         <div style="margin-top: 10px; padding: 10px; background: ${marketStructure.liquiditySweeps.type === 'SWEEP_LOWS' ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)'}; border-radius: 8px; border: 1px solid ${marketStructure.liquiditySweeps.type === 'SWEEP_LOWS' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'};">
                             <div style="font-size: 12px; font-weight: 700; color: ${marketStructure.liquiditySweeps.type === 'SWEEP_LOWS' ? '#22c55e' : '#ef4444'};">
-                                🎯 LIQUIDITY SWEEP DETECTADO
+                                 LIQUIDITY SWEEP DETECTADO
                             </div>
                             <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">${marketStructure.liquiditySweeps.description}</div>
                         </div>
@@ -3694,14 +4851,14 @@ Regras:
                             </div>
                             <div style="padding: 8px; background: ${cvdAdvanced.absorption ? 'rgba(139,92,246,0.15)' : 'var(--bg-card)'}; border-radius: 8px; text-align: center;">
                                 <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Absorção</div>
-                                <div style="font-size: 14px;">${cvdAdvanced.absorption ? '🐋' : '—'}</div>
+                                <div style="font-size: 14px;">${cvdAdvanced.absorption ? '' : '—'}</div>
                                 <div style="font-size: 9px; white-space: nowrap; color: ${cvdAdvanced.absorption ? '#8b5cf6' : 'var(--text-muted)'};">
                                     ${cvdAdvanced.absorption ? cvdAdvanced.absorption.type.replace('_ABSORPTION', '').replace('BULLISH', 'COMPRA').replace('BEARISH', 'VENDA') : 'Nenhuma'}
                                 </div>
                             </div>
                             <div style="padding: 8px; background: ${cvdAdvanced.breakout ? 'rgba(249,115,22,0.15)' : 'var(--bg-card)'}; border-radius: 8px; text-align: center;">
                                 <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Breakout</div>
-                                <div style="font-size: 14px;">${cvdAdvanced.breakout ? '💥' : '—'}</div>
+                                <div style="font-size: 14px;">${cvdAdvanced.breakout ? '' : '—'}</div>
                                 <div style="font-size: 9px; white-space: nowrap; color: ${cvdAdvanced.breakout ? '#f97316' : 'var(--text-muted)'};">
                                     ${cvdAdvanced.breakout ? (cvdAdvanced.breakout.type.includes('UP') ? 'COMPRA' : 'VENDA') : 'Nenhum'}
                                 </div>
@@ -3713,7 +4870,7 @@ Regras:
                 
                                 
                 <!-- 5. MACRO + NEWS DE ALTO IMPACTO -->
-                ${macroNews ? `
+                ${false && macroNews ? `
                 <div class="ta-section">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);">
@@ -3729,7 +4886,7 @@ Regras:
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                             <div>
                                 <div style="font-size: 14px; font-weight: 700; color: ${macroNews.macroColor}; white-space: nowrap;">
-                                    ${macroNews.macroSentiment === 'BULLISH' ? '🟢' : macroNews.macroSentiment === 'BEARISH' ? '🔴' : macroNews.macroSentiment === 'CAUTELA' ? '🟡' : '⚪'} 
+                                    ${macroNews.macroSentiment === 'BULLISH' ? '' : macroNews.macroSentiment === 'BEARISH' ? '' : macroNews.macroSentiment === 'CAUTELA' ? '' : '⚪'} 
                                     Sentimento Macro: ${macroNews.macroSentiment}
                                 </div>
                             </div>
@@ -3746,14 +4903,14 @@ Regras:
                         
                         ${macroNews.macroEvents && macroNews.macroEvents.length > 0 ? `
                         <div style="margin-bottom: 12px;">
-                            <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px; text-transform: uppercase;">📅 Próximos Eventos de Alto Impacto</div>
+                            <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px; text-transform: uppercase;"> Próximos Eventos de Alto Impacto</div>
                             ${macroNews.macroEvents.slice(0, 5).map(e => `
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg-card); border-radius: 6px; margin-bottom: 4px; border-left: 3px solid ${e.isCritical ? '#ef4444' : '#f59e0b'}; gap: 6px;">
                                 <div style="min-width: 0; flex: 1; overflow: hidden;">
                                     <div style="font-size: 11px; font-weight: 600; color: var(--text-primary); word-wrap: break-word;">${e.event?.substring(0, 40)}</div>
-                                    <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${e.country || ''} • ${new Date(e.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                                    <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${e.country || ''} - ${new Date(e.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
                                 </div>
-                                <span style="font-size: 9px; padding: 2px 6px; background: ${e.isCritical ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}; color: ${e.isCritical ? '#ef4444' : '#f59e0b'}; border-radius: 4px; font-weight: 600; white-space: nowrap; flex-shrink: 0;">${e.isCritical ? 'CRÍTICO' : 'ALTO'}</span>
+                                <span style="font-size: 9px; padding: 2px 6px; background: ${e.isCritical ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}; color: ${e.isCritical ? '#ef4444' : '#f59e0b'}; border-radius: 4px; font-weight: 600; white-space: nowrap; flex-shrink: 0;">${e.isCritical ? 'CRÍTICO' : 'ALTO'}</span>
                             </div>
                             `).join('')}
                         </div>
@@ -3761,17 +4918,17 @@ Regras:
                         
                         ${macroNews.urgentNews && macroNews.urgentNews.length > 0 ? `
                         <div>
-                            <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px; text-transform: uppercase;">📰 Notícias de Alto Impacto</div>
+                            <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px; text-transform: uppercase;"> Notícias de Alto Impacto</div>
                             ${macroNews.urgentNews.slice(0, 5).map(n => `
                             <div style="padding: 8px; background: var(--bg-card); border-radius: 6px; margin-bottom: 4px; border-left: 3px solid ${n.sentiment > 0 ? '#22c55e' : n.sentiment < 0 ? '#ef4444' : '#94a3b8'};">
-                                <div style="font-size: 11px; color: var(--text-primary); line-height: 1.3;">${n.isUrgent ? '🚨 ' : ''}${n.title?.substring(0, 80)}</div>
-                                <div style="font-size: 9px; color: var(--text-muted); margin-top: 4px;">${n.source} • ${n.sentiment > 0 ? '🟢 Bullish' : n.sentiment < 0 ? '🔴 Bearish' : '⚪ Neutro'}</div>
+                                <div style="font-size: 11px; color: var(--text-primary); line-height: 1.3;">${n.isUrgent ? ' ' : ''}${n.title?.substring(0, 80)}</div>
+                                <div style="font-size: 9px; color: var(--text-muted); margin-top: 4px;">${n.source} - ${n.sentiment > 0 ? ' Bullish' : n.sentiment < 0 ? ' Bearish' : '⚪ Neutro'}</div>
                             </div>
                             `).join('')}
                         </div>
                         ` : `
                         <div style="text-align: center; padding: 12px; color: var(--text-muted); font-size: 11px;">
-                            ✅ Nenhuma notícia urgente detectada
+                            OK Nenhuma notícia urgente detectada
                         </div>
                         `}
                     </div>
@@ -3799,7 +4956,7 @@ Regras:
                     <div style="padding: 12px; background: var(--bg-tertiary); border-radius: 12px; overflow: hidden;">
                         <!-- Big Tech Stocks Grid -->
                         ${bigTechMacro.bigTech && bigTechMacro.bigTech.length > 0 ? `
-                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">🏢 Big Tech — Resultados em Tempo Real</div>
+                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;"> Big Tech — Resultados em Tempo Real</div>
                         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 16px;">
                             ${bigTechMacro.bigTech.map(t => `
                             <div style="background: var(--bg-card); border-radius: 10px; padding: 10px 6px; text-align: center; border: 1px solid ${t.changePercent > 0 ? 'rgba(34,197,94,0.2)' : t.changePercent < 0 ? 'rgba(239,68,68,0.2)' : 'var(--border-subtle)'};">
@@ -3807,7 +4964,7 @@ Regras:
                                 <div style="font-size: 10px; font-weight: 700; color: var(--text-primary);">${t.symbol}</div>
                                 <div style="font-size: 12px; font-weight: 800; color: var(--text-primary); margin: 4px 0; white-space: nowrap;">$${(t.price || 0) >= 1000 ? (t.price || 0).toLocaleString('en-US', {maximumFractionDigits: 0}) : (t.price || 0).toFixed(2)}</div>
                                 <div style="font-size: 11px; font-weight: 700; white-space: nowrap; color: ${t.changePercent > 0 ? '#22c55e' : t.changePercent < 0 ? '#ef4444' : '#94a3b8'};">
-                                    ${t.changePercent > 0 ? '▲' : t.changePercent < 0 ? '▼' : '–'} ${Math.abs(t.changePercent || 0).toFixed(2)}%
+                                    ${t.changePercent > 0 ? '▲' : t.changePercent < 0 ? '▼' : ''} ${Math.abs(t.changePercent || 0).toFixed(2)}%
                                 </div>
                             </div>
                             `).join('')}
@@ -3816,7 +4973,7 @@ Regras:
                         
                         <!-- Market Indices -->
                         ${bigTechMacro.indices && bigTechMacro.indices.length > 0 ? `
-                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">📊 Índices de Mercado</div>
+                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">📊 Índices de Mercado</div>
                         <div style="display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;">
                             ${bigTechMacro.indices.map(idx => `
                             <div style="flex: 1 1 28%; min-width: 0; background: var(--bg-card); border-radius: 10px; padding: 8px; border-left: 3px solid ${idx.changePercent > 0 ? '#22c55e' : idx.changePercent < 0 ? '#ef4444' : '#94a3b8'};">
@@ -3832,7 +4989,7 @@ Regras:
                         
                         <!-- Fear & Greed Index -->
                         ${bigTechMacro.fearGreed ? `
-                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">🎭 Fear & Greed Index</div>
+                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;"> Fear & Greed Index</div>
                         <div style="display: flex; align-items: center; gap: 12px; background: var(--bg-card); border-radius: 10px; padding: 12px; margin-bottom: 16px;">
                             <div style="width: 48px; height: 48px; border-radius: 50%; background: conic-gradient(${bigTechMacro.fearGreed.color} ${bigTechMacro.fearGreed.value}%, var(--border-subtle) ${bigTechMacro.fearGreed.value}%); display: flex; align-items: center; justify-content: center;">
                                 <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--bg-card); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; color: ${bigTechMacro.fearGreed.color};">${bigTechMacro.fearGreed.value}</div>
@@ -3846,7 +5003,7 @@ Regras:
                         
                         <!-- Treasury Yields -->
                         ${bigTechMacro.treasuryYields ? `
-                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">🏛️ Treasury Yields (Títulos do Tesouro EUA)</div>
+                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;"> Treasury Yields (Títulos do Tesouro EUA)</div>
                         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: ${bigTechMacro.treasuryYields.isInverted ? '10px' : '16px'};">
                             <div style="background: var(--bg-card); border-radius: 8px; padding: 8px; text-align: center;">
                                 <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">3M</div>
@@ -3871,14 +5028,14 @@ Regras:
                         </div>
                         ` : `
                         <div style="padding: 8px 12px; background: rgba(34,197,94,0.08); border-radius: 8px; margin-bottom: 16px;">
-                            <div style="font-size: 11px; color: var(--text-muted);">✅ Spread 3M-10Y: ${bigTechMacro.treasuryYields.yieldCurveSpread != null ? bigTechMacro.treasuryYields.yieldCurveSpread.toFixed(2) + '%' : 'N/A'} — Curva normal</div>
+                            <div style="font-size: 11px; color: var(--text-muted);">OK Spread 3M-10Y: ${bigTechMacro.treasuryYields.yieldCurveSpread != null ? bigTechMacro.treasuryYields.yieldCurveSpread.toFixed(2) + '%' : 'N/A'} — Curva normal</div>
                         </div>
                         `}
                         ` : ''}
                         
                         <!-- US Macro Indicators -->
                         ${bigTechMacro.macroIndicators && bigTechMacro.macroIndicators.length > 0 ? `
-                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;">🇺🇸 Indicadores Macroeconômicos dos EUA</div>
+                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 700; margin-bottom: 10px; text-transform: uppercase;"> Indicadores Macroeconômicos dos EUA</div>
                         <div style="display: flex; flex-direction: column; gap: 6px;">
                             ${bigTechMacro.macroIndicators.map(m => `
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-card); border-radius: 8px; gap: 8px;">
@@ -3896,7 +5053,7 @@ Regras:
                         ` : ''}
                         
                         <!-- Impact Score -->
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-card); border-radius: 10px; margin-top: 12px; border: 1px solid ${bigTechMacro.bigTechScore > 0 ? 'rgba(34,197,94,0.2)' : bigTechMacro.bigTechScore < 0 ? 'rgba(239,68,68,0.2)' : 'var(--border-subtle)'};">
+                        <div style="display:none; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-card); border-radius: 10px; margin-top: 12px; border: 1px solid ${bigTechMacro.bigTechScore > 0 ? 'rgba(34,197,94,0.2)' : bigTechMacro.bigTechScore < 0 ? 'rgba(239,68,68,0.2)' : 'var(--border-subtle)'};">
                             <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">Impacto no Score Crypto</div>
                             <div style="font-size: 16px; font-weight: 800; white-space: nowrap; color: ${bigTechMacro.bigTechScore > 0 ? '#22c55e' : bigTechMacro.bigTechScore < 0 ? '#ef4444' : '#94a3b8'};">
                                 ${bigTechMacro.bigTechScore > 0 ? '+' : ''}${(bigTechMacro.bigTechScore || 0).toFixed(1)} pts
@@ -3965,7 +5122,7 @@ Regras:
                                 </span>
                             </div>
                             <div class="ta-indicator-value">${indicators.orderFlow.cvd > 0 ? '+' : ''}${indicators.orderFlow.cvd.toLocaleString()}</div>
-                            <div class="ta-indicator-change">${indicators.orderFlow.cvdSignal.includes('absorption') ? '⚡ Absorção detectada' : 'Delta de volume'}</div>
+                            <div class="ta-indicator-change">${indicators.orderFlow.cvdSignal.includes('absorption') ? ' Absorção detectada' : 'Delta de volume'}</div>
                         </div>
                         <div class="ta-indicator-item">
                             <div class="ta-indicator-header">
@@ -4048,7 +5205,7 @@ Regras:
                                 </span>
                             </div>
                             <div class="ta-indicator-value">${indicators.sentiment.rsi}</div>
-                            <div class="ta-indicator-change">${parseFloat(indicators.sentiment.rsi) < 30 ? '⚡ Oportunidade' : parseFloat(indicators.sentiment.rsi) > 70 ? '⚠️ Cuidado' : 'Normal'}</div>
+                            <div class="ta-indicator-change">${parseFloat(indicators.sentiment.rsi) < 30 ? ' Oportunidade' : parseFloat(indicators.sentiment.rsi) > 70 ? '⚠️ Cuidado' : 'Normal'}</div>
                         </div>
                         <div class="ta-indicator-item">
                             <div class="ta-indicator-header">
@@ -4058,7 +5215,7 @@ Regras:
                                 </span>
                             </div>
                             <div class="ta-indicator-value">${indicators.sentiment.takerRatio}</div>
-                            <div class="ta-indicator-change">${parseFloat(indicators.sentiment.takerRatio) > 1 ? '🟢 Pressão compradora' : parseFloat(indicators.sentiment.takerRatio) < 1 ? '🔴 Pressão vendedora' : 'Equilibrado'}</div>
+                            <div class="ta-indicator-change">${parseFloat(indicators.sentiment.takerRatio) > 1 ? ' Pressão compradora' : parseFloat(indicators.sentiment.takerRatio) < 1 ? ' Pressão vendedora' : 'Equilibrado'}</div>
                         </div>
                     </div>
                 </div>
@@ -4172,7 +5329,7 @@ Regras:
                 <div class="ta-section">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #ef4444 0%, #991b1b 100%);">
-                            <span style="font-size: 18px;">${analysis.crashState.override.icon || '🚨'}</span>
+                            <span style="font-size: 18px;">${analysis.crashState.override.icon || ''}</span>
                         </div>
                         <div>
                             <div class="ta-section-title">Detector de Crash/Pump</div>
@@ -4182,7 +5339,7 @@ Regras:
                     <div style="padding: 16px; background: ${analysis.crashState.isCrash || analysis.crashState.isRapidPump ? 'rgba(239,68,68,0.1)' : 'rgba(234,179,8,0.1)'}; border-radius: 12px; border: 1px solid ${analysis.crashState.isCrash || analysis.crashState.isRapidPump ? 'rgba(239,68,68,0.3)' : 'rgba(234,179,8,0.3)'};">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                             <span style="font-size: 16px; font-weight: 800; white-space: nowrap; color: ${analysis.crashState.isCrash ? '#ef4444' : analysis.crashState.isRapidPump ? '#22c55e' : '#eab308'};">${analysis.crashState.severity}</span>
-                            <span style="font-size: 11px; white-space: nowrap; color: var(--text-muted);">Direção: ${analysis.crashState.direction === 'down' ? '↓ Queda' : '↑ Alta'}</span>
+                            <span style="font-size: 11px; white-space: nowrap; color: var(--text-muted);">Direção: ${analysis.crashState.direction === 'down' ? ' Queda' : ' Alta'}</span>
                         </div>
                         ${analysis.crashState.override.message ? `<div style="font-size: 11px; color: var(--text-secondary); line-height: 1.4; margin-bottom: 10px;">${analysis.crashState.override.message}</div>` : ''}
                         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
@@ -4211,11 +5368,11 @@ Regras:
                 
                                 
                 <!-- V3: POSITION SIZING -->
-                ${analysis.positionSize && analysis.positionSize.sizePercent > 0 ? `
+                ${positionSize && positionSize.sizePercent > 0 ? `
                 <div class="ta-section">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);">
-                            <span style="font-size: 18px;">💰</span>
+                            <span style="font-size: 18px;"></span>
                         </div>
                         <div>
                             <div class="ta-section-title">Gestão de Risco & Posição</div>
@@ -4225,27 +5382,31 @@ Regras:
                     <div style="padding: 16px; background: rgba(14,165,233,0.08); border-radius: 12px; border: 1px solid rgba(14,165,233,0.2);">
                         <!-- Tamanho sugerido -->
                         <div style="text-align: center; margin-bottom: 14px;">
-                            <div style="font-size: 28px; font-weight: 800; color: #0ea5e9;">${analysis.positionSize.icon} ${analysis.positionSize.sizePercent}%</div>
-                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px; word-wrap: break-word; overflow-wrap: break-word;">${analysis.positionSize.recommendation}</div>
-                            <div style="display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 8px; background: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? 'rgba(34,197,94,0.2)' : analysis.positionSize.riskLevel === 'MODERADO' ? 'rgba(234,179,8,0.2)' : 'rgba(239,68,68,0.2)'}; color: ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? '#22c55e' : analysis.positionSize.riskLevel === 'MODERADO' ? '#eab308' : '#ef4444'}; font-size: 10px; font-weight: 700;">
-                                ${analysis.positionSize.riskLevel === 'CONSERVADOR' ? '🛡️ Risco Baixo' : analysis.positionSize.riskLevel === 'MODERADO' ? '⚖️ Risco Médio' : analysis.positionSize.riskLevel === 'AGRESSIVO' ? '🔥 Risco Alto' : '⚠️ Risco Máximo'}
+                            <div style="font-size: 28px; font-weight: 800; color: #0ea5e9;">${positionSize.icon} ${positionSize.sizePercent}%</div>
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px; word-wrap: break-word; overflow-wrap: break-word;">${positionSize.recommendation}</div>
+                            <div style="display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 8px; background: ${positionSize.riskLevel === 'CONSERVADOR' ? 'rgba(34,197,94,0.2)' : positionSize.riskLevel === 'MODERADO' ? 'rgba(234,179,8,0.2)' : 'rgba(239,68,68,0.2)'}; color: ${positionSize.riskLevel === 'CONSERVADOR' ? '#22c55e' : positionSize.riskLevel === 'MODERADO' ? '#eab308' : '#ef4444'}; font-size: 10px; font-weight: 700;">
+                                ${positionSize.riskLevel === 'CONSERVADOR' ? ' Risco Baixo' : positionSize.riskLevel === 'MODERADO' ? '⚖️ Risco Médio' : positionSize.riskLevel === 'AGRESSIVO' ? ' Risco Alto' : '⚠️ Risco Máximo'}
                             </div>
                         </div>
                         <!-- Explicação simples -->
                         <div style="display: flex; flex-direction: column; gap: 6px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
                                 <span style="font-size: 11px; color: var(--text-muted);">📊 O que significa</span>
-                                <span style="font-size: 11px; color: var(--text-primary); font-weight: 600; text-align: right; max-width: 55%; word-wrap: break-word;">Use ${analysis.positionSize.sizePercent}% do seu capital</span>
+                                <span style="font-size: 11px; color: var(--text-primary); font-weight: 600; text-align: right; max-width: 55%; word-wrap: break-word;">Use ${positionSize.sizePercent}% do seu capital</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
-                                <span style="font-size: 11px; color: var(--text-muted);">📈 Confiança do sinal</span>
-                                <span style="font-size: 11px; color: var(--text-primary); font-weight: 600;">${((analysis.positionSize.breakdown?.confMultiplier || 1) * 100).toFixed(0)}%</span>
+                                <span style="font-size: 11px; color: var(--text-muted);">🎯 Confiança final (sincronizada)</span>
+                                <span style="font-size: 11px; color: var(--text-primary); font-weight: 600;">${confidence}%</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
+                                <span style="font-size: 11px; color: var(--text-muted);">⚙️ Fator de confiança aplicado</span>
+                                <span style="font-size: 11px; color: var(--text-primary); font-weight: 600;">${((positionSize.breakdown?.confMultiplier || 1) * 100).toFixed(0)}%</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-tertiary); border-radius: 8px;">
                                 <span style="font-size: 11px; color: var(--text-muted);">🌡️ Volatilidade (ATR)</span>
-                                <span style="font-size: 11px; color: ${(analysis.positionSize.breakdown?.atrPercent || 0) > 5 ? '#ef4444' : '#22c55e'}; font-weight: 600;">${(analysis.positionSize.breakdown?.atrPercent || 0).toFixed(1)}% ${(analysis.positionSize.breakdown?.atrPercent || 0) > 5 ? '(alta)' : '(normal)'}</span>
+                                <span style="font-size: 11px; color: ${(positionSize.breakdown?.atrPercent || 0) > 5 ? '#ef4444' : '#22c55e'}; font-weight: 600;">${(positionSize.breakdown?.atrPercent || 0).toFixed(1)}% ${(positionSize.breakdown?.atrPercent || 0) > 5 ? '(alta)' : '(normal)'}</span>
                             </div>
-                            ${(analysis.positionSize.breakdown?.crashMultiplier || 1) < 1 ? `
+                            ${(positionSize.breakdown?.crashMultiplier || 1) < 1 ? `
                             <div style="padding: 10px; background: rgba(239,68,68,0.1); border-radius: 8px; border: 1px solid rgba(239,68,68,0.2);">
                                 <span style="font-size: 11px; color: #ef4444; font-weight: 600;">⚠️ Mercado em queda detectado — posição reduzida automaticamente</span>
                             </div>
@@ -4253,7 +5414,7 @@ Regras:
                         </div>
                         <div style="margin-top: 10px; padding: 10px; background: rgba(14,165,233,0.06); border-radius: 8px; border: 1px dashed rgba(14,165,233,0.2);">
                             <div style="font-size: 10px; color: var(--text-muted); text-align: center; line-height: 1.5;">
-                                💡 <strong>Dica:</strong> Se você tem R$ 1.000, use no máximo R$ ${(10 * analysis.positionSize.sizePercent).toFixed(0)} nesta operação.
+                                 <strong>Dica:</strong> Se você tem R$ 1.000, use no máximo R$ ${(10 * positionSize.sizePercent).toFixed(0)} nesta operação.
                             </div>
                         </div>
                     </div>
@@ -4269,7 +5430,7 @@ Regras:
                 <div class="ta-section">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
-                            <span style="font-size: 18px;">⛓️</span>
+                            <span style="font-size: 18px;"></span>
                         </div>
                         <div>
                             <div class="ta-section-title">Análise On-Chain</div>
@@ -4293,14 +5454,14 @@ Regras:
                 </div>
                 ` : ''}
                 
-                <!-- ════════════════════════════════════════════════════ -->
-                <!-- CONFIRMAÇÕES DE ANÁLISE -->
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
+                <!-- CONFIRMAÇÍ•ES DE ANÁLISE -->
+                <!--  -->
                 ${analysis.v4Gates && analysis.v4Gates.length > 0 ? `
                 <div class="ta-section" style="border: 1px solid rgba(249,115,22,0.3); background: linear-gradient(135deg, rgba(249,115,22,0.05) 0%, transparent 100%);">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);">
-                            <span style="font-size: 18px;">🎯</span>
+                            <span style="font-size: 18px;"></span>
                         </div>
                         <div>
                             <div class="ta-section-title">Confirmações</div>
@@ -4319,10 +5480,10 @@ Regras:
                     <div style="display: flex; flex-direction: column; gap: 6px;">
                         ${analysis.v4Gates.map(g => `
                             <div style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: ${g.passed ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)'}; border-radius: 8px; border-left: 3px solid ${g.passed ? '#22c55e' : '#ef4444'};">
-                                <span style="font-size: 14px; min-width: 20px;">${g.passed ? '✅' : '❌'}</span>
+                                <span style="font-size: 14px; min-width: 20px;">${g.passed ? 'OK' : ''}</span>
                                 <div style="flex: 1;">
                                     <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); white-space: nowrap;">${g.name}</div>
-                                    <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px; line-height: 1.3;">${(g.description || '').replace(/^[✅❌⚠️]\s?/, '')}</div>
+                                    <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px; line-height: 1.3;">${(g.description || '').replace(/^[OK]]\s?/, '')}</div>
                                 </div>
                             </div>
                         `).join('')}
@@ -4335,7 +5496,7 @@ Regras:
                 <div class="ta-section">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);">
-                            <span style="font-size: 18px;">⚡</span>
+                            <span style="font-size: 18px;"></span>
                         </div>
                         <div>
                             <div class="ta-section-title">Força do Movimento</div>
@@ -4351,7 +5512,7 @@ Regras:
                         <div style="padding: 10px; background: ${analysis.volumeExpansion?.expanding ? 'rgba(34,197,94,0.1)' : 'rgba(100,116,139,0.1)'}; border-radius: 8px; border: 1px solid ${analysis.volumeExpansion?.expanding ? 'rgba(34,197,94,0.2)' : 'rgba(100,116,139,0.15)'};">
                             <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; white-space: nowrap;">Volume</div>
                             <div style="font-size: 14px; font-weight: 800; color: ${analysis.volumeExpansion?.expanding ? '#22c55e' : 'var(--text-muted)'}; white-space: nowrap;">${analysis.volumeExpansion?.expanding ? 'EXPANDINDO' : 'NORMAL'}</div>
-                            <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">Intensidade: ${analysis.volumeExpansion?.volZScore != null ? analysis.volumeExpansion.volZScore.toFixed(2) : (analysis.volumeExpansion?.['1h']?.ratio || '?') + '× média'}${analysis.volumeExpansion?.sustained ? ' (sustentado)' : ''}</div>
+                            <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">Intensidade: ${analysis.volumeExpansion?.volZScore != null ? analysis.volumeExpansion.volZScore.toFixed(2) : (analysis.volumeExpansion?.['1h']?.ratio || '?') + 'Í— média'}${analysis.volumeExpansion?.sustained ? ' (sustentado)' : ''}</div>
                         </div>
                     </div>
                     ${analysis.displacement['1h']?.details ? `<div style="padding: 6px 10px; background: var(--bg-tertiary); border-radius: 6px; font-size: 10px; color: var(--text-secondary); margin-bottom: 4px;">${analysis.displacement['1h'].details}</div>` : ''}
@@ -4392,21 +5553,21 @@ Regras:
                     ` : ''}
                     ${analysis.retest?.retested ? `
                     <div style="padding: 8px 10px; background: rgba(34,197,94,0.1); border-radius: 8px; margin-top: 6px; border: 1px solid rgba(34,197,94,0.2);">
-                        <div style="font-size: 11px; font-weight: 700; color: #22c55e;">✅ ${analysis.retest.details}</div>
+                        <div style="font-size: 11px; font-weight: 700; color: #22c55e;">OK ${analysis.retest.details}</div>
                         <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">Qualidade: ${analysis.retest.retestQuality}</div>
                     </div>
                     ` : ''}
                 </div>
                 ` : ''}
                 
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
                 <!-- V4.1: SESSION CONTEXT / KILL ZONE -->
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
                 ${analysis.sessionContext ? `
                 <div class="ta-section" style="border: 1px solid ${analysis.sessionContext.session === 'KILL_ZONE' ? 'rgba(239,68,68,0.3)' : analysis.sessionContext.session === 'LONDON_OPEN' ? 'rgba(59,130,246,0.3)' : 'rgba(100,116,139,0.2)'}; background: linear-gradient(135deg, ${analysis.sessionContext.session === 'KILL_ZONE' ? 'rgba(239,68,68,0.05)' : analysis.sessionContext.session === 'LONDON_OPEN' ? 'rgba(59,130,246,0.05)' : 'rgba(100,116,139,0.03)'} 0%, transparent 100%);">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, ${analysis.sessionContext.session === 'KILL_ZONE' ? '#ef4444, #dc2626' : analysis.sessionContext.session === 'LONDON_OPEN' ? '#3b82f6, #2563eb' : '#64748b, #475569'});">
-                            <span style="font-size: 18px;">${analysis.sessionContext.session === 'KILL_ZONE' ? '🔥' : analysis.sessionContext.session === 'LONDON_OPEN' ? '🇬🇧' : analysis.sessionContext.session === 'ASIAN' ? '🌏' : analysis.sessionContext.isWeekend ? '🚫' : '🕐'}</span>
+                            <span style="font-size: 18px;">${analysis.sessionContext.session === 'KILL_ZONE' ? '' : analysis.sessionContext.session === 'LONDON_OPEN' ? '' : analysis.sessionContext.session === 'ASIAN' ? '' : analysis.sessionContext.isWeekend ? '' : ''}</span>
                         </div>
                         <div>
                             <div class="ta-section-title">Sessão: ${analysis.sessionContext.session === 'KILL_ZONE' ? 'Zona de Volatilidade' : analysis.sessionContext.session === 'LONDON_OPEN' ? 'Abertura Londres' : analysis.sessionContext.session === 'ASIAN' ? 'Sessão Asiática' : analysis.sessionContext.session === 'NY_OPEN' ? 'Abertura Nova York' : analysis.sessionContext.session || 'N/A'}</div>
@@ -4416,7 +5577,7 @@ Regras:
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
                         <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center;">
                             <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Multiplicador</div>
-                            <div style="font-size: 14px; font-weight: 800; color: ${analysis.sessionContext.signalMultiplier >= 1.2 ? '#22c55e' : analysis.sessionContext.signalMultiplier >= 0.8 ? '#f59e0b' : '#ef4444'};">×${(analysis.sessionContext.signalMultiplier || 1).toFixed(1)}</div>
+                            <div style="font-size: 14px; font-weight: 800; color: ${analysis.sessionContext.signalMultiplier >= 1.2 ? '#22c55e' : analysis.sessionContext.signalMultiplier >= 0.8 ? '#f59e0b' : '#ef4444'};">Í—${(analysis.sessionContext.signalMultiplier || 1).toFixed(1)}</div>
                         </div>
                         <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center;">
                             <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Liquidez</div>
@@ -4429,20 +5590,20 @@ Regras:
                     </div>
                     ${analysis.sessionContext.isWeekend ? `
                     <div style="margin-top: 8px; padding: 8px 10px; background: rgba(239,68,68,0.1); border-radius: 8px; border: 1px solid rgba(239,68,68,0.2);">
-                        <div style="font-size: 11px; font-weight: 700; color: #f87171;">🚫 FIM DE SEMANA — Todos sinais limitados a AGUARDAR</div>
+                        <div style="font-size: 11px; font-weight: 700; color: #f87171;"> FIM DE SEMANA — Todos sinais limitados a AGUARDAR</div>
                     </div>
                     ` : ''}
                 </div>
                 ` : ''}
                 
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
                 <!-- V4.1: LIMIT ORDER EXECUTION PLAN -->
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
                 ${analysis.limitOrder && analysis.limitOrder.type !== 'NONE' ? `
                 <div class="ta-section" style="border: 1px solid rgba(168,85,247,0.3); background: linear-gradient(135deg, rgba(168,85,247,0.05) 0%, transparent 100%);">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);">
-                            <span style="font-size: 18px;">📋</span>
+                            <span style="font-size: 18px;"></span>
                         </div>
                         <div>
                             <div class="ta-section-title">Plano de Execução</div>
@@ -4480,18 +5641,18 @@ Regras:
                 ${''}
                 
                 
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
                 <!-- V4.1: RISK ENGINE -->
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
                 ${analysis.riskEngine ? `
                 <div class="ta-section" style="border: 1px solid ${analysis.riskEngine.killSwitchActive ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.2)'}; background: ${analysis.riskEngine.killSwitchActive ? 'linear-gradient(135deg, rgba(239,68,68,0.08) 0%, transparent 100%)' : 'none'};">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, ${analysis.riskEngine.killSwitchActive ? '#ef4444, #dc2626' : '#f59e0b, #d97706'});">
-                            <span style="font-size: 18px;">${analysis.riskEngine.killSwitchActive ? '🛑' : '🛡️'}</span>
+                            <span style="font-size: 18px;">${analysis.riskEngine.killSwitchActive ? '' : ''}</span>
                         </div>
                         <div>
                             <div class="ta-section-title">Gestão de Risco</div>
-                            <div class="ta-section-subtitle">${analysis.riskEngine.killSwitchActive ? '⚠️ Kill Switch ATIVO — ' + (analysis.riskEngine.killSwitchReason || 'pausa forçada') : 'Gestão dinâmica de risco'}</div>
+                            <div class="ta-section-subtitle">${analysis.riskEngine.killSwitchActive ? '⚠️ Kill Switch ATIVO — ' + (analysis.riskEngine.killSwitchReason || 'pausa forçada') : 'Gestão din de risco'}</div>
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; min-width: 0;">
@@ -4501,7 +5662,7 @@ Regras:
                         </div>
                         <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0;">
                             <div style="font-size: 9px; color: var(--text-muted);">Alavancagem</div>
-                            <div style="font-size: 14px; font-weight: 800; color: ${(analysis.riskEngine.leverage || 1) > 5 ? '#ef4444' : '#f59e0b'};">${analysis.riskEngine.leverage || 1}×</div>
+                            <div style="font-size: 14px; font-weight: 800; color: ${(analysis.riskEngine.leverage || 1) > 5 ? '#ef4444' : '#f59e0b'};">${analysis.riskEngine.leverage || 1}Í—</div>
                         </div>
                         <div style="padding: 8px; background: var(--bg-primary); border-radius: 8px; text-align: center; min-width: 0;">
                             <div style="font-size: 9px; color: var(--text-muted);">Risco</div>
@@ -4574,15 +5735,15 @@ Regras:
                 ` : ''}
                 
                 <!-- CALL HISTORY SECTION -->
-                ${renderCallHistorySection(taCurrentSymbol || '')}
+                <div id="ta-call-history-wrapper">${renderCallHistorySection(taCurrentSymbol || '')}</div>
                 
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
                 <!-- Bot Webhook: hidden from UI, logic still runs -->
                 ${''}
                 
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
                 <!-- DADOS DE MERCADO ADICIONAIS                          -->
-                <!-- ════════════════════════════════════════════════════ -->
+                <!--  -->
 
                 <!-- Market Data Grid -->
                 <div class="ta-section" style="border: 1px solid rgba(100,116,139,0.15);">
@@ -4610,9 +5771,61 @@ Regras:
                     </div>
                     ${analysis.oiAnalysis?.liquidations?.totalUSD > 0 ? `
                     <div style="margin-top: 8px; padding: 8px 10px; background: rgba(239,68,68,0.06); border-radius: 8px; font-size: 11px; color: var(--text-secondary);">
-                        💥 Liquidações (1h): <strong>${analysis.oiAnalysis.liquidations.longs} longs</strong> / <strong>${analysis.oiAnalysis.liquidations.shorts} shorts</strong> — Total: <strong>$${(analysis.oiAnalysis.liquidations.totalUSD / 1000).toFixed(0)}K</strong>
+                         Liquidações (1h): <strong>${analysis.oiAnalysis.liquidations.longs} longs</strong> / <strong>${analysis.oiAnalysis.liquidations.shorts} shorts</strong> — Total: <strong>$${(analysis.oiAnalysis.liquidations.totalUSD / 1000).toFixed(0)}K</strong>
                     </div>` : ''}
                 </div>
+
+                <!-- Modelo de Confiança em Pontos -->
+                ${usePointsModel && confidencePointsData ? `
+                <div class="ta-section" style="border: 1px solid rgba(99,102,241,0.24); background: linear-gradient(180deg, rgba(99,102,241,0.08) 0%, rgba(15,23,42,0.08) 100%);">
+                    <div class="ta-section-header">
+                        <div class="ta-section-icon" style="background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);">
+                            <span style="font-size: 18px;">🎯</span>
+                        </div>
+                        <div>
+                            <div class="ta-section-title">Confiança por Pontos (0-100)</div>
+                            <div class="ta-section-subtitle">Composição real da confiança e evolução a cada 5 minutos</div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 10px;">
+                        <div style="padding: 10px; background: var(--bg-primary); border-radius: 10px; border: 1px solid rgba(100,116,139,0.18); text-align: center;">
+                            <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase;">Confiança Final</div>
+                            <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${Number(confidencePointsData.finalConfidence ?? confidencePointsData.confidence ?? confidence).toFixed(1)}</div>
+                        </div>
+                        <div style="padding: 10px; background: var(--bg-primary); border-radius: 10px; border: 1px solid rgba(100,116,139,0.18); text-align: center;">
+                            <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase;">Long Points</div>
+                            <div style="font-size: 16px; font-weight: 800; color: #22c55e;">${Number(confidencePointsData.longPoints || 0).toFixed(1)}</div>
+                        </div>
+                        <div style="padding: 10px; background: var(--bg-primary); border-radius: 10px; border: 1px solid rgba(100,116,139,0.18); text-align: center;">
+                            <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase;">Short Points</div>
+                            <div style="font-size: 16px; font-weight: 800; color: #ef4444;">${Number(confidencePointsData.shortPoints || 0).toFixed(1)}</div>
+                        </div>
+                        <div style="padding: 10px; background: var(--bg-primary); border-radius: 10px; border: 1px solid rgba(100,116,139,0.18); text-align: center;">
+                            <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase;">Consenso Core</div>
+                            <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${Number(confidencePointsData.alignedCore || 0)}/5</div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                        <span style="font-size: 10px; padding: 4px 9px; border-radius: 8px; background: ${confidence >= 80 ? 'rgba(34,197,94,0.15)' : confidence >= 60 ? 'rgba(245,158,11,0.15)' : confidence >= 40 ? 'rgba(59,130,246,0.15)' : 'rgba(148,163,184,0.18)'}; color: ${confidence >= 80 ? '#22c55e' : confidence >= 60 ? '#f59e0b' : confidence >= 40 ? '#60a5fa' : '#94a3b8'}; font-weight: 700;">${confidenceBandLabel}</span>
+                        <span style="font-size: 10px; padding: 4px 9px; border-radius: 8px; background: rgba(148,163,184,0.15); color: var(--text-secondary); font-weight: 700;">S/R x${Number(confidencePointsData.srMultiplier || 1).toFixed(2)}</span>
+                        ${confidencePointsData.srContextDetail ? `<span style="font-size: 10px; padding: 4px 9px; border-radius: 8px; background: rgba(59,130,246,0.12); color: #60a5fa; font-weight: 700;">${confidencePointsData.srContextDetail}</span>` : ''}
+                        <span style="font-size: 10px; padding: 4px 9px; border-radius: 8px; background: rgba(99,102,241,0.12); color: #818cf8; font-weight: 700;">Modelo: weighted-points-v1</span>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin-bottom: 10px;">
+                        ${pointsRowsHtml}
+                    </div>
+
+                    <div style="padding: 10px; border-radius: 10px; background: var(--bg-primary); border: 1px solid rgba(100,116,139,0.18);">
+                        <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; font-weight: 700;">Evolução da confiança (janelas de 5 minutos)</div>
+                        <div id="ta-points-history-bars" style="display: flex; align-items: flex-end; gap: 6px; min-height: 120px; overflow-x: auto; padding-bottom: 4px;">
+                            ${pointsHistoryHtml}
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
 
                 <!-- AI Summary -->
                 <div class="ta-ai-summary">
@@ -4637,26 +5850,34 @@ Regras:
                 <div class="ta-last-update">
                     <i class="fas fa-sync-alt"></i>
                     <span>Última atualização: ${new Date(timestamp).toLocaleTimeString('pt-BR')}</span>
-                    <span style="margin-left: 8px; color: var(--accent-blue);">• Atualiza a cada 5 min</span>
+                    <span style="margin-left: 8px; color: var(--accent-blue);">- Atualiza a cada 5 min</span>
                     ${analysis.v3ProcessingTime ? `<span style="margin-left: 8px; font-size: 10px; color: var(--text-muted);">Processado em ${analysis.v3ProcessingTime}ms</span>` : ''}
                 </div>
             `;
             
             // v7.1: Initialize collapsible panels after render
             setTimeout(() => initCollapsiblePanels(body), 50);
+
+            // Refresh histories from shared DB without blocking first paint.
+            setTimeout(() => {
+                refreshTechnicalHistoryFromDB(taCurrentSymbol || '');
+            }, 140);
             
             // Trigger real AI summary (Groq Llama 3.3 70B) asynchronously
             setTimeout(() => updateAISummaryInModal(analysis, taCurrentSymbol), 100);
             } catch (renderErr) {
                 console.error('[TA Render] Error:', renderErr);
-                if (body) body.innerHTML = `
-                    <div style="padding: 40px 20px; text-align: center;">
-                        <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
-                        <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Erro ao renderizar análise</div>
-                        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">Tente novamente em alguns segundos.</div>
-                        <div style="font-size: 10px; color: var(--text-muted); background: var(--bg-secondary); padding: 8px; border-radius: 8px; word-break: break-all;">${renderErr?.message || 'Erro desconhecido'}</div>
-                    </div>
-                `;
+                if (body) {
+                    body.innerHTML = `
+                        <div style="padding: 40px 20px; text-align: center;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">�</div>
+                            <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Erro ao renderizar an�lise</div>
+                            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">Tente novamente em alguns segundos.</div>
+                            <div style="font-size: 10px; color: var(--text-muted); background: var(--bg-secondary); padding: 8px; border-radius: 8px; word-break: break-all;">${renderErr?.message || 'Erro desconhecido'}</div>
+                            <button onclick="closeTechnicalAnalysis()" style="margin-top:20px; padding:12px 24px; border-radius:12px; background:var(--bg-secondary); color:var(--text-primary); border:none; font-weight:600; cursor:pointer;">Voltar</button>
+                        </div>
+                    `;
+                }
             }
         }
         
@@ -4664,7 +5885,7 @@ Regras:
         window.addEventListener('popstate', function(event) {
             const taModal = document.getElementById('ta-modal');
             if (taModal && taModal.classList.contains('active')) {
-                closeTechnicalAnalysis();
+                closeTechnicalAnalysis(true);
                 event.preventDefault();
             }
         });
@@ -4673,4 +5894,5 @@ Regras:
         let fullscreenPeriod = '15m';
         let fullscreenRefreshInterval = null;
         let fullscreenCandleData = []; // Dados separados para fullscreen
+
 

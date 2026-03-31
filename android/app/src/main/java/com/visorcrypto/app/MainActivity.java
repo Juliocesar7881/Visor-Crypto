@@ -10,6 +10,11 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     
     private boolean pendingDashboardOpen = false;
+    private static volatile boolean appInForeground = false;
+
+    public static boolean isAppInForeground() {
+        return appInForeground;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,6 +31,18 @@ public class MainActivity extends BridgeActivity {
 
         // Check if launched from signal notification
         checkNotificationIntent(getIntent());
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        appInForeground = true;
+    }
+
+    @Override
+    public void onPause() {
+        appInForeground = false;
+        super.onPause();
     }
 
     @Override

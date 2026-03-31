@@ -57,16 +57,33 @@
             // News: usar cache se já carregou e não passou 5 minutos
             if (sectionId === 'news') {
                 const now = Date.now();
-                const fiveMinutes = 5 * 60 * 1000;
-                if (newsLoaded && allNews.length > 0 && (now - newsLastFetch) < fiveMinutes) {
+                const tenMinutes = 10 * 60 * 1000;
+                const hasFreshCache = newsLoaded && allNews.length > 0 && (now - newsLastFetch) < tenMinutes;
+                if (hasFreshCache) {
                     // Usar cache - apenas renderizar o que já tem
                     renderNews();
                 } else {
+                    const newsContainer = document.getElementById('news-container');
+                    if (newsContainer && allNews.length === 0) {
+                        newsContainer.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Carregando notícias...</p></div>';
+                    }
                     // Recarregar notícias
                     fetchNews();
                 }
             }
-            if (sectionId === 'macro' && window.loadMacroData) window.loadMacroData();
+            if (sectionId === 'macro') {
+                if (window.loadMacroData) {
+                    Promise.resolve(window.loadMacroData()).then(() => {
+                        if (window.updateAllIndicators) {
+                            setTimeout(() => window.updateAllIndicators(), 50);
+                        }
+                    }).catch(() => {});
+                }
+            }
+            if (sectionId !== 'home') {
+                try { if (window.TAEngineV4 && window.TAEngineV4.disconnectAllOrderFlowWS) window.TAEngineV4.disconnectAllOrderFlowWS(); } catch (e) {}
+                try { if (window.RealtimeCVD && window.RealtimeCVD.disconnectAll) window.RealtimeCVD.disconnectAll(); } catch (e) {}
+            }
             if (sectionId !== 'macro' && window.stopMacroUpdates) {
                 try { window.stopMacroUpdates(); } catch (e) {}
             }

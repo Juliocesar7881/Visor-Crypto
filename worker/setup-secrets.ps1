@@ -25,15 +25,22 @@ Write-Host "Project: visor-crypto-calendar" -ForegroundColor DarkCyan
 
 $fmpSecure = Read-Host "Enter FMP_API_KEY" -AsSecureString
 $fredSecure = Read-Host "Enter FRED_API_KEY" -AsSecureString
+$authSecure = Read-Host "Enter APP_AUTH_SECRET (leave empty to auto-generate)" -AsSecureString
 
 $fmp = Convert-SecureToPlainText -Secure $fmpSecure
 $fred = Convert-SecureToPlainText -Secure $fredSecure
+$auth = Convert-SecureToPlainText -Secure $authSecure
 
 if ([string]::IsNullOrWhiteSpace($fmp)) { throw "FMP_API_KEY is required." }
 if ([string]::IsNullOrWhiteSpace($fred)) { throw "FRED_API_KEY is required." }
+if ([string]::IsNullOrWhiteSpace($auth)) {
+    $auth = [Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N')
+    Write-Host "APP_AUTH_SECRET was empty. Generated a random secret." -ForegroundColor Yellow
+}
 
 $fmp | npx wrangler secret put FMP_API_KEY | Out-Null
 $fred | npx wrangler secret put FRED_API_KEY | Out-Null
+$auth | npx wrangler secret put APP_AUTH_SECRET | Out-Null
 
 if (-not $SkipGroq) {
     $groqSecure = Read-Host "Enter GROQ_API_KEY (optional)" -AsSecureString

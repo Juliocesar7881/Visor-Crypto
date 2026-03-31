@@ -3,19 +3,27 @@
         // ============================================
         
         // Macro Tab Switcher
-        function switchMacroTab(tab) {
-            document.querySelectorAll('.macro-tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.macro-panel').forEach(p => p.classList.remove('active'));
-            
-            // Ativar tab correspondente (compatível com Android/Capacitor)
-            document.querySelectorAll('.macro-tab').forEach(t => {
-                if (t.getAttribute('onclick')?.includes(tab)) {
-                    t.classList.add('active');
-                }
-            });
-            const panelEl = document.getElementById(`panel-${tab}`);
-            if (panelEl) panelEl.classList.add('active');
+let _marketIndicatorsLoaded = false;
+function switchMacroTab(tab) {
+    document.querySelectorAll('.macro-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.macro-panel').forEach(p => p.classList.remove('active'));
+
+    // Ativar tab correspondente (compatível com Android/Capacitor)
+    document.querySelectorAll('.macro-tab').forEach(t => {
+        if (t.getAttribute('onclick')?.includes(tab)) {
+            t.classList.add('active');
         }
+    });
+    const panelEl = document.getElementById(`panel-${tab}`);
+    if (panelEl) panelEl.classList.add('active');
+
+    if (tab === 'indicators' && !_marketIndicatorsLoaded) {
+        _marketIndicatorsLoaded = true;
+        if (typeof fetchMarketIndicators === 'function') {
+            fetchMarketIndicators();
+        }
+    }
+}
 
         // FOMC Meeting Dates 2025-2026 com horários de anúncio (16:00 horário de Brasília)
         const FOMC_MEETINGS = [
@@ -167,7 +175,7 @@
                 try {
                     const fredKey = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
                     if (!fredKey) throw new Error('FRED key not configured');
-                    const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=FEDFUNDS&sort_order=desc&limit=3&api_key=${fredKey}&file_type=json`;
+                    const directUrl = `${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/series/observations?series_id=FEDFUNDS&sort_order=desc&limit=3&api_key=${fredKey}&file_type=json`;
                     
                     const fredRes = await fetchWithTimeout(directUrl, {}, 10000);
                     if (fredRes.ok) {
@@ -290,7 +298,7 @@
                 // Buscar últimas 400 observações do DFEDTARU para encontrar mudanças
                 const FRED_KEY_HIST = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
                 if (!FRED_KEY_HIST) throw new Error('FRED key not configured');
-                const directUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DFEDTARU&sort_order=desc&limit=400&api_key=${FRED_KEY_HIST}&file_type=json`;
+                const directUrl = `${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/series/observations?series_id=DFEDTARU&sort_order=desc&limit=400&api_key=${FRED_KEY_HIST}&file_type=json`;
                 
                 let response = null;
                 try {
@@ -437,14 +445,23 @@
         async function fetchFREDHistoryForEvent(seriesId, eventTitle) {
             const container = document.getElementById('fred-extended-history');
             if (!container) return;
-            
+
+            // Determinar unidade de cálculo baseada no título original (ex: m/m, y/y)
+            const lowerTitle = (eventTitle || '').toLowerCase();
+            let units = '';
+            if (lowerTitle.includes('y/y') || lowerTitle.includes('yoy') || lowerTitle.includes(' anual')) units = 'pc1';
+            else if (lowerTitle.includes('m/m') || lowerTitle.includes('mom') || lowerTitle.includes(' mensal')) units = 'pch';
+            else if (lowerTitle.includes('q/q') || lowerTitle.includes('qoq') || lowerTitle.includes(' pib') || lowerTitle.includes(' gdp')) units = 'pca';
+            else if (lowerTitle.includes('payroll') || lowerTitle.includes('nfp') || lowerTitle.includes('adp') || lowerTitle.includes('employment change')) units = 'chg';
+            const unitsParam = units ? `&units=${units}` : '';
+
             try {
                 let historyData = null;
-                
+
                 // Tentar Worker primeiro (se configurado)
                 if (CALENDAR_WORKER_URL) {
                     try {
-                        const workerRes = await fetchWithTimeout(CALENDAR_WORKER_URL + '/history?series=' + encodeURIComponent(seriesId), {}, 4000);
+                        const workerRes = await fetchWithTimeout(CALENDAR_WORKER_URL + '/history?series=' + encodeURIComponent(seriesId) + unitsParam, {}, 4000);
                         if (workerRes.ok) {
                             const result = await workerRes.json();
                             if (result.success && Array.isArray(result.data) && result.data.length > 0) {
@@ -453,11 +470,11 @@
                         }
                     } catch(e) {}
                 }
-                
+
                 // Fallback: FRED direto
                 if (!historyData && FRED_API_KEY_CALENDAR) {
                     try {
-                        const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=12&api_key=${FRED_API_KEY_CALENDAR}&file_type=json`;
+                        const fredUrl = `${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=12&api_key=${FRED_API_KEY_CALENDAR}&file_type=json${unitsParam}`;
                         const fredRes = await fetchWithTimeout(fredUrl, {}, 8000);
                         if (fredRes.ok) {
                             const fredData = await fredRes.json();
@@ -584,7 +601,7 @@
                 
                 // Buscar histórico estendido do FRED via Worker (se tem fredSeriesId)
                 if (event.fredSeriesId) {
-                    fetchFREDHistoryForEvent(event.fredSeriesId, event.title);
+                    fetchFREDHistoryForEvent(event.fredSeriesId, event.description || event.title);
                 }
             }
             
@@ -843,7 +860,7 @@
                 const endStr = `${endDate.getFullYear()}-${pad(endDate.getMonth()+1)}-${pad(endDate.getDate())}`;
                 
                 if (FRED_API_KEY_CALENDAR) {
-                    const fredUrl = `https://api.stlouisfed.org/fred/releases/dates?realtime_start=${startStr}&realtime_end=${endStr}&api_key=${FRED_API_KEY_CALENDAR}&file_type=json&include_release_dates_with_no_data=true&sort_order=asc`;
+                    const fredUrl = `${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/releases/dates?realtime_start=${startStr}&realtime_end=${endStr}&api_key=${FRED_API_KEY_CALENDAR}&file_type=json&include_release_dates_with_no_data=true&sort_order=asc`;
                     
                     try {
                         const res = await fetchWithTimeout(fredUrl, {}, 12000);

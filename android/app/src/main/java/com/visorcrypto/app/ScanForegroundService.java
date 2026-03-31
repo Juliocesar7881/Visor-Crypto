@@ -43,9 +43,11 @@ public class ScanForegroundService extends Service {
     private static final String SIGNAL_CHANNEL_ID = "visor_signals";
     private static final String PREFS = "visor_scan";
     private static final String PREF_SERVICE_ENABLED = "service_enabled";
+    private static final String PREF_SYMBOLS_CONFIG = "symbols_config";
+    private static final int DEFAULT_MIN_CONFIDENCE = 70;
     private static final int NOTIFICATION_ID = 1001;
     private static final long SCAN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-    private static final long DEDUP_MS = 30 * 60 * 1000; // 30 min dedup
+    private static final long DEDUP_MS = 30 * 60 * 1000; // 30 min cooldown por simbolo
 
     private PowerManager.WakeLock wakeLock;
     private Handler handler;
@@ -114,7 +116,8 @@ public class ScanForegroundService extends Service {
 
         // Build persistent notification
         Intent notificationIntent = new Intent(this, MainActivity.class);
-        notificationIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        notificationIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        notificationIntent.putExtra("FROM_SIGNAL_NOTIFICATION", true);
         PendingIntent pendingIntent = PendingIntent.getActivity(
             this, 0, notificationIntent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -194,6 +197,21 @@ public class ScanForegroundService extends Service {
      * evaluates a simplified signal logic, and fires notifications.
      */
     private void performNativeScan() {
+        SharedPreferences prefsCheck = getSharedPreferences(PREFS, MODE_PRIVATE);
+        final int userMinConf = clampMinConfidence(prefsCheck.getInt("min_confidence", DEFAULT_MIN_CONFIDENCE));
+        final JSONObject symbolsConfig = parseSymbolsConfig(prefsCheck.getString(PREF_SYMBOLS_CONFIG, ""));
+        if (!prefsCheck.getBoolean(PREF_SERVICE_ENABLED, false)) {
+            Log.d(TAG, "Service is disabled by user. Stopping natively.");
+            isRunning = false;
+            scanInProgress.set(false);
+            if (wakeLock != null && wakeLock.isHeld()) {
+                try { wakeLock.release(); } catch(Exception ignored) {}
+            }
+            stopForeground(true);
+            stopSelf();
+            return;
+        }
+
         if (!scanInProgress.compareAndSet(false, true)) {
             Log.w(TAG, "Previous native scan still running, skipping this cycle");
             return;
@@ -217,7 +235,7 @@ public class ScanForegroundService extends Service {
 
         new Thread(() -> {
             try {
-            SharedPreferences prefs = getSharedPreferences("visor_scan", MODE_PRIVATE);
+            SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
             
             for (String[] sym : SCAN_SYMBOLS) {
                 if (!isRunning) break;
@@ -225,10 +243,10 @@ public class ScanForegroundService extends Service {
                     String symbol = sym[0];
                     String name = sym[1];
                     String shortName = sym[2];
-
-                    // Check dedup
-                    long lastNotified = prefs.getLong("last_" + symbol, 0);
-                    if (System.currentTimeMillis() - lastNotified < DEDUP_MS) continue;
+                    SymbolConfig cfg = resolveSymbolConfig(symbol, symbolsConfig, userMinConf);
+                    if (!cfg.enabled) {
+                        continue;
+                    }
 
                     // Fetch klines (1h, last 50 candles)
                     String klinesJson = httpGet("https://api.binance.com/api/v3/klines?symbol=" + symbol + "&interval=1h&limit=50");
@@ -244,15 +262,23 @@ public class ScanForegroundService extends Service {
                     // Simple analysis
                     SignalResult result = analyzeSimple(klinesJson, tickerJson, fundingJson);
                     
-                    if (result != null && result.confidence >= 60) {
+                    if (result != null && result.confidence >= cfg.minConfidence) {
+                        long now = System.currentTimeMillis();
+                        long lastNotified = prefs.getLong("last_" + symbol, 0);
+                        if (now - lastNotified < DEDUP_MS) {
+                            continue;
+                        }
+
                         String direction = result.isLong ? "LONG 🟢" : "SHORT 🔴";
                         String title = shortName + " — " + direction;
                         String body = "Confiança: " + result.confidence + "% | " + result.reason;
 
                         fireSignalNotification(title, body, symbol.hashCode());
 
-                        // Save dedup timestamp
-                        prefs.edit().putLong("last_" + symbol, System.currentTimeMillis()).apply();
+                        // Save per-symbol cooldown timestamp
+                        prefs.edit()
+                            .putLong("last_" + symbol, now)
+                            .apply();
                         
                         Log.d(TAG, "Signal: " + title + " — " + body);
                     }
@@ -448,8 +474,13 @@ public class ScanForegroundService extends Service {
 
     private void fireSignalNotification(String title, String body, int id) {
         try {
+            if (MainActivity.isAppInForeground()) {
+                Log.d(TAG, "Skipping signal notification while app is in foreground");
+                return;
+            }
+
             Intent intent = new Intent(this, MainActivity.class);
-            intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             intent.putExtra("FROM_SIGNAL_NOTIFICATION", true);
             PendingIntent pendingIntent = PendingIntent.getActivity(
                 this, id, intent,
@@ -479,7 +510,8 @@ public class ScanForegroundService extends Service {
     private void updatePersistentNotification(String text) {
         try {
             Intent notificationIntent = new Intent(this, MainActivity.class);
-            notificationIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            notificationIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            notificationIntent.putExtra("FROM_SIGNAL_NOTIFICATION", true);
             PendingIntent pendingIntent = PendingIntent.getActivity(
                 this, 0, notificationIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -544,7 +576,51 @@ public class ScanForegroundService extends Service {
         }
     }
 
+    private JSONObject parseSymbolsConfig(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return new JSONObject(raw);
+        } catch (Exception e) {
+            Log.w(TAG, "Invalid symbols config: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private SymbolConfig resolveSymbolConfig(String symbol, JSONObject symbolsConfig, int globalMinConf) {
+        int fallbackMin = clampMinConfidence(globalMinConf);
+
+        // Backward compatibility for older app versions that only send global confidence.
+        if (symbolsConfig == null || symbolsConfig.length() == 0) {
+            return new SymbolConfig(true, fallbackMin);
+        }
+
+        JSONObject entry = symbolsConfig.optJSONObject(symbol);
+        if (entry == null) {
+            return new SymbolConfig(false, fallbackMin);
+        }
+
+        boolean enabled = entry.optBoolean("enabled", false);
+        int minConfidence = clampMinConfidence(entry.optInt("minConfidence", fallbackMin));
+        return new SymbolConfig(enabled, minConfidence);
+    }
+
+    private int clampMinConfidence(int value) {
+        return Math.max(DEFAULT_MIN_CONFIDENCE, Math.min(100, value));
+    }
+
     // Simple result holder
+    private static class SymbolConfig {
+        boolean enabled;
+        int minConfidence;
+
+        SymbolConfig(boolean enabled, int minConfidence) {
+            this.enabled = enabled;
+            this.minConfidence = minConfidence;
+        }
+    }
+
     private static class SignalResult {
         boolean isLong;
         int confidence;

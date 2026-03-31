@@ -27,11 +27,249 @@ const LIQUIDATIONS_CACHE_MAX_AGE_MS = LIQUIDATIONS_CACHE_SECONDS * 1000;
 const LIQUIDATIONS_SHORT_CACHE_MAX_AGE_MS = LIQUIDATIONS_SHORT_CACHE_SECONDS * 1000;
 const LIQUIDATIONS_RATE_LIMIT = 120;          // requests per window per IP
 const LIQUIDATIONS_RATE_WINDOW_SECONDS = 60;
+const CALLS_POST_RATE_LIMIT_PER_DEVICE = 60;  // writes per minute per authenticated device
+const CALLS_POST_RATE_LIMIT_PER_IP = 1200;    // shared IP ceiling to preserve burst capacity behind NAT
+const CALLS_POST_RATE_WINDOW_SECONDS = 60;
 const RATE_LIMIT_SYNC_INTERVAL_MS = 10 * 1000;
 const RATE_LIMIT_BUCKETS = globalThis.__visorRateLimitBuckets || (globalThis.__visorRateLimitBuckets = new Map());
+const AUTH_TOKEN_TTL_SECONDS = 120;
+const AUTH_CLOCK_SKEW_SECONDS = 15;
+const DEFAULT_ALLOWED_ORIGINS = [
+    'https://visorcrypto.loan',
+    'https://www.visorcrypto.loan',
+    'capacitor://localhost',
+    'http://localhost',
+    'http://127.0.0.1',
+    'https://localhost',
+    'https://127.0.0.1'
+];
+let AUTH_SECRET_CACHE = globalThis.__visorAuthSecretCache || '';
 
 function getSecret(env, keyName) {
     return String(env?.[keyName] || '').trim();
+}
+
+function getAuthSecret(env) {
+    const direct = getSecret(env, 'APP_AUTH_SECRET');
+    if (direct) {
+        AUTH_SECRET_CACHE = direct;
+        globalThis.__visorAuthSecretCache = direct;
+        return direct;
+    }
+    return AUTH_SECRET_CACHE;
+}
+
+function normalizeDeviceId(raw) {
+    const normalized = String(raw || '').trim().toLowerCase();
+    if (!normalized) return '';
+    if (!/^[a-z0-9._:-]{8,128}$/.test(normalized)) return '';
+    return normalized;
+}
+
+function normalizeUserId(raw) {
+    const normalized = String(raw || '').trim();
+    if (!normalized) return '';
+    if (!/^[A-Za-z0-9._@:-]{1,64}$/.test(normalized)) return '';
+    return normalized;
+}
+
+function parseAllowedOrigins(env) {
+    const envValue = String(env?.ALLOWED_ORIGINS || '').trim();
+    if (!envValue) return DEFAULT_ALLOWED_ORIGINS;
+    const list = envValue
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+    return list.length > 0 ? list : DEFAULT_ALLOWED_ORIGINS;
+}
+
+function getRequestOrigin(request) {
+    return String(request.headers.get('Origin') || '').trim();
+}
+
+function isOriginAllowed(origin, allowedOrigins) {
+    if (!origin) return true;
+    return allowedOrigins.includes(origin);
+}
+
+function buildCorsHeaders(request, env) {
+    const allowedOrigins = parseAllowedOrigins(env);
+    const requestOrigin = getRequestOrigin(request);
+    const origin = isOriginAllowed(requestOrigin, allowedOrigins)
+        ? requestOrigin
+        : allowedOrigins[0];
+
+    return {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Device-Id, X-User-Id, Idempotency-Key, X-App-Client',
+        'Access-Control-Expose-Headers': 'X-RateLimit-Limit, X-RateLimit-Remaining, Retry-After',
+        'Cache-Control': 'public, max-age=1800',
+        'Vary': 'Origin',
+    };
+}
+
+function isRequestOriginAllowed(request, env) {
+    const requestOrigin = getRequestOrigin(request);
+    if (!requestOrigin) return true;
+    return isOriginAllowed(requestOrigin, parseAllowedOrigins(env));
+}
+
+function encodeUtf8(value) {
+    return new TextEncoder().encode(value);
+}
+
+function decodeUtf8(bytes) {
+    return new TextDecoder().decode(bytes);
+}
+
+function base64UrlEncodeBytes(bytes) {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64UrlEncodeString(value) {
+    return base64UrlEncodeBytes(encodeUtf8(value));
+}
+
+function base64UrlDecodeToBytes(value) {
+    const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '==='.slice((normalized.length + 3) % 4);
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+async function importAuthSigningKey(secret) {
+    return crypto.subtle.importKey(
+        'raw',
+        encodeUtf8(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign', 'verify']
+    );
+}
+
+function randomTokenId() {
+    const bytes = new Uint8Array(18);
+    crypto.getRandomValues(bytes);
+    return base64UrlEncodeBytes(bytes);
+}
+
+async function signShortLivedToken(payload, secret) {
+    const header = { alg: 'HS256', typ: 'JWT' };
+    const encodedHeader = base64UrlEncodeString(JSON.stringify(header));
+    const encodedPayload = base64UrlEncodeString(JSON.stringify(payload));
+    const signingInput = `${encodedHeader}.${encodedPayload}`;
+    const key = await importAuthSigningKey(secret);
+    const signature = await crypto.subtle.sign('HMAC', key, encodeUtf8(signingInput));
+    const encodedSignature = base64UrlEncodeBytes(new Uint8Array(signature));
+    return `${signingInput}.${encodedSignature}`;
+}
+
+async function verifyShortLivedToken(token, secret) {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 3) {
+        return { ok: false, error: 'Invalid token format' };
+    }
+
+    const [encodedHeader, encodedPayload, encodedSignature] = parts;
+    const signingInput = `${encodedHeader}.${encodedPayload}`;
+
+    let payload;
+    try {
+        payload = JSON.parse(decodeUtf8(base64UrlDecodeToBytes(encodedPayload)));
+    } catch (_) {
+        return { ok: false, error: 'Invalid token payload' };
+    }
+
+    let signatureBytes;
+    try {
+        signatureBytes = base64UrlDecodeToBytes(encodedSignature);
+    } catch (_) {
+        return { ok: false, error: 'Invalid token signature' };
+    }
+
+    const key = await importAuthSigningKey(secret);
+    const validSignature = await crypto.subtle.verify('HMAC', key, signatureBytes, encodeUtf8(signingInput));
+    if (!validSignature) {
+        return { ok: false, error: 'Invalid token signature' };
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (!payload || typeof payload !== 'object') {
+        return { ok: false, error: 'Invalid token payload' };
+    }
+
+    if (!Number.isFinite(payload.exp) || now > (payload.exp + AUTH_CLOCK_SKEW_SECONDS)) {
+        return { ok: false, error: 'Token expired' };
+    }
+
+    if (Number.isFinite(payload.nbf) && now + AUTH_CLOCK_SKEW_SECONDS < payload.nbf) {
+        return { ok: false, error: 'Token not active yet' };
+    }
+
+    return { ok: true, payload };
+}
+
+async function requireSignedAuth(request, env, requiredScope) {
+    const secret = getAuthSecret(env);
+    if (!secret) {
+        return { ok: false, status: 503, error: 'Auth service unavailable' };
+    }
+
+    const authHeader = String(request.headers.get('Authorization') || '').trim();
+    if (!authHeader.startsWith('Bearer ')) {
+        return { ok: false, status: 401, error: 'Missing bearer token' };
+    }
+
+    const token = authHeader.slice(7).trim();
+    const tokenCheck = await verifyShortLivedToken(token, secret);
+    if (!tokenCheck.ok) {
+        return { ok: false, status: 401, error: tokenCheck.error || 'Invalid token' };
+    }
+
+    const payload = tokenCheck.payload || {};
+    const deviceId = normalizeDeviceId(request.headers.get('X-Device-Id'));
+    if (!deviceId) {
+        return { ok: false, status: 401, error: 'Missing device identity' };
+    }
+
+    if (String(payload.sub || '') !== deviceId) {
+        return { ok: false, status: 401, error: 'Token/device mismatch' };
+    }
+
+    const requestOrigin = getRequestOrigin(request);
+    const tokenOrigin = String(payload.ori || '');
+    if (tokenOrigin && requestOrigin && tokenOrigin !== requestOrigin) {
+        return { ok: false, status: 401, error: 'Origin mismatch' };
+    }
+
+    const scopes = Array.isArray(payload.scopes) ? payload.scopes : [];
+    if (requiredScope && !scopes.includes(requiredScope) && !scopes.includes('*')) {
+        return { ok: false, status: 403, error: 'Insufficient scope' };
+    }
+
+    const headerUserId = normalizeUserId(request.headers.get('X-User-Id'));
+    const tokenUserId = normalizeUserId(payload.uid || '');
+    if (tokenUserId && headerUserId && tokenUserId !== headerUserId) {
+        return { ok: false, status: 401, error: 'Token/user mismatch' };
+    }
+
+    return {
+        ok: true,
+        identity: {
+            deviceId,
+            userId: tokenUserId || headerUserId || ''
+        },
+        payload
+    };
 }
 
 function getClientIp(request) {
@@ -584,6 +822,219 @@ async function buildHistory(events, fredApiKey = '') {
     return historyMap;
 }
 
+class CallHistoryDO {
+    constructor(state, env) {
+        this.state = state;
+        this.env = env;
+        this.callsKey = 'calls_v2';
+        this.maxCalls = 500;
+        this.idempotencyTtlMs = 24 * 60 * 60 * 1000;
+    }
+
+    _json(data, status = 200) {
+        return new Response(JSON.stringify(data), {
+            status,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
+    _sanitizeIdempotencyKey(rawKey) {
+        return String(rawKey || '')
+            .trim()
+            .replace(/[^A-Za-z0-9._:-]/g, '')
+            .slice(0, 120);
+    }
+
+    async _cleanupIdempotency() {
+        const now = Date.now();
+        const lastCleanup = Number(await this.state.storage.get('idem_last_cleanup') || 0);
+        if (now - lastCleanup < 10 * 60 * 1000) {
+            return;
+        }
+
+        const items = await this.state.storage.list({ prefix: 'idem:' });
+        const deletes = [];
+        for (const [key, value] of items.entries()) {
+            const ts = Number(value?.ts || 0);
+            if (!ts || (now - ts) > this.idempotencyTtlMs) {
+                deletes.push(key);
+            }
+        }
+
+        if (deletes.length > 0) {
+            await this.state.storage.delete(deletes);
+        }
+
+        await this.state.storage.put('idem_last_cleanup', now);
+    }
+
+    async _handlePost(request) {
+        const body = await request.json();
+        const deviceId = normalizeDeviceId(request.headers.get('X-Device-Id'));
+        const userId = normalizeUserId(request.headers.get('X-User-Id'));
+        const idempotencyKey = this._sanitizeIdempotencyKey(request.headers.get('Idempotency-Key'));
+
+        const safeSymbol = String(body?.symbol || '').toUpperCase().trim();
+        const safeDirection = String(body?.direction || '').toUpperCase().trim();
+        const safeConfidence = Number(body?.confidence);
+        const safeTime = Number(body?.time) || Date.now();
+
+        if (!deviceId) {
+            return this._json({ success: false, error: 'Missing device identity' }, 400);
+        }
+
+        if (!safeSymbol || !safeDirection || body?.confidence == null) {
+            return this._json({ success: false, error: 'Missing required fields' }, 400);
+        }
+
+        if (!/^[A-Z0-9]{4,20}$/.test(safeSymbol)) {
+            return this._json({ success: false, error: 'Invalid symbol' }, 400);
+        }
+
+        if (safeDirection !== 'LONG' && safeDirection !== 'SHORT') {
+            return this._json({ success: false, error: 'Invalid direction' }, 400);
+        }
+
+        if (!Number.isFinite(safeConfidence) || safeConfidence < 0 || safeConfidence > 100) {
+            return this._json({ success: false, error: 'Invalid confidence' }, 400);
+        }
+
+        const result = await this.state.storage.transaction(async (txn) => {
+            const now = Date.now();
+            const idemStorageKey = idempotencyKey ? `idem:${deviceId}:${idempotencyKey}` : '';
+
+            if (idemStorageKey) {
+                const idemValue = await txn.get(idemStorageKey);
+                if (idemValue?.call) {
+                    return {
+                        success: true,
+                        duplicate: true,
+                        idempotent: true,
+                        message: 'Duplicate request ignored',
+                        call: idemValue.call,
+                    };
+                }
+            }
+
+            let calls = await txn.get(this.callsKey);
+            if (!Array.isArray(calls)) {
+                calls = [];
+            }
+
+            const dedupWindowMs = 30 * 60 * 1000;
+            const duplicateCall = calls.find((c) =>
+                c.symbol === safeSymbol &&
+                c.direction === safeDirection &&
+                (now - Number(c.time || 0)) < dedupWindowMs
+            );
+
+            if (duplicateCall) {
+                if (idemStorageKey) {
+                    await txn.put(idemStorageKey, { call: duplicateCall, ts: now });
+                }
+                return {
+                    success: true,
+                    duplicate: true,
+                    message: 'Call already recorded',
+                    call: duplicateCall,
+                };
+            }
+
+            const newCall = {
+                id: safeTime,
+                symbol: safeSymbol,
+                name: String(body?.name || '').slice(0, 50),
+                short: String(body?.short || safeSymbol.replace('USDT', '')).slice(0, 10),
+                img: String(body?.img || '').slice(0, 200),
+                direction: safeDirection,
+                confidence: Math.round(safeConfidence),
+                gates: String(body?.gates || '').slice(0, 20),
+                price: String(body?.price || '').slice(0, 20),
+                reason: String(body?.reason || '').slice(0, 180),
+                time: safeTime,
+                deviceId,
+                userId: userId || String(body?.userId || '').slice(0, 64)
+            };
+
+            calls.unshift(newCall);
+            calls = calls.slice(0, this.maxCalls);
+
+            await txn.put(this.callsKey, calls);
+            if (idemStorageKey) {
+                await txn.put(idemStorageKey, { call: newCall, ts: now });
+            }
+
+            return {
+                success: true,
+                duplicate: false,
+                call: newCall,
+                callsSnapshot: calls
+            };
+        });
+
+        if (this.env?.CALENDAR_KV && Array.isArray(result?.callsSnapshot)) {
+            try {
+                await this.env.CALENDAR_KV.put('shared_call_history_v2', JSON.stringify(result.callsSnapshot), {
+                    expirationTtl: 30 * 24 * 60 * 60
+                });
+            } catch (kvErr) {
+                console.warn('CallHistoryDO KV mirror failed:', kvErr && kvErr.message ? kvErr.message : kvErr);
+            }
+        }
+
+        if (result && Object.prototype.hasOwnProperty.call(result, 'callsSnapshot')) {
+            delete result.callsSnapshot;
+        }
+
+        await this._cleanupIdempotency();
+        return this._json(result, 200);
+    }
+
+    async _handleGet(url) {
+        let calls = await this.state.storage.get(this.callsKey);
+        if (!Array.isArray(calls)) {
+            calls = [];
+        }
+
+        const filterDir = String(url.searchParams.get('direction') || '').toUpperCase();
+        if (filterDir === 'LONG' || filterDir === 'SHORT') {
+            calls = calls.filter((c) => c.direction === filterDir);
+        }
+
+        const requestedLimit = parseInt(url.searchParams.get('limit') || '100', 10);
+        const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), this.maxCalls) : 100;
+        calls = calls.slice(0, limit);
+
+        return this._json({ success: true, calls, total: calls.length }, 200);
+    }
+
+    async fetch(request) {
+        const url = new URL(request.url);
+
+        if (url.pathname === '/calls' && request.method === 'POST') {
+            try {
+                return await this._handlePost(request);
+            } catch (e) {
+                console.error('CallHistoryDO POST error:', e);
+                return this._json({ success: false, error: 'Failed to record call' }, 500);
+            }
+        }
+
+        if (url.pathname === '/calls' && request.method === 'GET') {
+            try {
+                return await this._handleGet(url);
+            } catch (e) {
+                console.error('CallHistoryDO GET error:', e);
+                return this._json({ success: false, error: 'Failed to fetch calls' }, 500);
+            }
+        }
+
+        return this._json({ success: false, error: 'Not found' }, 404);
+    }
+}
+
+export { CallHistoryDO };
+
 // ============================================
 // HANDLER PRINCIPAL
 // ============================================
@@ -597,15 +1048,83 @@ export default {
         const GROQ_API_KEY = getSecret(env, 'GROQ_API_KEY');
 
         // CORS headers
-        const corsHeaders = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Cache-Control': 'public, max-age=1800',
-        };
+        const corsHeaders = buildCorsHeaders(request, env);
 
         if (request.method === 'OPTIONS') {
+            if (!isRequestOriginAllowed(request, env)) {
+                return new Response(null, { status: 403, headers: corsHeaders });
+            }
             return new Response(null, { headers: corsHeaders });
+        }
+
+        if (!isRequestOriginAllowed(request, env)) {
+            return new Response(JSON.stringify({ success: false, error: 'Origin not allowed' }), {
+                status: 403,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        // POST /auth/issue — issue short-lived signed token scoped to write endpoints
+        if (path === '/auth/issue' && request.method === 'POST') {
+            try {
+                const clientIp = getClientIp(request);
+                const rl = await checkRateLimit(env, `rl_auth_issue_${clientIp}`, 30, 60);
+                if (!rl.allowed) {
+                    return new Response(JSON.stringify({ success: false, error: 'Rate limit exceeded' }), {
+                        status: 429,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                const authSecret = getAuthSecret(env);
+                if (!authSecret) {
+                    return new Response(JSON.stringify({ success: false, error: 'Auth service unavailable' }), {
+                        status: 503,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                const body = await request.json();
+                const deviceId = normalizeDeviceId(body?.deviceId || request.headers.get('X-Device-Id'));
+                const userId = normalizeUserId(body?.userId || request.headers.get('X-User-Id'));
+
+                if (!deviceId) {
+                    return new Response(JSON.stringify({ success: false, error: 'Invalid device identity' }), {
+                        status: 400,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                const nowSec = Math.floor(Date.now() / 1000);
+                const origin = getRequestOrigin(request);
+                const payload = {
+                    sub: deviceId,
+                    uid: userId || '',
+                    ori: origin || '',
+                    scopes: ['ai-summary:write', 'calls:write'],
+                    jti: randomTokenId(),
+                    iat: nowSec,
+                    nbf: nowSec,
+                    exp: nowSec + AUTH_TOKEN_TTL_SECONDS,
+                };
+
+                const token = await signShortLivedToken(payload, authSecret);
+                return new Response(JSON.stringify({
+                    success: true,
+                    token,
+                    tokenType: 'Bearer',
+                    expiresIn: AUTH_TOKEN_TTL_SECONDS,
+                    scope: payload.scopes,
+                }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+                });
+            } catch (e) {
+                console.error('Auth issue endpoint error:', e);
+                return new Response(JSON.stringify({ success: false, error: 'Failed to issue token' }), {
+                    status: 500,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            }
         }
 
         // GET /calendar - Eventos dos próximos 30 dias (apenas alta importância EUA)
@@ -981,6 +1500,14 @@ export default {
         // POST /ai-summary — Groq proxy (keeps API key server-side)
         if (path === '/ai-summary' && request.method === 'POST') {
             try {
+                const authCheck = await requireSignedAuth(request, env, 'ai-summary:write');
+                if (!authCheck.ok) {
+                    return new Response(JSON.stringify({ success: false, error: authCheck.error }), {
+                        status: authCheck.status || 401,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
                 const clientIp = getClientIp(request);
                 let rl = { allowed: true, remaining: 20 };
                 try {
@@ -1079,9 +1606,37 @@ export default {
         // POST /calls — Record a new call signal
         if (path === '/calls' && request.method === 'POST') {
             try {
+                const authCheck = await requireSignedAuth(request, env, 'calls:write');
+                if (!authCheck.ok) {
+                    return new Response(JSON.stringify({ success: false, error: authCheck.error }), {
+                        status: authCheck.status || 401,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
                 const clientIp = getClientIp(request);
-                const rl = await checkRateLimit(env, `rl_calls_post_${clientIp}`, 30, 60);
-                if (!rl.allowed) {
+                const deviceIdForRate = authCheck.identity.deviceId;
+
+                const rlDevice = await checkRateLimit(
+                    env,
+                    `rl_calls_post_device_${deviceIdForRate}`,
+                    CALLS_POST_RATE_LIMIT_PER_DEVICE,
+                    CALLS_POST_RATE_WINDOW_SECONDS
+                );
+                if (!rlDevice.allowed) {
+                    return new Response(JSON.stringify({ success: false, error: 'Rate limit exceeded' }), {
+                        status: 429,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                const rlIp = await checkRateLimit(
+                    env,
+                    `rl_calls_post_ip_${clientIp}`,
+                    CALLS_POST_RATE_LIMIT_PER_IP,
+                    CALLS_POST_RATE_WINDOW_SECONDS
+                );
+                if (!rlIp.allowed) {
                     return new Response(JSON.stringify({ success: false, error: 'Rate limit exceeded' }), {
                         status: 429,
                         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -1131,31 +1686,8 @@ export default {
                     });
                 }
 
-                // Load existing calls
-                const CALLS_KEY = 'shared_call_history_v1';
-                const MAX_CALLS = 500;
-                let calls = [];
-                if (env.CALENDAR_KV) {
-                    calls = await env.CALENDAR_KV.get(CALLS_KEY, 'json') || [];
-                }
-
-                // Dedup: same symbol + direction within 30 minutes = duplicate
                 const now = Date.now();
-                const DEDUP_WINDOW = 30 * 60 * 1000; // 30 min
-                const isDuplicate = calls.some(c =>
-                    c.symbol === safeSymbol &&
-                    c.direction === safeDirection &&
-                    (now - c.time) < DEDUP_WINDOW
-                );
-
-                if (isDuplicate) {
-                    return new Response(JSON.stringify({ success: true, duplicate: true, message: 'Call already recorded' }), {
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    });
-                }
-
-                // Add new call
-                const newCall = {
+                const callPayload = {
                     id: now,
                     symbol: safeSymbol,
                     name: String(name || '').slice(0, 50),
@@ -1166,19 +1698,102 @@ export default {
                     gates: String(gates || '').slice(0, 20),
                     price: String(price || '').slice(0, 20),
                     reason: String(reason || '').slice(0, 180),
-                    time: now
+                    time: now,
+                    deviceId: authCheck.identity.deviceId,
+                    userId: authCheck.identity.userId || ''
                 };
 
-                calls.unshift(newCall);
-                calls = calls.slice(0, MAX_CALLS); // Keep last 500
+                if (!env.CALL_HISTORY_DO) {
+                    // Graceful fallback: keep endpoint operational if DO binding is unavailable.
+                    let calls = [];
+                    if (env.CALENDAR_KV) {
+                        calls = await env.CALENDAR_KV.get('shared_call_history_v2', 'json') || [];
+                    }
+                    if (!Array.isArray(calls)) calls = [];
 
-                if (env.CALENDAR_KV) {
-                    await env.CALENDAR_KV.put(CALLS_KEY, JSON.stringify(calls), {
-                        expirationTtl: 30 * 24 * 60 * 60 // 30 days
+                    const duplicate = calls.find((c) =>
+                        c.symbol === safeSymbol &&
+                        c.direction === safeDirection &&
+                        (now - Number(c.time || 0)) < (30 * 60 * 1000)
+                    );
+
+                    if (duplicate) {
+                        return new Response(JSON.stringify({ success: true, duplicate: true, message: 'Call already recorded', call: duplicate }), {
+                            status: 200,
+                            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        });
+                    }
+
+                    calls.unshift(callPayload);
+                    calls = calls.slice(0, 500);
+                    if (env.CALENDAR_KV) {
+                        await env.CALENDAR_KV.put('shared_call_history_v2', JSON.stringify(calls), {
+                            expirationTtl: 30 * 24 * 60 * 60
+                        });
+                    }
+
+                    return new Response(JSON.stringify({ success: true, duplicate: false, call: callPayload, source: 'kv-fallback' }), {
+                        status: 200,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                     });
                 }
 
-                return new Response(JSON.stringify({ success: true, call: newCall }), {
+                const doId = env.CALL_HISTORY_DO.idFromName('global');
+                const doStub = env.CALL_HISTORY_DO.get(doId);
+                const inboundIdempotencyKey = String(request.headers.get('Idempotency-Key') || '').trim();
+
+                const forwardHeaders = {
+                    'Content-Type': 'application/json',
+                    'X-Device-Id': authCheck.identity.deviceId,
+                    'X-User-Id': authCheck.identity.userId || ''
+                };
+                if (inboundIdempotencyKey) {
+                    forwardHeaders['Idempotency-Key'] = inboundIdempotencyKey;
+                }
+
+                const doResp = await doStub.fetch('https://call-history.internal/calls', {
+                    method: 'POST',
+                    headers: forwardHeaders,
+                    body: JSON.stringify(callPayload)
+                });
+
+                if (doResp.status === 503) {
+                    let calls = [];
+                    if (env.CALENDAR_KV) {
+                        calls = await env.CALENDAR_KV.get('shared_call_history_v2', 'json') || [];
+                    }
+                    if (!Array.isArray(calls)) calls = [];
+
+                    const duplicate = calls.find((c) =>
+                        c.symbol === safeSymbol &&
+                        c.direction === safeDirection &&
+                        (now - Number(c.time || 0)) < (30 * 60 * 1000)
+                    );
+
+                    if (duplicate) {
+                        return new Response(JSON.stringify({ success: true, duplicate: true, message: 'Call already recorded', call: duplicate, source: 'kv-fallback-do-503' }), {
+                            status: 200,
+                            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                        });
+                    }
+
+                    calls.unshift(callPayload);
+                    calls = calls.slice(0, 500);
+                    if (env.CALENDAR_KV) {
+                        await env.CALENDAR_KV.put('shared_call_history_v2', JSON.stringify(calls), {
+                            expirationTtl: 30 * 24 * 60 * 60
+                        });
+                    }
+
+                    return new Response(JSON.stringify({ success: true, duplicate: false, call: callPayload, source: 'kv-fallback-do-503' }), {
+                        status: 200,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    });
+                }
+
+                const doText = await doResp.text();
+                return new Response(doText, {
+                    status: doResp.status,
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 });
             } catch (e) {
@@ -1201,23 +1816,44 @@ export default {
                     });
                 }
 
-                const CALLS_KEY = 'shared_call_history_v1';
-                let calls = [];
+                const filterDir = String(url.searchParams.get('direction') || '').toUpperCase();
+                const requestedLimit = parseInt(url.searchParams.get('limit') || '100', 10);
+                const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 100;
+
                 if (env.CALENDAR_KV) {
-                    calls = await env.CALENDAR_KV.get(CALLS_KEY, 'json') || [];
+                    try {
+                        let cachedCalls = await env.CALENDAR_KV.get('shared_call_history_v2', 'json');
+                        if (Array.isArray(cachedCalls)) {
+                            if (filterDir === 'LONG' || filterDir === 'SHORT') {
+                                cachedCalls = cachedCalls.filter((c) => c.direction === filterDir);
+                            }
+                            cachedCalls = cachedCalls.slice(0, limit);
+                            return new Response(JSON.stringify({ success: true, calls: cachedCalls, total: cachedCalls.length, source: 'kv' }), {
+                                status: 200,
+                                headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=30' },
+                            });
+                        }
+                    } catch (kvErr) {
+                        console.warn('Calls GET KV read failed:', kvErr && kvErr.message ? kvErr.message : kvErr);
+                    }
                 }
 
-                // Optional filter by direction
-                const filterDir = url.searchParams.get('direction');
-                if (filterDir === 'LONG' || filterDir === 'SHORT') {
-                    calls = calls.filter(c => c.direction === filterDir);
+                if (!env.CALL_HISTORY_DO) {
+                    return new Response(JSON.stringify({ success: true, calls: [], total: 0, source: 'no-do' }), {
+                        status: 200,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=30' },
+                    });
                 }
 
-                // Limit
-                const limit = Math.min(parseInt(url.searchParams.get('limit') || '100'), 500);
-                calls = calls.slice(0, limit);
+                const doId = env.CALL_HISTORY_DO.idFromName('global');
+                const doStub = env.CALL_HISTORY_DO.get(doId);
+                const doResp = await doStub.fetch(`https://call-history.internal/calls${url.search}`, {
+                    method: 'GET'
+                });
+                const doText = await doResp.text();
 
-                return new Response(JSON.stringify({ success: true, calls, total: calls.length }), {
+                return new Response(doText, {
+                    status: doResp.status,
                     headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' },
                 });
             } catch (e) {
@@ -1235,6 +1871,62 @@ export default {
                 version: '1.0.0',
                 timestamp: new Date().toISOString(),
             }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        // ==========================================
+        // PROXY REVERSO COM CACHE CDN (Custo zero e infinitos usuários)
+        // ==========================================
+        
+        // Proxy para o FMP
+        if (path.startsWith('/proxy/fmp/')) {
+            const FMP_KEY_TO_USE = FMP_API_KEY || ''; // Set via Cloudflare Worker secret
+            const targetUrl = new URL(url.toString().replace(url.origin + '/proxy/fmp/', 'https://financialmodelingprep.com/'));
+            targetUrl.searchParams.set('apikey', FMP_KEY_TO_USE);
+            
+            try {
+                const proxyReq = new Request(targetUrl, { method: request.method, } );
+                const res = await fetch(proxyReq);
+                const clone = new Response(res.body, res);
+                clone.headers.set('Access-Control-Allow-Origin', corsHeaders['Access-Control-Allow-Origin']);
+                clone.headers.set('Vary', 'Origin');
+                // Força o cache do Cloudflare por 6 minutos (360s) para driblar limite diário do FMP
+                if(res.ok) clone.headers.set('Cache-Control', 'public, max-age=360, s-maxage=360'); 
+                return clone;
+            } catch (err) {
+                return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+            }
+        }
+
+        // Proxy para o FRED
+        if (path.startsWith('/proxy/fred/')) {
+            //  || 'bea57f400390b78a3bb3d7622c7eb591'; // Fallback
+            const targetUrl = new URL(url.toString().replace(url.origin + '/proxy/fred/', 'https://api.stlouisfed.org/')); if(url.searchParams.get('test_debug')) return new Response(targetUrl.toString());
+            targetUrl.searchParams.set('api_key', FRED_API_KEY || ''); // Set via Cloudflare Worker secret
+
+            
+            try {
+                const proxyReq = new Request(targetUrl, { method: request.method, } );
+                const res = await fetch(proxyReq);
+                const clone = new Response(res.body, res);
+                clone.headers.set('Access-Control-Allow-Origin', corsHeaders['Access-Control-Allow-Origin']);
+                clone.headers.set('Vary', 'Origin');
+                // Macro dados mudam pouco. Cache de 1 hora
+                if(res.ok) clone.headers.set('Cache-Control', 'public, max-age=3600, s-maxage=3600'); 
+                return clone;
+            } catch (err) {
+                return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+            }
+        }
+
+        // Proxy para o GROQ (desativado para evitar abuso de chave)
+        if (path.startsWith('/proxy/groq/')) {
+            return new Response(JSON.stringify({
+                success: false,
+                error: 'Groq proxy disabled. Use POST /ai-summary with signed short-lived token.'
+            }), {
+                status: 403,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
@@ -1361,3 +2053,5 @@ export default {
         }
     },
 };
+
+

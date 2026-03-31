@@ -119,9 +119,25 @@
         }
         
         function renderCallHistorySection(currentSymbol) {
-            const history = getCallHistory();
-            const symbolHistory = history.filter(c => c.symbol === currentSymbol);
-            const allStats = getCallStats(history);
+            const normalizeSymbol = (raw) => {
+                const clean = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (!clean) return '';
+                return clean.endsWith('USDT') ? clean : `${clean}USDT`;
+            };
+
+            const fallbackSymbol = (typeof taCurrentSymbol !== 'undefined' && taCurrentSymbol) ? taCurrentSymbol : '';
+            const effectiveSymbolRaw = currentSymbol || fallbackSymbol;
+            const targetSymbol = normalizeSymbol(effectiveSymbolRaw);
+            const historyReader = (typeof getCallHistoryForDisplay === 'function') ? getCallHistoryForDisplay : getCallHistory;
+            const history = historyReader();
+            const symbolHistory = targetSymbol
+                ? history.filter(c => normalizeSymbol(c.symbol) === targetSymbol)
+                : history;
+            const scopedHistory = targetSymbol ? symbolHistory : history;
+            const scopedStats = getCallStats(scopedHistory);
+            const currentLabel = (typeof CRYPTO_DATABASE !== 'undefined' && CRYPTO_DATABASE[targetSymbol])
+                ? CRYPTO_DATABASE[targetSymbol].short
+                : (targetSymbol ? targetSymbol.replace(/USDT$/, '') : 'todos ativos');
             
             const formatP = (p) => {
                 if (!p) return '—';
@@ -136,7 +152,7 @@
                 return (pct >= 0 ? '+' : '') + pct + '%';
             };
             
-            const recentCalls = [...history].reverse().slice(0, 15);
+            const recentCalls = [...scopedHistory].reverse().slice(0, 15);
             
             let html = `
                 <!-- CALL HISTORY -->
@@ -147,17 +163,17 @@
                         </div>
                         <div>
                             <div class="ta-section-title">Histórico de Calls</div>
-                            <div class="ta-section-subtitle">${history.length} calls registradas • Verificação em 1h, 4h, 12h, 24h</div>
+                            <div class="ta-section-subtitle">${scopedHistory.length} calls de ${currentLabel} • Verificação em 1h, 4h, 12h, 24h</div>
                         </div>
                     </div>`;
             
             // Stats summary
-            if (history.length > 0) {
+            if (scopedHistory.length > 0) {
                 html += `
                     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px;">`;
                 
                 for (const iv of CALL_CHECK_INTERVALS) {
-                    const s = allStats.byInterval[iv.key];
+                    const s = scopedStats.byInterval[iv.key];
                     const wr = s.total > 0 ? ((s.wins / s.total) * 100).toFixed(0) : '—';
                     const wrColor = s.total === 0 ? 'var(--text-muted)' : parseFloat(wr) >= 55 ? '#22c55e' : parseFloat(wr) >= 45 ? '#f59e0b' : '#ef4444';
                     html += `
@@ -192,7 +208,7 @@
                     const dirIcon = isLong ? '▲' : '▼';
                     const date = new Date(call.timestamp);
                     const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                    const isCurrent = call.symbol === currentSymbol;
+                    const isCurrent = targetSymbol ? (normalizeSymbol(call.symbol) === targetSymbol) : false;
                     
                     html += `
                         <div style="padding: 10px; background: ${isCurrent ? 'rgba(59,130,246,0.08)' : 'var(--bg-tertiary)'}; border-radius: 8px; border-left: 3px solid ${dirColor}; ${isCurrent ? 'border: 1px solid rgba(59,130,246,0.2);' : ''}">
@@ -232,7 +248,7 @@
                 html += `
                     <div style="padding: 20px; text-align: center; background: var(--bg-tertiary); border-radius: 10px;">
                         <div style="font-size: 24px; margin-bottom: 8px;">📋</div>
-                        <div style="font-size: 12px; color: var(--text-muted);">Nenhuma call registrada ainda</div>
+                        <div style="font-size: 12px; color: var(--text-muted);">Nenhuma call registrada para ${currentLabel}</div>
                         <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Calls com confiança ≥70% são salvas automaticamente</div>
                     </div>`;
             }
@@ -247,168 +263,210 @@
         setTimeout(() => checkCallPrices(), 5000);
         
         async function openTechnicalAnalysis() {
-            if (!currentChartSymbol) return;
-            
-            taCurrentSymbol = currentChartSymbol;
-            taNavigationStack.push({ type: 'chart', symbol: currentChartSymbol });
-            
-            const modal = document.getElementById('ta-modal');
-            const body = document.getElementById('ta-modal-body');
-            const crypto = CRYPTO_DATABASE[currentChartSymbol];
-            if (!crypto || !modal || !body) return;
-            
-            // Atualizar título
-            const titleEl = document.querySelector('.ta-modal-header-title');
-            if (titleEl) titleEl.textContent = `Análise Técnica - ${crypto.name}`;
-            
-            // Mostrar loading
-            body.innerHTML = `
-                <div class="ta-loading">
-                    <div class="ta-loading-spinner"></div>
-                    <div class="ta-loading-text">Analisando ${crypto.name}...</div>
-                </div>
-            `;
-            
-            modal.classList.add('active');
-            document.body.style.overflow = 'hidden';
-            
-            // 🎯 Show interstitial ad while analysis loads in background
-            showInterstitialAd().catch(() => {});
-            
-            // Init notification bell state
-            
-            // Connect Real CVD WebSocket for this symbol
-            if (window.RealtimeCVD) {
-                try { window.RealtimeCVD.connect(currentChartSymbol); } catch(e) {}
-            }
-            initNotifBellState();
-            
-            // Adicionar ao histórico do navegador
-            if (window.history && window.history.pushState) {
-                window.history.pushState({ page: 'technical-analysis', symbol: currentChartSymbol }, '', '');
-            }
-            
-            // Verificar cache
-            const cachedData = getTACache(currentChartSymbol);
-            if (cachedData && cachedData.analysis) {
-                renderTechnicalAnalysis(cachedData.analysis, crypto);
-                // Iniciar auto-refresh mesmo com cache
-                startTAAutoRefresh(currentChartSymbol);
-                return;
-            }
-            
-            // Buscar dados em paralelo — FAST RENDER: Binance primeiro, extras em background
             try {
-                // 1. Fetch Binance data (rápido ~1-2s) e renderizar imediatamente
-                const analysisData = await fetchTechnicalAnalysisData(currentChartSymbol);
-                const analysis = generateTechnicalAnalysis(analysisData, currentChartSymbol);
+                if (!currentChartSymbol) {
+                    console.warn('No chart symbol');
+                    return;
+                }
                 
-                // Renderizar imediatamente com dados Binance
-                renderTechnicalAnalysis(analysis, crypto);
+                if (typeof taCurrentSymbol !== 'undefined') {
+                    taCurrentSymbol = currentChartSymbol;
+                }
+                if (typeof taNavigationStack !== 'undefined') {
+                    taNavigationStack.push({ type: 'chart', symbol: currentChartSymbol });
+                }
+
+                // Crash Prevention & Memory Management: cleanup active subscriptions
+                if (window.RealtimeCVD && typeof window.RealtimeCVD.disconnect === 'function') {
+                    try { window.RealtimeCVD.disconnect(); } catch(e) { console.warn('CVD disconnect error:', e); }
+                }
+
+                const modal = document.getElementById('ta-modal');
+                const body = document.getElementById('ta-modal-body');
+                const crypto = (typeof CRYPTO_DATABASE !== 'undefined') ? CRYPTO_DATABASE[currentChartSymbol] : null;
                 
-                // 2. Enhancement progressivo em background (não bloqueia a UI)
-                (async () => {
-                    try {
-                        const [macroNewsData, bigTechData] = await Promise.all([
-                            (window.TAEngineV2 && window.TAEngineV2.fetchMacroNewsLayer) ?
-                                window.TAEngineV2.fetchMacroNewsLayer(currentChartSymbol) :
-                                Promise.resolve(null),
-                            (window.TAEngineV2 && window.TAEngineV2.fetchBigTechAndMacro) ?
-                                window.TAEngineV2.fetchBigTechAndMacro() :
-                                Promise.resolve(null)
-                        ]);
-                        
-                        // Inject macro/news data
-                        analysis.macroNews = macroNewsData;
-                        analysis.bigTechMacro = bigTechData;
-                        if (macroNewsData && macroNewsData.totalImpact !== 0 && window.TAEngineV2) {
-                            const V2 = window.TAEngineV2;
-                            const reScored = V2.applyContextualScoring(
-                                analysis.confluenceDetails, analysis.marketRegime, analysis.marketStructure,
-                                analysis.cvdAdvanced, macroNewsData, analysis.volatilityMetrics
-                            );
-                            analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + macroNewsData.totalImpact).toFixed(1);
-                            analysis.contextualAdjustments = reScored.adjustments;
-                        }
-                        if (bigTechData && bigTechData.bigTechScore !== 0) {
-                            analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + bigTechData.bigTechScore).toFixed(1);
-                        }
-                        if (bigTechData) {
-                            analysis.indicators = analysis.indicators || {};
-                            analysis.indicators.bigTechMacro = bigTechData;
-                        }
-                        
-                        // V3 Enhancement
-                        if (window.TAEngineV3 && window.TAEngineV3.enhanceAnalysis) {
-                            try {
-                                const enhanced = await window.TAEngineV3.enhanceAnalysis(analysis, analysisData, currentChartSymbol);
-                                Object.assign(analysis, enhanced);
-                                if (enhanced.v3Signal) {
-                                    analysis.aiSummary = generateAISummary(
-                                        enhanced.v3SignalType || analysis.signalType,
-                                        enhanced.v3Confidence || analysis.confidence,
-                                        analysis.indicators,
-                                        currentChartSymbol
-                                    );
-                                }
-                            } catch (v3err) {}
-                        }
-                        
-                        // V4 Enhancement
-                        if (window.TAEngineV4 && window.TAEngineV4.enhanceWithReactive) {
-                            try {
-                                const v4Enhanced = await window.TAEngineV4.enhanceWithReactive(analysis, analysisData, currentChartSymbol);
-                                Object.assign(analysis, v4Enhanced);
-                                if (v4Enhanced.v4Signal) {
-                                    const v4Dir = v4Enhanced.v4Signal.includes('LONG') ? 'long' : v4Enhanced.v4Signal.includes('SHORT') ? 'short' : 'neutral';
-                                    analysis.aiSummary = generateAISummary(
-                                        v4Dir,
-                                        v4Enhanced.v4Confidence || analysis.confidence,
-                                        analysis.indicators,
-                                        currentChartSymbol
-                                    );
-                                    if (v4Enhanced.reactiveSummary) {
-                                        analysis.aiSummary += '\n\n━━━ ANÁLISE AVANÇADA ━━━\n' + v4Enhanced.reactiveSummary;
-                                    }
-                                }
-                            } catch (v4err) {}
-                        }
-                        
-                        // Atualizar cache com dados completos
-                        setTACache(currentChartSymbol, { analysis });
-                        
-                        // Re-renderizar com dados completos (se modal ainda aberto)
-                        const modal = document.getElementById('ta-modal');
-                        if (modal && modal.classList.contains('active')) {
-                            renderTechnicalAnalysis(analysis, crypto);
-                        }
-                        
-                        // Record call
-                        try {
-                            const callSignal = analysis.v4Signal || analysis.v3Signal || analysis.signal;
-                            const callConf = analysis.v4Confidence || analysis.v3Confidence || analysis.confidence;
-                            const callEntry = parseFloat(analysis.entry) || parseFloat(analysis.indicators?.movingAverages?.currentPrice) || 0;
-                            if (callSignal && callConf && callEntry > 0) {
-                                recordCall(currentChartSymbol, callSignal, callConf, callEntry, crypto, analysis);
-                            }
-                        } catch (e) {}
-                    } catch (bgErr) { /* background enhancement failed silently */ }
-                })();
+                if (!crypto || !modal || !body) {
+                    console.warn('Missing DOM or crypto:', currentChartSymbol);
+                    return;
+                }
+
+                // Atualizar título
+                const titleEl = document.querySelector('.ta-modal-header-title');
+                if (titleEl) titleEl.textContent = `Análise Técnica - ${crypto.name}`;
                 
-                // Iniciar auto-refresh
-                startTAAutoRefresh(currentChartSymbol);
-                
-            } catch (e) {
+                // Mostrar loading
                 body.innerHTML = `
-                    <div style="text-align: center; padding: 40px 20px;">
-                        <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: var(--accent-red); margin-bottom: 16px;"></i>
-                        <h3 style="color: var(--text-primary); margin-bottom: 8px;">Erro ao carregar análise</h3>
-                        <p style="color: var(--text-secondary); font-size: 14px;">${e.message}</p>
-                        <button onclick="openTechnicalAnalysis()" style="margin-top: 20px; padding: 12px 24px; background: var(--accent-blue); border: none; border-radius: 12px; color: white; font-weight: 600; cursor: pointer;">
-                            <i class="fas fa-redo"></i> Tentar Novamente
-                        </button>
+                    <div class="ta-loading">
+                        <div class="ta-loading-spinner"></div>
+                        <div class="ta-loading-text">Analisando ${crypto.name}...</div>
                     </div>
                 `;
+
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+
+                // 🎯 Show interstitial ad while analysis loads in background
+                if (typeof showInterstitialAd === 'function') {
+                    showInterstitialAd().catch(() => {});
+                }
+
+                // Init notification bell state
+                if (window.RealtimeCVD && typeof window.RealtimeCVD.connect === 'function') {
+                    try { window.RealtimeCVD.connect(currentChartSymbol); } catch(e) {}
+                }
+                if (typeof initNotifBellState === 'function') {
+                    try { initNotifBellState(); } catch(e){}
+                }
+
+                // Adicionar ao histórico do navegador
+                if (window.history && window.history.pushState) {
+                    try { window.history.pushState({ page: 'technical-analysis', symbol: currentChartSymbol }, '', ''); } catch(e){}
+                }
+
+                // Verificar cache
+                let cachedData = null;
+                if (typeof getTACache === 'function') {
+                    try { cachedData = getTACache(currentChartSymbol); } catch(e){}
+                }
+                
+                if (cachedData && cachedData.analysis) {
+                    if (typeof renderTechnicalAnalysis === 'function') {
+                        renderTechnicalAnalysis(cachedData.analysis, crypto);
+                    }
+                    if (typeof startTAAutoRefresh === 'function') {
+                        startTAAutoRefresh(currentChartSymbol);
+                    }
+                    return;
+                }
+
+                // Buscar dados em paralelo — FAST RENDER: Binance primeiro, extras em background
+                try {
+                    // 1. Fetch Binance data (rápido ~1-2s) e renderizar imediatamente
+                    let analysisData = null;
+                    if (typeof fetchTechnicalAnalysisData === 'function') {
+                        analysisData = await fetchTechnicalAnalysisData(currentChartSymbol);
+                    }
+                    if (!analysisData) throw new Error("Falha ao buscar dados técnicos.");
+                    
+                    let analysis = null;
+                    if (typeof generateTechnicalAnalysis === 'function') {
+                        analysis = generateTechnicalAnalysis(analysisData, currentChartSymbol);
+                    }
+                    
+                    // Evaluate enhancements sequentially before rendering to avoid flicker
+                    try {
+
+                            const [macroNewsData, bigTechData] = await Promise.all([
+                                (window.TAEngineV2 && window.TAEngineV2.fetchMacroNewsLayer) ?
+                                    window.TAEngineV2.fetchMacroNewsLayer(currentChartSymbol) :
+                                    Promise.resolve(null),
+                                (window.TAEngineV2 && window.TAEngineV2.fetchBigTechAndMacro) ?
+                                    window.TAEngineV2.fetchBigTechAndMacro() :
+                                    Promise.resolve(null)
+                            ]);
+
+                            // Inject macro/news data
+                            if (analysis) {
+                                analysis.macroNews = macroNewsData;
+                                analysis.bigTechMacro = bigTechData;
+                                if (macroNewsData && macroNewsData.totalImpact !== 0 && window.TAEngineV2) {
+                                    const V2 = window.TAEngineV2;
+                                    const reScored = V2.applyContextualScoring(
+                                        analysis.confluenceDetails, analysis.marketRegime, analysis.marketStructure,
+                                        analysis.cvdAdvanced, macroNewsData, analysis.volatilityMetrics
+                                    );
+                                    analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + macroNewsData.totalImpact).toFixed(1);
+                                    analysis.contextualAdjustments = reScored.adjustments;
+                                }
+                                if (bigTechData && bigTechData.bigTechScore !== 0) {
+                                    analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + bigTechData.bigTechScore).toFixed(1);
+                                }
+                                if (bigTechData) {
+                                    analysis.indicators = analysis.indicators || {};
+                                    analysis.indicators.bigTechMacro = bigTechData;
+                                }
+                            }
+                            
+                            // V3 Enhancement
+                            if (window.TAEngineV3 && window.TAEngineV3.enhanceAnalysis && analysis) {
+                                try {
+                                    const enhanced = await window.TAEngineV3.enhanceAnalysis(analysis, analysisData, currentChartSymbol);
+                                    Object.assign(analysis, enhanced);
+                                    if (enhanced.v3Signal) {
+                                        analysis.aiSummary = generateAISummary(
+                                            enhanced.v3SignalType || analysis.signalType,
+                                            enhanced.v3Confidence || analysis.confidence,
+                                            analysis.indicators,
+                                            currentChartSymbol
+                                        );
+                                    }
+                                } catch (v3err) {}
+                            }
+                            
+                            // V4 Enhancement
+                            if (window.TAEngineV4 && window.TAEngineV4.enhanceWithReactive && analysis) {
+                                try {
+                                    const v4Enhanced = await window.TAEngineV4.enhanceWithReactive(analysis, analysisData, currentChartSymbol);
+                                    Object.assign(analysis, v4Enhanced);
+                                    if (v4Enhanced.v4Signal) {
+                                        const v4Dir = v4Enhanced.v4Signal.includes('LONG') ? 'long' : v4Enhanced.v4Signal.includes('SHORT') ? 'short' : 'neutral';
+                                        analysis.aiSummary = generateAISummary(
+                                            v4Dir,
+                                            v4Enhanced.v4Confidence || analysis.confidence,
+                                            analysis.indicators,
+                                            currentChartSymbol
+                                        );
+                                        if (v4Enhanced.reactiveSummary) {
+                                            analysis.aiSummary += '\n\n━━━ ANÁLISE AVANÇADA ━━━\n' + v4Enhanced.reactiveSummary;
+                                        }
+                                    }
+                                } catch (v4err) {}
+                            }
+                            
+                            // Atualizar cache com dados completos
+                            if (typeof setTACache === 'function' && analysis) setTACache(currentChartSymbol, { analysis });
+                            
+
+                            
+                            // Record call
+                            try {
+                                if (analysis) {
+                                    const callSignal = analysis.v4Signal || analysis.v3Signal || analysis.signal;
+                                    const callConf = analysis.v4Confidence || analysis.v3Confidence || analysis.confidence;
+                                    const callEntry = parseFloat(analysis.entry) || parseFloat(analysis.indicators?.movingAverages?.currentPrice) || 0;
+                                    if (callSignal && callConf && callEntry > 0 && typeof recordCall === 'function') {
+                                        recordCall(currentChartSymbol, callSignal, callConf, callEntry, crypto, analysis);
+                                    }
+                                }
+                            } catch (e) {}
+                                                if (typeof renderTechnicalAnalysis === 'function' && analysis) {
+                            renderTechnicalAnalysis(analysis, crypto);
+                        }
+                    } catch (bgErr) { console.error(bgErr); }
+                    // Iniciar auto-refresh
+                    if (typeof startTAAutoRefresh === 'function') startTAAutoRefresh(currentChartSymbol);
+                    
+                } catch (e) {
+                    body.innerHTML = `
+                        <div style="text-align: center; padding: 40px 20px;">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: var(--accent-red); margin-bottom: 16px;"></i>
+                            <h3 style="color: var(--text-primary); margin-bottom: 8px;">Erro ao carregar análise</h3>
+                            <p style="color: var(--text-secondary); font-size: 14px;">${e.message || String(e)}</p>
+                            <button onclick="openTechnicalAnalysis()" style="margin-top: 20px; padding: 12px 24px; background: var(--accent-blue); border: none; border-radius: 12px; color: white; font-weight: 600; cursor: pointer;">
+                                <i class="fas fa-redo"></i> Tentar Novamente
+                            </button>
+                        </div>
+                    `;
+                    console.error('[TA Engine] Error loading analysis:', e); // Added log for debugging
+                }
+            } catch (fatalError) {
+                console.error("Fatal error in openTechnicalAnalysis:", fatalError);
+                if (document.getElementById('ta-modal-body')) {
+                    document.getElementById('ta-modal').classList.add('active');
+                    document.getElementById('ta-modal-body').innerHTML = '<div style="padding:40px 20px; text-align:center;"><i class="fas fa-bug" style="font-size:48px; color:var(--accent-red); margin-bottom:16px;"></i><h3 style="color:var(--text-primary); margin-bottom:8px;">Erro Crítico</h3><p style="color:var(--text-secondary); font-size:12px; margin-bottom:20px;">' + (fatalError.message || 'Erro inesperado') + '</p><button onclick="closeTechnicalAnalysis()" style="padding:12px 24px; border-radius:12px; background:var(--bg-secondary); color:var(--text-primary); border:none; font-weight:600; cursor:pointer;">Voltar ao Início</button></div>';
+                } else {
+                    console.error("Erro interno Crítico:", fatalError.message);
+                }
             }
         }
         
@@ -475,8 +533,16 @@
             if (details) details.style.display = checked ? 'block' : 'none';
             updateBellIcon(checked);
             
-            // Request notification permissions when enabling
             if (checked) {
+                // Ao ativar o sino, ativa sempre o monitoramento global e todas as criptos!
+                // Usa handleMasterSignalToggle para garantir que liga o background service e auto-scan
+                handleMasterSignalToggle(true);
+
+                const prefs = getSignalPrefs();
+                dashRenderCryptoSettings();
+                dashSyncMasterToggle();
+                _syncBellPanelFromPrefs(prefs);
+
                 try {
                     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
                         window.Capacitor.Plugins.LocalNotifications.requestPermissions().catch(() => {});
@@ -484,6 +550,7 @@
                 } catch(e) {}
             }
             
+            // Salva a configuração de confiança escolhida (seja global ou da cripto atual)
             saveNotifConfig();
         }
 
@@ -573,6 +640,108 @@
             try { localStorage.setItem(SS_STORAGE_KEY, JSON.stringify(prefs)); } catch {}
         }
 
+        const _rangeGestureState = new WeakMap();
+        function initConfidenceSliderGuards() {
+            if (window._vcConfidenceGuardsInit) return;
+            window._vcConfidenceGuardsInit = true;
+
+            const isGuardedSlider = (el) => {
+                if (!el || el.tagName !== 'INPUT' || el.type !== 'range') return false;
+                return el.classList.contains('signal-conf-slider') ||
+                    !!el.closest('#dash-signal-settings-card') ||
+                    !!el.closest('#signal-settings-body') ||
+                    el.id === 'ss-global-slider' ||
+                    el.id === 'dash-global-slider' ||
+                    el.id === 'notif-confidence-slider';
+            };
+
+            const getPoint = (evt) => {
+                const t = evt.touches && evt.touches[0] ? evt.touches[0] : evt;
+                return { x: t.clientX || 0, y: t.clientY || 0 };
+            };
+
+            const onStart = (evt) => {
+                const el = evt.target;
+                if (!isGuardedSlider(el)) return;
+                const p = getPoint(evt);
+                _rangeGestureState.set(el, {
+                    startX: p.x,
+                    startY: p.y,
+                    startValue: el.value,
+                    horizontalIntent: false,
+                    verticalIntent: false
+                });
+            };
+
+            const onMove = (evt) => {
+                const el = evt.target;
+                if (!isGuardedSlider(el)) return;
+                const st = _rangeGestureState.get(el);
+                if (!st) return;
+
+                const p = getPoint(evt);
+                const dx = Math.abs(p.x - st.startX);
+                const dy = Math.abs(p.y - st.startY);
+
+                if (!st.horizontalIntent && !st.verticalIntent) {
+                    if (dx >= dy + 8) st.horizontalIntent = true;
+                    else if (dy >= dx + 8) st.verticalIntent = true;
+                }
+
+                if (st.verticalIntent && !st.horizontalIntent) {
+                    if (el.value !== st.startValue) {
+                        el.value = st.startValue;
+                        try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+                    }
+                }
+            };
+
+            const onEnd = (evt) => {
+                const el = evt.target;
+                if (!isGuardedSlider(el)) return;
+                const st = _rangeGestureState.get(el);
+                if (!st) return;
+
+                if (st.verticalIntent && !st.horizontalIntent) {
+                    if (el.value !== st.startValue) {
+                        el.value = st.startValue;
+                        try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+                    }
+                }
+                _rangeGestureState.delete(el);
+            };
+
+            const onChangeCapture = (evt) => {
+                const el = evt.target;
+                if (!isGuardedSlider(el)) return;
+                const st = _rangeGestureState.get(el);
+                if (!st) return;
+                if (st.verticalIntent && !st.horizontalIntent) {
+                    el.value = st.startValue;
+                    evt.stopPropagation();
+                }
+            };
+
+            document.addEventListener('pointerdown', onStart, { passive: true });
+            document.addEventListener('pointermove', onMove, { passive: true });
+            document.addEventListener('pointerup', onEnd, { passive: true });
+            document.addEventListener('touchstart', onStart, { passive: true });
+            document.addEventListener('touchmove', onMove, { passive: true });
+            document.addEventListener('touchend', onEnd, { passive: true });
+            document.addEventListener('change', onChangeCapture, true);
+        }
+
+        function _enableAllCryptoSignals(prefs) {
+            if (typeof CRYPTO_DATABASE === 'undefined') return;
+            Object.keys(CRYPTO_DATABASE).forEach(symbol => {
+                if (!prefs.cryptos[symbol]) prefs.cryptos[symbol] = {};
+                prefs.cryptos[symbol].enabled = true;
+                if (!prefs.cryptos[symbol].confidence) {
+                    prefs.cryptos[symbol].confidence = Math.max(70, prefs.globalConfidence || 70);
+                }
+            });
+        }
+
         // Sync ALL per-crypto configs from vc_signal_prefs to V4 engine
         // This ensures disabled cryptos are explicitly disabled in V4 (not inheriting global enabled: true)
         function _syncAllCryptosToV4(prefs) {
@@ -649,6 +818,11 @@
         function handleMasterSignalToggle(checked) {
             const prefs = getSignalPrefs();
             prefs.masterEnabled = checked;
+
+            // Ao ativar monitoramento, liga todas as criptos nas configurações abaixo.
+            if (checked) {
+                _enableAllCryptoSignals(prefs);
+            }
             saveSignalPrefs(prefs);
 
             const masterTrack = document.getElementById('ss-master-track');
@@ -662,6 +836,7 @@
             if (cryptoList) cryptoList.style.display = checked ? 'block' : 'none';
 
             updateSignalSettingsSummary(prefs);
+            renderCryptoItems(prefs);
 
             // Smoothly update max-height when toggling master (no teleport)
             const body = document.getElementById('signal-settings-body');
@@ -718,7 +893,7 @@
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; ${enabled ? '' : 'opacity: 0.4; pointer-events: none;'}">
                             <span style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Mín:</span>
-                            <input type="range" min="70" max="100" value="${confidence}" step="5" 
+                            <input type="range" class="signal-conf-slider" min="70" max="100" value="${confidence}" step="5" 
                                    oninput="this.nextElementSibling.textContent=this.value+'%'" 
                                    onchange="setCryptoConfidence('${symbol}', parseInt(this.value))"
                                    style="flex: 1; height: 4px; accent-color: #6366f1;">
@@ -743,9 +918,11 @@
             if (window.TAEngineV4) {
                 window.TAEngineV4.setNotificationConfig(symbol, {
                     enabled: enabled,
-                    confidenceThreshold: prefs.cryptos[symbol].confidence || prefs.globalConfidence || 60
+                    confidenceThreshold: prefs.cryptos[symbol].confidence || prefs.globalConfidence || 70
                 });
             }
+
+            if (prefs.masterEnabled) startBackgroundService();
         }
 
         function setCryptoConfidence(symbol, confidence) {
@@ -762,6 +939,8 @@
                     confidenceThreshold: confidence
                 });
             }
+
+            if (prefs.masterEnabled) startBackgroundService();
         }
 
         function saveSignalSettings() {
@@ -769,19 +948,15 @@
             const slider = document.getElementById('ss-global-slider');
             if (slider) {
                 const newGlobal = parseInt(slider.value);
-                const oldGlobal = prefs.globalConfidence || 70;
                 prefs.globalConfidence = newGlobal;
-                // Only update cryptos that were using the OLD global (no custom override)
+                // Regra solicitada: alteração global sempre força todas as criptos.
                 Object.entries(CRYPTO_DATABASE).forEach(([symbol]) => {
                     if (!prefs.cryptos[symbol]) prefs.cryptos[symbol] = {};
-                    const current = prefs.cryptos[symbol].confidence || oldGlobal;
-                    if (current === oldGlobal || !prefs.cryptos[symbol].confidence) {
-                        prefs.cryptos[symbol].confidence = newGlobal;
-                    }
+                    prefs.cryptos[symbol].confidence = newGlobal;
                     if (window.TAEngineV4) {
                         window.TAEngineV4.setNotificationConfig(symbol, {
                             enabled: prefs.cryptos[symbol]?.enabled === true,
-                            confidenceThreshold: prefs.cryptos[symbol].confidence || newGlobal
+                            confidenceThreshold: newGlobal
                         });
                     }
                 });
@@ -796,6 +971,8 @@
                         conditions: { setupConfirmed: true, minConfidence: true, regimeChange: false }
                     });
                 }
+
+                if (prefs.masterEnabled) startBackgroundService();
             }
             updateSignalSettingsSummary(prefs);
         }
@@ -842,7 +1019,7 @@
         // ═══════════════════════════════════════
         const SCAN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
         const SCAN_LAST_RESULTS_KEY = 'vc_scan_last_results';
-        const SCAN_DEDUP_MS = 30 * 60 * 1000; // 30 min dedup por crypto
+        const SCAN_DEDUP_MS = 30 * 60 * 1000; // 30 min cooldown por cripto
         let autoScanTimer = null;
         let autoScanBootTimeout = null;
         let isScanning = false;
@@ -873,6 +1050,10 @@
 
         async function fireLocalNotification(title, body, id) {
             try {
+                // Do not show local notifications while the app is in foreground.
+                if (typeof document !== 'undefined' && document.hidden === false) {
+                    return;
+                }
                 if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
                     const { LocalNotifications } = window.Capacitor.Plugins;
                     await LocalNotifications.schedule({
@@ -891,10 +1072,28 @@
             } catch (e) { /* console.warn('Notification fire error:', e); */ }
         }
 
+        function buildNativeSymbolsConfig(prefs) {
+            const config = {};
+            const cryptos = (typeof CRYPTO_DATABASE !== 'undefined') ? CRYPTO_DATABASE : {};
+            Object.keys(cryptos).forEach((symbol) => {
+                const cp = prefs?.cryptos?.[symbol] || {};
+                config[symbol] = {
+                    enabled: cp.enabled === true,
+                    minConfidence: Math.max(70, Number(cp.confidence || prefs?.globalConfidence || 70) || 70)
+                };
+            });
+            return config;
+        }
+
         async function startBackgroundService() {
             try {
                 if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BackgroundScan) {
-                    await window.Capacitor.Plugins.BackgroundScan.start();
+                    const prefs = getSignalPrefs();
+                    const symbolsConfig = buildNativeSymbolsConfig(prefs);
+                    await window.Capacitor.Plugins.BackgroundScan.start({
+                        minConfidence: Math.max(70, Number(prefs.globalConfidence || 70) || 70),
+                        symbolsConfig: JSON.stringify(symbolsConfig)
+                    });
                     return true;
                 }
             } catch (e) { /* console.warn('Background service start error:', e); */ }
@@ -916,6 +1115,82 @@
             try { localStorage.setItem(SCAN_LAST_RESULTS_KEY, JSON.stringify(results)); } catch {}
         }
 
+        function _isReliableSignalForNotification(analysis, minConf, resolved) {
+            const finalSignal = resolved || _resolveScanSignal(analysis);
+            const direction = finalSignal?.direction || 'NEUTRO';
+            const confidence = Number(finalSignal?.confidence || analysis?.v4Confidence || 0);
+            const minRequiredConfidence = Math.max(70, Number(minConf || 70) || 70);
+            return {
+                ok: direction !== 'NEUTRO' && confidence >= minRequiredConfidence,
+                confidence,
+                direction,
+                minRequiredConfidence
+            };
+        }
+
+        // Resolve sinal final para dashboard (compatível com modelo legado e points model)
+        function _resolveScanSignal(analysis) {
+            const usePointsModel = analysis?.confidenceModel?.name === 'weighted-points-v1';
+            const minDirectionalConfidence = usePointsModel ? 40 : 50;
+
+            const v4Signal = String(analysis?.v4Signal || '');
+            const v4Confidence = Number(analysis?.v4Confidence || 0);
+            const v3Signal = String(analysis?.v3Signal || '');
+            const v3Confidence = Number(analysis?.v3Confidence || 0);
+            const baseSignal = String(analysis?.signal || 'NEUTRO');
+            const baseConfidence = Number(analysis?.confidence || 0);
+
+            let signal = 'NEUTRO';
+            let confidence = 0;
+
+            if (v4Signal && !usePointsModel) {
+                if (v4Signal.includes('CONFIRMED')) {
+                    signal = v4Signal;
+                    confidence = v4Confidence;
+                } else if (v4Signal.includes('LONG')) {
+                    signal = 'LONG';
+                    confidence = v4Confidence || v3Confidence || baseConfidence;
+                } else if (v4Signal.includes('SHORT')) {
+                    signal = 'SHORT';
+                    confidence = v4Confidence || v3Confidence || baseConfidence;
+                } else {
+                    signal = 'NEUTRO';
+                    confidence = v4Confidence || v3Confidence || baseConfidence;
+                }
+            } else {
+                signal = v3Signal || baseSignal;
+                confidence = v3Confidence || baseConfidence;
+            }
+
+            if (signal === 'AGUARDE' || signal === 'AGUARDAR' || signal.includes('AGUARDAR')) {
+                signal = 'NEUTRO';
+            }
+
+            if (!usePointsModel && analysis?.marketRegime && analysis.marketRegime.regimeStrength != null) {
+                const regimeConf = Math.round((analysis.marketRegime.regimeStrength || 0) * 100);
+                confidence = Math.round(confidence * 0.7 + regimeConf * 0.3);
+            }
+
+            confidence = Math.max(0, Math.min(100, Math.round(confidence || 0)));
+            const direction = signal.includes('LONG') ? 'LONG' : signal.includes('SHORT') ? 'SHORT' : 'NEUTRO';
+
+            if (confidence < minDirectionalConfidence || direction === 'NEUTRO') {
+                return {
+                    signal: 'NEUTRO',
+                    confidence,
+                    direction: 'NEUTRO',
+                    minDirectionalConfidence
+                };
+            }
+
+            return {
+                signal,
+                confidence,
+                direction,
+                minDirectionalConfidence
+            };
+        }
+
         async function runAutoScan() {
             if (isScanning) return;
             if (document.hidden) return;
@@ -928,108 +1203,119 @@
             const now = Date.now();
             const enabledCryptos = Object.keys(CRYPTO_DATABASE).filter(sym => {
                 // Default is DISABLED — must be explicitly enabled
-                if (prefs.cryptos[sym]?.enabled !== true) return false;
-                // Dedup: skip if we already notified this crypto recently
-                if (lastResults[sym]?.notifiedAt && (now - lastResults[sym].notifiedAt) < SCAN_DEDUP_MS) return false;
-                return true;
+                return prefs.cryptos[sym]?.enabled === true;
             });
 
             let scannedCount = 0;
             let signalsFound = 0;
 
-            for (const symbol of enabledCryptos) {
-                try {
-                    // Fetch data
-                    const [analysisData, macroNewsData] = await Promise.all([
-                        fetchTechnicalAnalysisData(symbol),
-                        (window.TAEngineV2 && window.TAEngineV2.fetchMacroNewsLayer) ?
-                            window.TAEngineV2.fetchMacroNewsLayer(symbol).catch(() => null) :
-                            Promise.resolve(null)
-                    ]);
+            try {
+                for (const symbol of enabledCryptos) {
+                    try {
+                        // Fetch data
+                        const [analysisData, macroNewsData] = await Promise.all([
+                            fetchTechnicalAnalysisData(symbol),
+                            (window.TAEngineV2 && window.TAEngineV2.fetchMacroNewsLayer) ?
+                                window.TAEngineV2.fetchMacroNewsLayer(symbol).catch(() => null) :
+                                Promise.resolve(null)
+                        ]);
 
-                    if (!analysisData) continue;
+                        if (!analysisData) continue;
 
-                    // Generate V3 analysis
-                    const analysis = generateTechnicalAnalysis(analysisData, symbol);
-                    if (macroNewsData) {
-                        analysis.macroNews = macroNewsData;
-                        if (macroNewsData.totalImpact !== 0 && window.TAEngineV2) {
-                            analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + macroNewsData.totalImpact).toFixed(1);
+                        // Generate V3 analysis
+                        const analysis = generateTechnicalAnalysis(analysisData, symbol);
+                        if (macroNewsData) {
+                            analysis.macroNews = macroNewsData;
+                            if (macroNewsData.totalImpact !== 0 && window.TAEngineV2) {
+                                analysis.confluenceSummary.score = (parseFloat(analysis.confluenceSummary.score) + macroNewsData.totalImpact).toFixed(1);
+                            }
                         }
-                    }
 
-                    // V3 Enhancement
-                    if (window.TAEngineV3 && window.TAEngineV3.enhanceAnalysis) {
-                        try {
-                            const enhanced = await window.TAEngineV3.enhanceAnalysis(analysis, analysisData, symbol);
-                            Object.assign(analysis, enhanced);
-                        } catch {}
-                    }
+                        // V3 Enhancement
+                        if (window.TAEngineV3 && window.TAEngineV3.enhanceAnalysis) {
+                            try {
+                                const enhanced = await window.TAEngineV3.enhanceAnalysis(analysis, analysisData, symbol);
+                                Object.assign(analysis, enhanced);
+                            } catch {}
+                        }
 
-                    // V4 Enhancement
-                    if (window.TAEngineV4 && window.TAEngineV4.enhanceWithReactive) {
-                        try {
-                            const v4Enhanced = await window.TAEngineV4.enhanceWithReactive(analysis, analysisData, symbol);
-                            Object.assign(analysis, v4Enhanced);
-                        } catch {}
-                    }
+                        // V4 Enhancement
+                        if (window.TAEngineV4 && window.TAEngineV4.enhanceWithReactive) {
+                            try {
+                                const v4Enhanced = await window.TAEngineV4.enhanceWithReactive(analysis, analysisData, symbol);
+                                Object.assign(analysis, v4Enhanced);
+                            } catch {}
+                        }
 
-                    scannedCount++;
+                        scannedCount++;
 
-                    // Check if signal is CONFIRMED
-                    const signal = analysis.v4Signal || '';
-                    const confidence = analysis.v4Confidence || 0;
-                    const minConf = getCryptoMinConfidence(symbol);
-
-                    if (signal.includes('CONFIRMED') && confidence >= minConf) {
-                        signalsFound++;
-                        const crypto = CRYPTO_DATABASE[symbol];
-                        const direction = signal.includes('LONG') ? 'LONG 🟢' : 'SHORT 🔴';
-                        const dirShort = signal.includes('LONG') ? 'LONG' : 'SHORT';
-                        const title = `${crypto.short} — ${direction}`;
+                        // Resolve direção/confiança final para dashboard
+                        const resolved = _resolveScanSignal(analysis);
+                        const signal = resolved.signal;
+                        const confidence = resolved.confidence;
+                        const direction = resolved.direction;
                         const gatesStr = `${analysis.v4GatesPassed || '?'}/${analysis.v4GatesTotal || '9'}`;
-                        const body = `Sinal confirmado com ${confidence}% de confiança (${gatesStr} gates)`;
+                        const entryPrice = Number(analysisData?.ticker?.lastPrice || analysis.indicators?.movingAverages?.currentPrice || 0);
 
-                        // Fire notification
-                        await fireLocalNotification(title, body, symbol.hashCode || Math.floor(Math.random() * 100000));
+                        const minConf = getCryptoMinConfidence(symbol);
+                        // Registrar call no banco somente quando respeita o mínimo configurado.
+                        if (direction !== 'NEUTRO' && confidence >= minConf) {
+                            const reason = `${direction} ${confidence}% (mín ${minConf}%) · Auto Scan`;
+                            dashRecordCall(symbol, direction, confidence, gatesStr, entryPrice, reason);
+                        }
 
-                        // Record in dashboard history
-                        dashRecordCall(symbol, dirShort, confidence, gatesStr, analysisData?.ticker?.lastPrice || '', '');
+                        const quality = _isReliableSignalForNotification(analysis, minConf, resolved);
+                        const lastNotifiedAt = Number(lastResults[symbol]?.notifiedAt || 0);
+                        const dedupBlocked = (
+                            quality.ok &&
+                            direction !== 'NEUTRO' &&
+                            lastNotifiedAt > 0 &&
+                            (now - lastNotifiedAt) < SCAN_DEDUP_MS
+                        );
 
-                        // Save so we don't re-notify for 30 min
-                        lastResults[symbol] = {
-                            signal: signal,
-                            confidence: confidence,
-                            notifiedAt: now,
-                            price: analysisData?.ticker?.lastPrice || 0
-                        };
-                    } else {
-                        // Always save confidence data for every scanned crypto
+                        if (quality.ok && !dedupBlocked) {
+                            signalsFound++;
+                            const crypto = CRYPTO_DATABASE[symbol];
+                            const directionText = direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴';
+                            const title = `${crypto.short} — ${directionText}`;
+                            const body = `Confiança ${confidence}% (mín ${minConf}%) · ${gatesStr} gates`;
+
+                            // Fire notification
+                            await fireLocalNotification(title, body, symbol.hashCode || Math.floor(Math.random() * 100000));
+                        }
+
+                        // Sempre salvar estado para painel de SINAIS ativos
                         if (!lastResults[symbol]) lastResults[symbol] = {};
                         lastResults[symbol].signal = signal;
+                        lastResults[symbol].direction = direction;
                         lastResults[symbol].confidence = confidence;
-                        lastResults[symbol].price = analysisData?.ticker?.lastPrice || lastResults[symbol].price || 0;
+                        lastResults[symbol].qualityRejected = !!(analysis.v4Signal || '').includes('CONFIRMED') && !quality.ok;
+                        lastResults[symbol].price = entryPrice || lastResults[symbol].price || 0;
                         lastResults[symbol].lastScanAt = now;
+                        if (quality.ok && !dedupBlocked) {
+                            lastResults[symbol].notifiedAt = now;
+                        }
+
+                        // Small delay between cryptos to avoid API rate limiting
+                        await new Promise(r => setTimeout(r, 2000));
+
+                    } catch (scanErr) {
                     }
-
-                    // Small delay between cryptos to avoid API rate limiting
-                    await new Promise(r => setTimeout(r, 2000));
-
-                } catch (scanErr) {
                 }
-            }
 
-            saveScanLastResults(lastResults);
-            isScanning = false;
-            window._taScanContext = false;
+                saveScanLastResults(lastResults);
 
-            // Disconnect all WebSockets opened during scan to prevent memory leak
-            try { if (window.TAEngineV4 && window.TAEngineV4.disconnectAllOrderFlowWS) window.TAEngineV4.disconnectAllOrderFlowWS(); } catch(e) {}
-            try { if (window.RealtimeCVD && window.RealtimeCVD.disconnectAll) window.RealtimeCVD.disconnectAll(); } catch(e) {}
+                // Refresh dashboard confidence grid if it's visible
+                if (typeof dashRenderConfidenceGrid === 'function') {
+                    try { dashRenderConfidenceGrid(); dashRenderActiveSignals(); dashUpdateStats(); } catch {}
+                }
+            } finally {
+                isScanning = false;
+                window._taScanContext = false;
 
-            // Refresh dashboard confidence grid if it's visible
-            if (typeof dashRenderConfidenceGrid === 'function') {
-                try { dashRenderConfidenceGrid(); dashRenderActiveSignals(); dashUpdateStats(); } catch {}
+                // Disconnect all WebSockets opened during scan to prevent memory leak
+                try { if (window.TAEngineV4 && window.TAEngineV4.disconnectAllOrderFlowWS) window.TAEngineV4.disconnectAllOrderFlowWS(); } catch(e) {}
+                try { if (window.RealtimeCVD && window.RealtimeCVD.disconnectAll) window.RealtimeCVD.disconnectAll(); } catch(e) {}
             }
         }
 
@@ -1069,6 +1355,11 @@
                 initLocalNotifications().then(() => {
                     startBackgroundService();
                     startAutoScan();
+                    // First scan immediately so active signals appear without section switching.
+                    runAutoScan();
+                    if (typeof dashRefreshConfidence === 'function') {
+                        try { dashRefreshConfidence(); } catch (_) {}
+                    }
                 });
             } else {
                 stopAutoScan();
@@ -1076,14 +1367,15 @@
             }
         };
 
-        // Auto-start on page load — only init notification listeners, do NOT auto-scan
-        // (auto-scan removed to prevent unwanted signals on app open)
+        // Auto-start on page load when user left monitor enabled.
         document.addEventListener('DOMContentLoaded', () => {
             setTimeout(async () => {
+                initConfidenceSliderGuards();
                 const prefs = getSignalPrefs();
                 if (prefs.masterEnabled) {
                     await initLocalNotifications();
-                    // Background service + auto-scan only start from Dashboard toggle
+                    startBackgroundService();
+                    startAutoScan();
                 }
 
                 // Listen for notification taps → go to Dashboard
@@ -1133,7 +1425,7 @@
             const workerUrl = _getWorkerUrl();
             if (!workerUrl) return dashGetHistory();
             try {
-                const resp = await fetch(`${workerUrl}/calls?limit=100`, { signal: AbortSignal.timeout(5000) });
+                const resp = await fetch(`${workerUrl}/calls?limit=30`, { signal: AbortSignal.timeout(5000) });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const data = await resp.json();
                 if (data.success && Array.isArray(data.calls)) {
@@ -1151,45 +1443,137 @@
 
         /**
          * Record a new call signal in the history.
-         * Called from runAutoScan when a CONFIRMED signal fires.
+         * Called from scanners when a directional signal >=70% fires.
          * Sends to shared database and also saves locally as fallback.
          */
         function dashRecordCall(symbol, direction, confidence, gates, price, reason) {
-            const crypto = (typeof CRYPTO_DATABASE !== 'undefined' && CRYPTO_DATABASE[symbol]) || {};
+            const normalizedSymbol = String(symbol || '').toUpperCase().replace(/[\/-]/g, '');
+            const normalizedDirection = String(direction || '').toUpperCase();
+            const normalizedConfidence = Math.max(0, Math.min(100, Math.round(Number(confidence) || 0)));
+            const normalizedPrice = Number(price) || 0;
+            if (!normalizedSymbol) return false;
+            if (normalizedDirection !== 'LONG' && normalizedDirection !== 'SHORT') return false;
+
+            const history = dashGetHistory();
+            const now = Date.now();
+            const normalizedReason = String(reason || `${normalizedDirection} ${normalizedConfidence}%`).trim();
+            const duplicate = history.find(c =>
+                c.symbol === normalizedSymbol &&
+                c.direction === normalizedDirection &&
+                (now - Number(c.time || c.timestamp || 0)) < (30 * 60 * 1000)
+            );
+            if (duplicate) return false;
+
+            const crypto = (typeof CRYPTO_DATABASE !== 'undefined' && CRYPTO_DATABASE[normalizedSymbol]) || {};
             const callData = {
-                id: Date.now(),
-                symbol: symbol,
-                name: crypto.name || symbol,
-                short: crypto.short || symbol.replace('USDT',''),
+                id: now,
+                symbol: normalizedSymbol,
+                name: crypto.name || normalizedSymbol,
+                short: crypto.short || normalizedSymbol.replace('USDT',''),
                 img: crypto.img || '',
-                direction: direction,
-                confidence: confidence,
+                direction: normalizedDirection,
+                confidence: normalizedConfidence,
                 gates: gates || '',
-                price: price || '',
-                reason: reason || '',
-                time: Date.now()
+                price: normalizedPrice > 0 ? String(normalizedPrice) : '',
+                entryPrice: normalizedPrice > 0 ? normalizedPrice : null,
+                reason: normalizedReason,
+                source: normalizedReason || 'AUTO_SCAN',
+                timestamp: now,
+                time: now,
+                prices: { '1h': null, '2h': null, '4h': null },
+                pnl: { '1h': null, '2h': null, '4h': null },
+                checked: { '1h': false, '2h': false, '4h': false }
             };
 
-            // Save locally as immediate fallback
-            const history = dashGetHistory();
-            history.unshift(callData);
-            dashSaveHistory(history);
+            const saveLocalCall = (payload) => {
+                const localHistory = dashGetHistory();
+                const localDup = localHistory.find(c =>
+                    c.symbol === normalizedSymbol &&
+                    c.direction === normalizedDirection &&
+                    (Date.now() - Number(c.time || c.timestamp || 0)) < (30 * 60 * 1000)
+                );
+                if (localDup) return false;
+                localHistory.unshift(payload);
+                dashSaveHistory(localHistory);
+                return true;
+            };
 
             // Send to shared database (fire and forget)
             const workerUrl = _getWorkerUrl();
             if (workerUrl) {
-                fetch(`${workerUrl}/calls`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(callData),
-                    signal: AbortSignal.timeout(5000)
-                }).then(resp => resp.json()).then(data => {
+                (async () => {
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (window.AuthClient && typeof window.AuthClient.getWriteAuthHeaders === 'function') {
+                        try {
+                            Object.assign(headers, await window.AuthClient.getWriteAuthHeaders());
+                        } catch (authErr) {
+                            console.warn('[Calls] Auth unavailable:', authErr.message);
+                        }
+                    }
+                    let idempotencyKey = `call:${normalizedSymbol}:${normalizedDirection}:${Date.now().toString(36)}`;
+                    if (window.AuthClient && typeof window.AuthClient.createIdempotencyKey === 'function') {
+                        idempotencyKey = window.AuthClient.createIdempotencyKey(`call:${normalizedSymbol}:${normalizedDirection}`);
+                    }
+                    headers['Idempotency-Key'] = idempotencyKey;
+
+                    const body = JSON.stringify(callData);
+                    let lastErr = null;
+                    for (let attempt = 1; attempt <= 3; attempt++) {
+                        try {
+                            const resp = await fetch(`${workerUrl}/calls`, {
+                                method: 'POST',
+                                headers,
+                                body,
+                                signal: AbortSignal.timeout(5000)
+                            });
+
+                            if (resp.status === 503 && attempt < 3) {
+                                await new Promise(resolve => setTimeout(resolve, 150 * attempt));
+                                continue;
+                            }
+
+                            if (!resp.ok) {
+                                throw new Error(`HTTP ${resp.status}`);
+                            }
+
+                            return await resp.json();
+                        } catch (err) {
+                            lastErr = err;
+                            if (attempt < 3) {
+                                await new Promise(resolve => setTimeout(resolve, 150 * attempt));
+                            }
+                        }
+                    }
+
+                    throw (lastErr || new Error('Calls sync failed'));
+
+                })().then(data => {
                     if (data.success && !data.duplicate) {
+                        const persisted = {
+                            ...callData,
+                            ...(data.call || {}),
+                            // Mantém metadados locais necessários para avaliação 1h/2h/4h
+                            entryPrice: callData.entryPrice,
+                            timestamp: callData.timestamp,
+                            prices: callData.prices,
+                            pnl: callData.pnl,
+                            checked: callData.checked
+                        };
+                        saveLocalCall(persisted);
                         // Invalidate cache so next render fetches fresh
                         _sharedCallsCacheTs = 0;
                     }
-                }).catch(e => console.warn('[Calls] Failed to sync call:', e.message));
+                }).catch(e => {
+                    console.warn('[Calls] Failed to sync call:', e.message);
+                    // Fallback local when worker is unavailable
+                    saveLocalCall(callData);
+                });
+            } else {
+                // No worker configured: local-only fallback
+                saveLocalCall(callData);
             }
+
+            return true;
         }
 
         /**
@@ -1233,36 +1617,86 @@
         function dashHandleMasterToggle(checked) {
             handleMasterSignalToggle(checked);
             dashSyncMasterToggle();
+            dashRenderCryptoSettings(); // Auto-update na lista do painel dashboard
             // Sync bell panel toggle + icon
             const prefs = getSignalPrefs();
             _syncBellPanelFromPrefs(prefs);
+            if (checked) {
+                try { dashRenderActiveSignals(); } catch (_) {}
+                if (typeof dashRefreshConfidence === 'function') {
+                    try { dashRefreshConfidence(); } catch (_) {}
+                }
+            } else {
+                try { dashRenderActiveSignals(); } catch (_) {}
+            }
         }
+
+        let _dashActiveSnapshot = [];
+        let _dashActiveSnapshotTs = 0;
 
         function dashRenderActiveSignals() {
             const container = document.getElementById('dash-active-signals');
             const countEl = document.getElementById('dash-active-count');
             if (!container) return;
 
-            const results = getScanLastResults();
-            const now = Date.now();
+            const scanResults = getScanLastResults();
+            const dashResults = _getDashTAResults();
+            const activeSignals = [];
             let activeHtml = '';
-            let count = 0;
 
-            Object.entries(results).forEach(([symbol, data]) => {
-                if (!data.signal || !data.signal.includes('CONFIRMED')) return;
-                if (data.notifiedAt && (now - data.notifiedAt) > 60 * 60 * 1000) return; // 1h expiry for display
-                const crypto = (typeof CRYPTO_DATABASE !== 'undefined' && CRYPTO_DATABASE[symbol]) || {};
-                const isLong = data.signal.includes('LONG');
+            Object.entries(typeof CRYPTO_DATABASE !== 'undefined' ? CRYPTO_DATABASE : {}).forEach(([symbol, crypto]) => {
+                const sr = scanResults[symbol] || {};
+                const dr = dashResults[symbol] || {};
+                const data = dr && Number(dr.confidence || 0) > 0 ? { ...sr, ...dr } : { ...dr, ...sr };
+
+                const signal = String(data.signal || '');
+                const direction = (data.direction === 'LONG' || data.direction === 'SHORT')
+                    ? data.direction
+                    : signal.includes('LONG')
+                        ? 'LONG'
+                        : signal.includes('SHORT')
+                            ? 'SHORT'
+                            : 'NEUTRO';
+                const confidence = Number(data.confidence || 0);
+
+                const minConf = getCryptoMinConfidence(symbol);
+                if (!isCryptoNotificationEnabled(symbol) || direction === 'NEUTRO' || confidence < minConf) return;
+
+                const lastEventTs = Number(data.lastScanAt || data.notifiedAt || data.time || data.timestamp || 0);
+                activeSignals.push({
+                    symbol,
+                    crypto,
+                    direction,
+                    confidence,
+                    price: Number(data.price || data.entryPrice || 0),
+                    ts: lastEventTs
+                });
+            });
+
+            activeSignals.sort((a, b) => (b.confidence - a.confidence) || (b.ts - a.ts));
+
+            if (activeSignals.length > 0) {
+                _dashActiveSnapshot = activeSignals.slice(0, 20);
+                _dashActiveSnapshotTs = Date.now();
+            }
+
+            const isRefreshing = _dashScanRunning || isScanning;
+            const canUseSnapshot = isRefreshing && _dashActiveSnapshot.length > 0 && (Date.now() - _dashActiveSnapshotTs) < (15 * 60 * 1000);
+            const renderSignals = (activeSignals.length === 0 && canUseSnapshot) ? _dashActiveSnapshot : activeSignals;
+            const usingSnapshot = renderSignals === _dashActiveSnapshot;
+
+            renderSignals.forEach((item) => {
+                const { symbol, crypto, direction, confidence, price, ts } = item;
+                const isLong = direction === 'LONG';
                 const dir = isLong ? 'long' : 'short';
                 const dirLabel = isLong ? 'LONG' : 'SHORT';
                 const dirEmoji = isLong ? '🟢' : '🔴';
-                const conf = data.confidence || 0;
-                const priceStr = data.price ? (parseFloat(data.price) >= 1 ? '$' + parseFloat(data.price).toLocaleString(undefined, {maximumFractionDigits: 2}) : '$' + parseFloat(data.price).toFixed(6)) : '';
-                const timeAgo = dashGetTimeAgo(data.notifiedAt || 0);
+                const conf = confidence;
+                const priceStr = price ? (price >= 1 ? '$' + price.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '$' + price.toFixed(6)) : '';
+                const timeAgo = dashGetTimeAgo(ts || 0);
 
-                count++;
                 activeHtml += `
-                <div class="dash-signal-card ${dir}">
+                <div class="dash-signal-card ${dir}" style="animation: fadeIn 0.25s ease;">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
                         <img src="${crypto.img || ''}" style="width: 32px; height: 32px; border-radius: 50%;" onerror="this.style.display='none'">
                         <div style="flex:1;">
@@ -1277,17 +1711,22 @@
                 </div>`;
             });
 
-            if (count === 0) {
+            if (renderSignals.length === 0) {
                 container.innerHTML = `
                 <div class="dash-empty-state">
                     <i class="fas fa-satellite-dish" style="font-size:32px;margin-bottom:12px;opacity:0.2;"></i>
                     <div style="font-size:14px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">Nenhum sinal ativo</div>
-                    <div style="font-size:12px;">Os sinais aparecem quando um setup é confirmado pelo motor V4.</div>
+                    <div style="font-size:12px;">Aparecem aqui somente sinais que passam o mínimo configurado por cripto.</div>
                 </div>`;
             } else {
-                container.innerHTML = activeHtml;
+                container.innerHTML = usingSnapshot
+                    ? `<div style="font-size:10px;color:var(--text-muted);display:flex;align-items:center;gap:6px;margin-bottom:8px;"><i class="fas fa-sync fa-spin" style="font-size:9px;color:#6366f1;"></i>Atualizando sinais em tempo real...</div>${activeHtml}`
+                    : activeHtml;
             }
-            if (countEl) countEl.textContent = count + (count === 1 ? ' sinal' : ' sinais');
+            if (countEl) {
+                const totalShown = renderSignals.length;
+                countEl.textContent = totalShown + (totalShown === 1 ? ' sinal' : ' sinais') + (usingSnapshot ? ' · atualizando' : '');
+            }
         }
 
         // ── Progressive TA scan state ──
@@ -1388,17 +1827,17 @@
          * Processes one crypto at a time, updating each grid cell as results arrive.
          * Uses TA cache to avoid re-fetching if the user already opened that crypto recently.
          */
-        async function dashProgressiveScan() {
+        async function dashProgressiveScan(options = {}) {
             if (_dashScanRunning) return;
             _dashScanRunning = true;
             _dashScanAbort = false;
             window._taScanContext = true;
+            const forceRescan = options && options.force === true;
 
             const cryptos = Object.entries(typeof CRYPTO_DATABASE !== 'undefined' ? CRYPTO_DATABASE : {});
             const dashResults = _getDashTAResults();
             const scanResults = getScanLastResults();
             const now = Date.now();
-            let scanned = 0;
 
             const updatedEl = document.getElementById('dash-conf-updated');
 
@@ -1437,39 +1876,12 @@
                     if (typeof setTACache === 'function') setTACache(symbol, { analysis });
                 }
 
-                // Extract results
-                const _v4Sig = analysis.v4Signal;
-                const _v4Conf = analysis.v4Confidence;
-                const _v3Sig = analysis.v3Signal;
-                const _v3Conf = analysis.v3Confidence;
-                const _origSig = analysis.signal || '';
-                const _origConf = analysis.confidence || 0;
-
-                let signal, confidence;
-                if (_v4Sig) {
-                    signal = _v4Sig;
-                    confidence = (_v4Sig.includes('CONFIRMED') || _v4Sig.includes('AGUARDAR'))
-                        ? (_v4Conf || 0)
-                        : (_v4Conf || _v3Conf || _origConf);
-                } else {
-                    signal = _v3Sig || _origSig;
-                    confidence = _v3Conf || _origConf;
-                }
-
-                if (confidence < 50) signal = 'NEUTRO';
-
-                if (analysis.marketRegime && analysis.marketRegime.regimeStrength != null) {
-                    const regimeConf = Math.round((analysis.marketRegime.regimeStrength || 0) * 100);
-                    confidence = Math.round(confidence * 0.7 + regimeConf * 0.3);
-                    confidence = Math.max(10, Math.min(100, confidence));
-                }
-
-                if (confidence < 50) signal = 'NEUTRO';
+                const resolved = _resolveScanSignal(analysis);
 
                 return {
-                    signal,
-                    confidence,
-                    direction: signal.includes('LONG') ? 'LONG' : signal.includes('SHORT') ? 'SHORT' : 'NEUTRO',
+                    signal: resolved.signal,
+                    confidence: resolved.confidence,
+                    direction: resolved.direction,
                     lastScanAt: Date.now(),
                     price: analysis.indicators?.movingAverages?.currentPrice || 0,
                     gates: analysis.v4GatesPassed ? `${analysis.v4GatesPassed}/${analysis.v4GatesTotal || 9}` : null
@@ -1478,14 +1890,25 @@
 
             // Filter cryptos that need scanning
             const toScan = cryptos.filter(([symbol]) => {
+                if (forceRescan) return true;
                 const existing = dashResults[symbol];
                 return !(existing && existing.lastScanAt && (now - existing.lastScanAt < DASH_SCAN_CACHE_TTL) && existing.confidence);
             });
 
-            // Mark all cells as loading
+            if (toScan.length === 0) {
+                _dashScanRunning = false;
+                window._taScanContext = false;
+                if (updatedEl) updatedEl.textContent = 'Atualizado agora';
+                return;
+            }
+
+            // Mostra loading apenas para itens sem dado previo (evita piscar seco a cada refresh).
             toScan.forEach(([symbol, data]) => {
                 const cell = document.getElementById(`dash-conf-${symbol}`);
-                if (cell) cell.outerHTML = _confCellHtml(symbol, data, { _loading: true });
+                const previous = (dashResults[symbol] && dashResults[symbol].confidence) ? dashResults[symbol] : (scanResults[symbol] || {});
+                if (cell && !Number(previous.confidence || 0)) {
+                    cell.outerHTML = _confCellHtml(symbol, data, { _loading: true });
+                }
             });
 
             // Process in batches of 3 for speed
@@ -1501,7 +1924,7 @@
                     updatedEl.innerHTML = `<i class="fas fa-circle-notch fa-spin" style="font-size:8px;margin-right:3px;"></i> ${names}... (${Math.min(i + BATCH_SIZE, toScan.length)}/${toScan.length})`;
                 }
 
-                const results = await Promise.allSettled(
+                await Promise.allSettled(
                     batch.map(async ([symbol, data]) => {
                         try {
                             const result = await _scanOneCrypto(symbol, data);
@@ -1513,6 +1936,12 @@
                             scanResults[symbol].price = result.price;
                             scanResults[symbol].lastScanAt = result.lastScanAt;
 
+                            const minConf = getCryptoMinConfidence(symbol);
+                            if (isCryptoNotificationEnabled(symbol) && result.direction !== 'NEUTRO' && result.confidence >= minConf) {
+                                const reason = `${result.direction} ${result.confidence}% (mín ${minConf}%) · Scan Dashboard`;
+                                dashRecordCall(symbol, result.direction, result.confidence, result.gates || '', result.price || 0, reason);
+                            }
+
                             const updatedCell = document.getElementById(`dash-conf-${symbol}`);
                             if (updatedCell) updatedCell.outerHTML = _confCellHtml(symbol, data, result);
                         } catch (err) {
@@ -1522,9 +1951,9 @@
                     })
                 );
 
-                scanned += batch.length;
                 _saveDashTAResults(dashResults);
                 saveScanLastResults(scanResults);
+                try { dashRenderActiveSignals(); } catch {}
 
                 // Short delay between batches
                 if (!_dashScanAbort && i + BATCH_SIZE < toScan.length) {
@@ -1549,17 +1978,13 @@
         }
 
         function dashRefreshConfidence() {
-            // Force rescan: clear cached timestamps so all cryptos are re-scanned
-            const dashResults = _getDashTAResults();
-            Object.keys(dashResults).forEach(sym => { if (dashResults[sym]) dashResults[sym].lastScanAt = 0; });
-            _saveDashTAResults(dashResults);
-            _dashScanAbort = true; // abort current if running
-            setTimeout(() => {
-                _dashScanRunning = false;
-                window._taScanContext = false;
-                dashRenderConfidenceGrid();
-                dashRenderActiveSignals();
-            }, 200);
+            if (_dashScanRunning) return;
+            const updatedEl = document.getElementById('dash-conf-updated');
+            if (updatedEl) {
+                updatedEl.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="font-size:8px;margin-right:3px;"></i> Atualizando sinais...';
+            }
+            dashProgressiveScan({ force: true });
+            try { dashRenderHistory(); } catch {}
         }
 
         // Auto-refresh confidence every 5 min while dashboard is visible
@@ -1596,6 +2021,11 @@
             const container = document.getElementById('dash-history-list');
             if (!container) return;
 
+            document.querySelectorAll('.dash-hist-filter').forEach((el) => {
+                const isActive = String(el.dataset.filter || '').toLowerCase() === dashHistoryFilter;
+                el.classList.toggle('active', isActive);
+            });
+
             // Show local data immediately, then refresh from server
             _dashRenderHistoryFromData(dashGetHistory());
 
@@ -1605,62 +2035,273 @@
             });
         }
 
-        function _dashRenderHistoryFromData(rawHistory) {
-            const container = document.getElementById('dash-history-list');
-            if (!container) return;
+          const DASH_OUTCOME_CACHE_KEY = 'VISOR_CALL_OUTCOME_CACHE_V2';
+          const DASH_OUTCOME_HORIZONS = [
+              { key: '1h', label: '1H', ms: 60 * 60 * 1000 },
+              { key: '2h', label: '2H', ms: 2 * 60 * 60 * 1000 },
+              { key: '4h', label: '4H', ms: 4 * 60 * 60 * 1000 }
+          ];
+          const _pnlCache = (() => {
+              try { return JSON.parse(localStorage.getItem(DASH_OUTCOME_CACHE_KEY) || '{}'); }
+              catch { return {}; }
+          })();
 
-            let history = rawHistory;
-            if (dashHistoryFilter === 'long') history = history.filter(h => h.direction === 'LONG');
-            else if (dashHistoryFilter === 'short') history = history.filter(h => h.direction === 'SHORT');
+          function _normalizeBinanceSymbol(raw) {
+              const cleaned = String(raw || '').toUpperCase().replace(/[\/-]/g, '');
+              if (!cleaned) return '';
+              return cleaned.endsWith('USDT') ? cleaned : `${cleaned}USDT`;
+          }
 
-            if (history.length === 0) {
-                container.innerHTML = `
-                <div class="dash-empty-state">
-                    <i class="fas fa-clock-rotate-left" style="font-size:32px;margin-bottom:12px;opacity:0.2;"></i>
-                    <div style="font-size:14px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">Nenhum histórico ainda</div>
-                    <div style="font-size:12px;">Calls confirmadas aparecerão aqui automaticamente.</div>
-                </div>`;
-                return;
-            }
+          function _formatUsdCompact(value) {
+              const n = Number(value);
+              if (!Number.isFinite(n) || n <= 0) return '--';
+              if (n >= 1000) return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+              if (n >= 1) return '$' + n.toFixed(4);
+              return '$' + n.toFixed(6);
+          }
 
-            let html = '';
-            history.slice(0, 50).forEach(call => {
-                const isLong = call.direction === 'LONG';
-                const dir = isLong ? 'long' : 'short';
-                const dirEmoji = isLong ? '↑' : '↓';
-                const dirColor = isLong ? '#22c55e' : '#ef4444';
-                const timeStr = formatCallTime(call.time);
-                const priceStr = call.price ? (parseFloat(call.price) >= 1 ? '$' + parseFloat(call.price).toLocaleString(undefined, {maximumFractionDigits: 2}) : '$' + parseFloat(call.price).toFixed(6)) : '';
+          function _getCallHistoryDomId(call) {
+              const raw = call?.id != null
+                  ? String(call.id)
+                  : `${call?.symbol || 'call'}-${Number(call?.time || call?.timestamp || 0)}`;
+              return raw.replace(/[^a-zA-Z0-9_-]/g, '_');
+          }
 
-                html += `
-                <div class="dash-history-card" onclick="dashShowCallDetail(${call.id})">
-                    <div class="hist-icon ${dir}">
-                        <i class="fas fa-arrow-${isLong ? 'up' : 'down'}" style="color: ${dirColor}; font-size: 14px;"></i>
-                    </div>
-                    <div style="flex:1; min-width:0;">
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">${call.short || call.symbol}</span>
-                            <span style="font-size: 10px; font-weight: 700; color: ${dirColor};">${call.direction}</span>
-                        </div>
-                        <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">${timeStr}${priceStr ? ' · ' + priceStr : ''}</div>
-                    </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 16px; font-weight: 800; color: ${dirColor};">${call.confidence}%</div>
-                        ${call.gates ? `<div style="font-size: 9px; color: var(--text-muted);">${call.gates} gates</div>` : ''}
-                    </div>
-                </div>`;
-            });
+          function _sanitizeText(value) {
+              return String(value || '')
+                  .replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;')
+                  .replace(/'/g, '&#39;');
+          }
 
-            container.innerHTML = html;
-        }
+          function _persistOutcomeCache() {
+              try { localStorage.setItem(DASH_OUTCOME_CACHE_KEY, JSON.stringify(_pnlCache)); } catch (e) {}
+          }
 
-        function dashFilterHistory(filter) {
-            dashHistoryFilter = filter;
-            document.querySelectorAll('.dash-hist-filter').forEach(f => {
-                f.classList.toggle('active', f.getAttribute('data-filter') === filter);
-            });
-            dashRenderHistory();
-        }
+          function _getOutcomeCacheEntry(call) {
+              const domId = _getCallHistoryDomId(call);
+              const cacheKey = call?.id != null ? String(call.id) : domId;
+              if (!_pnlCache[cacheKey] || typeof _pnlCache[cacheKey] !== 'object') {
+                  _pnlCache[cacheKey] = { horizons: {}, updatedAt: 0 };
+              }
+              return _pnlCache[cacheKey];
+          }
+
+          function _findCloseAtOrAfter(klines, targetTs) {
+              if (!Array.isArray(klines) || klines.length === 0) return null;
+              for (let i = 0; i < klines.length; i++) {
+                  const row = klines[i];
+                  const candleTs = Number(row?.[0] || 0);
+                  if (candleTs >= targetTs) {
+                      const close = Number(row?.[4]);
+                      if (Number.isFinite(close) && close > 0) return close;
+                      return null;
+                  }
+              }
+              return null;
+          }
+
+          function _buildOutcomeBadgesHtml(call, cacheEntry, now) {
+              const callTime = Number(call?.time || call?.timestamp || 0);
+              const entryPrice = Number(call?.price || call?.entryPrice || 0);
+              const isLong = String(call?.direction || '').toUpperCase() === 'LONG';
+
+              return DASH_OUTCOME_HORIZONS.map((h) => {
+                  const horizonTs = callTime + h.ms;
+                  if (!callTime || now < horizonTs) {
+                      const remainingMin = Math.max(1, Math.ceil((horizonTs - now) / 60000));
+                      return `<span class="dash-outcome-badge pending">${h.label}: ⏳ ${remainingMin}min</span>`;
+                  }
+
+                  const horizonData = cacheEntry?.horizons?.[h.key] || {};
+                  const horizonPrice = Number(horizonData.price);
+                  if (!Number.isFinite(horizonPrice) || horizonPrice <= 0 || entryPrice <= 0) {
+                      return `<span class="dash-outcome-badge neutral">${h.label}: --</span>`;
+                  }
+
+                  const pct = isLong
+                      ? ((horizonPrice - entryPrice) / entryPrice) * 100
+                      : ((entryPrice - horizonPrice) / entryPrice) * 100;
+                  const isWin = pct > 0;
+                  const cssClass = isWin ? 'win' : pct < 0 ? 'loss' : 'neutral';
+                  const icon = isWin ? '✅' : pct < 0 ? '❌' : '➖';
+                  const pctText = `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
+                  return `<span class="dash-outcome-badge ${cssClass}">${h.label}: ${_formatUsdCompact(horizonPrice)} · ${pctText} ${icon}</span>`;
+              }).join('');
+          }
+
+          function _computeAssertiveness(history) {
+              const now = Date.now();
+              let evaluated = 0;
+              let wins = 0;
+
+              history.forEach((call) => {
+                  const callTime = Number(call?.time || call?.timestamp || 0);
+                  const entryPrice = Number(call?.price || call?.entryPrice || 0);
+                  const isLong = String(call?.direction || '').toUpperCase() === 'LONG';
+                  if (!callTime || entryPrice <= 0) return;
+
+                  const cacheEntry = _getOutcomeCacheEntry(call);
+                  DASH_OUTCOME_HORIZONS.forEach((h) => {
+                      if (now < callTime + h.ms) return;
+                      const horizonData = cacheEntry?.horizons?.[h.key] || {};
+                      const horizonPrice = Number(horizonData.price);
+                      if (!Number.isFinite(horizonPrice) || horizonPrice <= 0) return;
+
+                      evaluated++;
+                      const pnl = isLong
+                          ? ((horizonPrice - entryPrice) / entryPrice) * 100
+                          : ((entryPrice - horizonPrice) / entryPrice) * 100;
+                      if (pnl > 0) wins++;
+                  });
+              });
+
+              if (evaluated === 0) return { evaluated: 0, assertiveness: null };
+              return {
+                  evaluated,
+                  assertiveness: Math.round((wins / evaluated) * 100)
+              };
+          }
+
+          async function evaluateCallOutcomes(call) {
+              const callTime = Number(call?.time || call?.timestamp || 0);
+              const symbol = _normalizeBinanceSymbol(call?.symbol);
+              if (!callTime || !symbol) return;
+
+              const now = Date.now();
+              const cacheEntry = _getOutcomeCacheEntry(call);
+              const domId = _getCallHistoryDomId(call);
+              const rowEl = document.getElementById(`call-outcomes-${domId}`);
+              if (rowEl) {
+                  rowEl.innerHTML = _buildOutcomeBadgesHtml(call, cacheEntry, now);
+              }
+
+              const maturedHorizons = DASH_OUTCOME_HORIZONS.filter((h) => now >= (callTime + h.ms));
+              if (maturedHorizons.length === 0) return;
+
+              const missingHorizons = maturedHorizons.filter((h) => {
+                  const price = Number(cacheEntry?.horizons?.[h.key]?.price);
+                  return !Number.isFinite(price) || price <= 0;
+              });
+              if (missingHorizons.length === 0) return;
+
+              try {
+                  const maxHorizonMs = Math.max(...missingHorizons.map((h) => h.ms));
+                  const endTs = Math.min(now, callTime + maxHorizonMs + (5 * 60 * 1000));
+                  const limit = Math.min(500, Math.max(5, Math.ceil((endTs - callTime) / 60000) + 3));
+                  const resp = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&startTime=${callTime}&limit=${limit}`);
+                  const klines = await resp.json();
+                  if (!Array.isArray(klines) || klines.length === 0) return;
+
+                  missingHorizons.forEach((h) => {
+                      const targetTs = callTime + h.ms;
+                      const close = _findCloseAtOrAfter(klines, targetTs);
+                      cacheEntry.horizons[h.key] = {
+                          price: Number.isFinite(close) && close > 0 ? close : null,
+                          ts: targetTs
+                      };
+                  });
+                  cacheEntry.updatedAt = Date.now();
+                  _persistOutcomeCache();
+
+                  if (rowEl) {
+                      rowEl.innerHTML = _buildOutcomeBadgesHtml(call, cacheEntry, Date.now());
+                  }
+                  dashUpdateStats();
+              } catch (e) {
+                  if (rowEl) {
+                      rowEl.innerHTML = _buildOutcomeBadgesHtml(call, cacheEntry, Date.now());
+                  }
+              }
+          }
+
+          function dashFilterHistory(filter) {
+              const normalized = (filter === 'long' || filter === 'short') ? filter : 'all';
+              dashHistoryFilter = normalized;
+              document.querySelectorAll('.dash-hist-filter').forEach((el) => {
+                  const isActive = String(el.dataset.filter || '').toLowerCase() === normalized;
+                  el.classList.toggle('active', isActive);
+              });
+              dashRenderHistory();
+          }
+
+          function _dashRenderHistoryFromData(rawHistory) {
+              const container = document.getElementById('dash-history-list');
+              if (!container) return;
+
+              let history = Array.isArray(rawHistory) ? [...rawHistory] : [];
+              history.sort((a, b) => Number(b?.time || b?.timestamp || 0) - Number(a?.time || a?.timestamp || 0));
+              if (dashHistoryFilter === 'long') history = history.filter(h => String(h?.direction || '').toUpperCase() === 'LONG');
+              else if (dashHistoryFilter === 'short') history = history.filter(h => String(h?.direction || '').toUpperCase() === 'SHORT');
+              history = history.slice(0, 30);
+
+              if (history.length === 0) {
+                  container.innerHTML = `
+                  <div class="dash-empty-state">
+                      <i class="fas fa-clock-rotate-left" style="font-size:32px;margin-bottom:12px;opacity:0.2;"></i>
+                      <div style="font-size:14px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">Nenhum histórico ainda</div>
+                      <div style="font-size:12px;">As últimas 30 calls registradas aparecem aqui automaticamente.</div>
+                  </div>`;
+                  return;
+              }
+
+              let html = '';
+              const callsToEval = history.slice(0, 30);
+              callsToEval.forEach(call => {
+                  const isLong = call.direction === 'LONG';
+                  const dir = isLong ? 'long' : 'short';
+                  const dirColor = isLong ? '#22c55e' : '#ef4444';
+                  const domId = _getCallHistoryDomId(call);
+                  const callTime = Number(call.time || call.timestamp || 0);
+                  const timeStr = formatCallTime(callTime);
+                  const entryPrice = Number(call.price || call.entryPrice || 0);
+                  const priceStr = entryPrice ? _formatUsdCompact(entryPrice) : '';
+                  const reasonText = _sanitizeText(call.reason || '');
+
+                  const cacheEntry = _getOutcomeCacheEntry(call);
+                  const outcomeBadges = _buildOutcomeBadgesHtml(call, cacheEntry, Date.now());
+
+                  html += `
+                  <div class="dash-history-card" onclick="dashShowCallDetail(${call.id})">
+                      <div class="hist-icon ${dir}">
+                          <i class="fas fa-arrow-${isLong ? 'up' : 'down'}" style="color: ${dirColor}; font-size: 14px;"></i>
+                      </div>
+                      <div style="flex:1; min-width:0;">
+                          <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                              <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+                                  <span style="font-size: 12px; font-weight: 800; color: var(--text-primary);">${call.short || call.symbol}</span>
+                                  <span style="font-size: 9px; font-weight: 700; color: ${dirColor};">${call.direction}</span>
+                              </div>
+                              <span style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${timeStr}</span>
+                          </div>
+                          <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">${priceStr ? 'Entrada: ' + priceStr + ' · ' : ''}${call.gates ? call.gates + ' gates' : 'sem gates'}</div>
+                          ${reasonText ? `<div class="dash-history-reason">${reasonText}</div>` : ''}
+                          <div class="dash-outcome-badges" id="call-outcomes-${domId}">${outcomeBadges}</div>
+                      </div>
+                      <div style="text-align: right;">
+                          <div style="font-size: 15px; font-weight: 800; color: ${dirColor};">${Number(call.confidence || 0)}%</div>
+                      </div>
+                  </div>`;
+              });
+
+              container.innerHTML = html;
+
+              setTimeout(() => {
+                  const queue = [...callsToEval];
+                  const workers = Array.from({ length: 4 }, async () => {
+                      while (queue.length > 0) {
+                          const nextCall = queue.shift();
+                          if (!nextCall) break;
+                          await evaluateCallOutcomes(nextCall);
+                      }
+                  });
+                  Promise.allSettled(workers).then(() => {
+                      dashUpdateStats();
+                  });
+              }, 50);
+          }
 
         function dashShowCallDetail(callId) {
             const history = dashGetHistory();
@@ -1670,8 +2311,13 @@
             const isLong = call.direction === 'LONG';
             const dirColor = isLong ? '#22c55e' : '#ef4444';
             const dirEmoji = isLong ? '🟢' : '🔴';
-            const timeStr = formatCallTime(call.time);
-            const priceStr = call.price ? (parseFloat(call.price) >= 1 ? '$' + parseFloat(call.price).toLocaleString(undefined, {maximumFractionDigits: 2}) : '$' + parseFloat(call.price).toFixed(6)) : 'N/A';
+            const callTs = Number(call.time || call.timestamp || 0);
+            const timeStr = formatCallTime(callTs);
+            const entryPrice = Number(call.price || call.entryPrice || 0);
+            const priceStr = entryPrice ? _formatUsdCompact(entryPrice) : 'N/A';
+            const cacheEntry = _getOutcomeCacheEntry(call);
+            const outcomesHtml = _buildOutcomeBadgesHtml(call, cacheEntry, Date.now());
+            const safeReason = _sanitizeText(call.reason || '');
 
             let modal = document.getElementById('dash-call-detail-modal');
             if (modal) modal.remove();
@@ -1711,10 +2357,14 @@
                     <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 4px;">Horário</div>
                     <div style="font-size: 13px; color: var(--text-primary);">${timeStr}</div>
                 </div>
-                ${call.reason ? `
+                <div style="background: var(--bg-tertiary); border-radius: 10px; padding: 12px; margin-bottom: 12px;">
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 6px;">Resultado 1H/2H/4H</div>
+                    <div class="dash-outcome-badges">${outcomesHtml}</div>
+                </div>
+                ${safeReason ? `
                 <div style="background: var(--bg-tertiary); border-radius: 10px; padding: 12px;">
                     <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 4px;">Motivo</div>
-                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">${call.reason}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">${safeReason}</div>
                 </div>
                 ` : ''}
             </div>`;
@@ -1724,21 +2374,24 @@
 
         function dashUpdateStats() {
             const history = dashGetHistory();
-            const now = Date.now();
             const today = new Date().setHours(0,0,0,0);
+            const getTs = (h) => Number(h?.time || h?.timestamp || 0);
 
             const total = history.length;
             const longs = history.filter(h => h.direction === 'LONG').length;
             const shorts = history.filter(h => h.direction === 'SHORT').length;
-            const todayCount = history.filter(h => h.time >= today).length;
-            const avgConf = total > 0 ? Math.round(history.reduce((a, h) => a + (h.confidence || 0), 0) / total) : 0;
+            const todayCount = history.filter(h => getTs(h) >= today).length;
+            const assertiveness = _computeAssertiveness(history);
+            const assertivenessText = (assertiveness.assertiveness != null && assertiveness.evaluated >= 3)
+                ? `${assertiveness.assertiveness}%`
+                : '--';
 
             const el = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
             el('dash-stat-total', total);
             el('dash-stat-long', longs);
             el('dash-stat-short', shorts);
             el('dash-stat-today', todayCount);
-            el('dash-stat-avgconf', total > 0 ? avgConf + '%' : '--');
+            el('dash-stat-avgconf', assertivenessText);
         }
 
         function dashRenderCryptoSettings() {
@@ -1790,7 +2443,7 @@
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; ${enabled ? '' : 'opacity: 0.4; pointer-events: none;'}">
                             <span style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Mín:</span>
-                            <input type="range" min="70" max="100" value="${confidence}" step="5"
+                            <input type="range" class="signal-conf-slider" min="70" max="100" value="${confidence}" step="5"
                                    oninput="this.nextElementSibling.textContent=this.value+'%'"
                                    onchange="dashSetCryptoConf('${symbol}', parseInt(this.value))"
                                    style="flex: 1; height: 4px; accent-color: #6366f1;">
@@ -1802,9 +2455,17 @@
             container.innerHTML = html;
         }
 
+        function dashSyncNativeBackgroundConfig() {
+            const prefs = getSignalPrefs();
+            if (prefs.masterEnabled) {
+                startBackgroundService();
+            }
+        }
+
         function dashToggleCrypto(symbol, enabled) {
             toggleCryptoSignal(symbol, enabled);
             dashRenderCryptoSettings();
+            dashSyncNativeBackgroundConfig();
             // Sync bell panel
             _syncBellPanelFromPrefs(getSignalPrefs());
         }
@@ -1812,6 +2473,7 @@
         function dashSetCryptoConf(symbol, confidence) {
             setCryptoConfidence(symbol, confidence);
             dashRenderCryptoSettings();
+            dashSyncNativeBackgroundConfig();
         }
 
         function dashUpdateGlobalLabel(val) {
@@ -1824,20 +2486,16 @@
             if (!slider) return;
             const prefs = getSignalPrefs();
             const newGlobal = parseInt(slider.value);
-            const oldGlobal = prefs.globalConfidence || 70;
             prefs.globalConfidence = newGlobal;
-            // Update cryptos that were using the old global (preserve custom overrides)
+            // Regra solicitada: alteração global sempre força todas as criptos.
             Object.entries(typeof CRYPTO_DATABASE !== 'undefined' ? CRYPTO_DATABASE : {}).forEach(([symbol]) => {
                 if (!prefs.cryptos[symbol]) prefs.cryptos[symbol] = {};
-                const current = prefs.cryptos[symbol].confidence || oldGlobal;
-                if (current === oldGlobal || !prefs.cryptos[symbol].confidence) {
-                    prefs.cryptos[symbol].confidence = newGlobal;
-                }
+                prefs.cryptos[symbol].confidence = newGlobal;
                 // Sync each crypto to V4 engine
                 if (window.TAEngineV4) {
                     window.TAEngineV4.setNotificationConfig(symbol, {
                         enabled: prefs.cryptos[symbol].enabled === true,
-                        confidenceThreshold: prefs.cryptos[symbol].confidence || newGlobal
+                        confidenceThreshold: newGlobal
                     });
                 }
             });
@@ -1852,6 +2510,7 @@
             }
             // Sync bell panel slider + toggle
             _syncBellPanelFromPrefs(prefs);
+            dashSyncNativeBackgroundConfig();
         }
 
         function dashToggleAllCryptos(enable) {
@@ -1871,6 +2530,7 @@
             dashRenderCryptoSettings();
             dashSyncMasterToggle();
             _syncBellPanelFromPrefs(prefs);
+            dashSyncNativeBackgroundConfig();
         }
 
         function dashUpdateHomeSummary() {

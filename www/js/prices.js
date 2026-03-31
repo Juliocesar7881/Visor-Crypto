@@ -192,8 +192,11 @@
         // ============================================
         async function fetchOrderBook() {
             try {
+                // Only keep high-frequency order book updates while user is in ANALYSIS.
+                if (typeof currentSection !== 'undefined' && currentSection !== 'analysis') return;
                 const response = await fetchWithTimeout(`https://api.binance.com/api/v3/depth?symbol=${currentOrderbookSymbol}&limit=10`, {}, 5000);
                 const data = await response.json();
+                if (!data || !Array.isArray(data.bids) || !Array.isArray(data.asks)) return;
                 updateOrderbookDisplay(data);
             } catch (e) {
             }

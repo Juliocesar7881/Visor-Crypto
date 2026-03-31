@@ -44,6 +44,10 @@ Cloudflare Worker que serve o calendário econômico dos EUA com dados limpos e 
 |--------|------|-----------|
 | GET | `/calendar` | Eventos alta importância EUA, próximos 30 dias |
 | GET | `/history?series=UNRATE` | Dados históricos FRED (12 últimas observações) |
+| POST | `/auth/issue` | Emite token assinado de curta duração para escrita |
+| POST | `/ai-summary` | Proxy IA autenticado (token curto + device id) |
+| GET | `/calls` | Histórico compartilhado de calls (Durable Object) |
+| POST | `/calls` | Escrita de call com idempotency key |
 | GET | `/health` | Status check |
 
 ## Deploy
@@ -75,6 +79,19 @@ cd worker
 wrangler deploy
 ```
 
+### 4.0 Migracao de Durable Object (obrigatorio)
+O worker usa `CallHistoryDO` para historico transacional de calls.
+
+Em primeiro deploy com essa versao, rode:
+
+```bash
+wrangler deploy
+```
+
+O `wrangler.toml` ja contem:
+- binding `CALL_HISTORY_DO`
+- migration tag `v1_call_history_do`
+
 ### 4.1 Configurar segredos (obrigatorio)
 Nao deixe chaves no codigo. Configure via Wrangler Secrets:
 
@@ -82,6 +99,7 @@ Nao deixe chaves no codigo. Configure via Wrangler Secrets:
 wrangler secret put FMP_API_KEY
 wrangler secret put FRED_API_KEY
 wrangler secret put GROQ_API_KEY
+wrangler secret put APP_AUTH_SECRET
 ```
 
 Ou use o helper PowerShell para evitar expor valores no terminal:
@@ -93,6 +111,17 @@ Ou use o helper PowerShell para evitar expor valores no terminal:
 ```
 
 Sem esses segredos, o worker continua online, mas fontes que dependem dessas APIs ficam limitadas.
+
+### 4.2 CORS por dominio permitido
+Opcionalmente restrinja dominios via variavel de ambiente:
+
+```bash
+wrangler secret put ALLOWED_ORIGINS
+```
+
+Formato esperado (CSV):
+
+`https://visorcrypto.loan,https://www.visorcrypto.loan,capacitor://localhost,http://localhost`
 
 ### 5. Configurar URL no App
 Após o deploy, o Wrangler mostrará a URL (ex: `https://visor-crypto-calendar.SEU_USER.workers.dev`).
@@ -124,5 +153,7 @@ const CALENDAR_WORKER_URL = 'https://visor-crypto-calendar.SEU_USER.workers.dev'
 ## Seguranca
 
 - Chaves FMP/FRED lidas de secrets do Cloudflare (nao hardcoded).
-- Endpoints de `calls` com validacao e rate limiting por IP.
+- `POST /ai-summary` e `POST /calls` exigem token assinado de curta duracao + `X-Device-Id`.
+- CORS com allowlist de origens (sem `*`).
+- Historico de calls em Durable Object com idempotency key e escrita transacional.
 - Erros internos nao expoem detalhes sensiveis ao cliente.

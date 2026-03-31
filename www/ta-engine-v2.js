@@ -615,10 +615,8 @@
             const fromDate = today.toISOString().split('T')[0];
             const toDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             
-            const FMP_KEY = window._FMP_API_KEY || null /* FMP key moved to backend proxy */;
-            
             const [calendarRes, newsRes] = await Promise.all([
-                fetch(`https://financialmodelingprep.com/api/v3/economic_calendar?from=${fromDate}&to=${toDate}&apikey=${FMP_KEY}`)
+                fetch(`${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fmp/api/v3/economic_calendar?from=${fromDate}&to=${toDate}`)
                     .then(r => r.ok ? r.json() : []).catch(() => []),
                 // CryptoPanic for urgent crypto news
                 fetch(`https://cryptopanic.com/api/free/v1/posts/?public=true&kind=news&filter=important`)
@@ -813,10 +811,8 @@
                 return null;
             }
             
-            const FRED_KEY = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
             const fredFetch = (seriesId) => {
-                if (!FRED_KEY) return Promise.resolve(null);
-                return fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=1&api_key=${FRED_KEY}&file_type=json`, { signal: AbortSignal.timeout(8000) })
+                return fetch(`${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=1&file_type=json`, { signal: AbortSignal.timeout(8000) })
                     .then(r => r.ok ? r.json() : null)
                     .catch(() => null);
             };

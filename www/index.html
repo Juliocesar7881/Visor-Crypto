@@ -604,42 +604,6 @@
 
             <!-- ANALYSIS -->
             <div id="analysis" class="section">
-                <!-- Mapa de Calor - Heatmap -->
-                <div onclick="openExternalLink('https://www.coinglass.com/pro/futures/LiquidationHeatMap', 'Liquidation Heatmap')" style="
-                    cursor: pointer;
-                    margin-bottom: 16px;
-                    padding: 14px 18px;
-                    background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 50%, rgba(168, 85, 247, 0.08) 100%);
-                    border: 1px solid rgba(99, 102, 241, 0.25);
-                    border-radius: 14px;
-                    display: flex;
-                    align-items: center;
-                    gap: 14px;
-                    transition: all 0.25s ease;
-                    position: relative;
-                    overflow: hidden;
-                " onmouseover="this.style.borderColor='rgba(99,102,241,0.5)';this.style.transform='translateY(-1px)'" onmouseout="this.style.borderColor='rgba(99,102,241,0.25)';this.style.transform='none'">
-                    <div style="
-                        width: 42px; height: 42px; flex-shrink: 0;
-                        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-                        border-radius: 12px;
-                        display: flex; align-items: center; justify-content: center;
-                        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);">
-                        <i class="fas fa-fire" style="color: white; font-size: 18px;"></i>
-                    </div>
-                    <div style="flex: 1; min-width: 0;">
-                        <div style="font-size: 14px; font-weight: 700; color: var(--text-primary);">Mapa de Calor de Liquidações</div>
-                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">CoinGlass — Visualize zonas de liquidação em tempo real</div>
-                    </div>
-                    <div style="
-                        width: 32px; height: 32px; flex-shrink: 0;
-                        background: rgba(99, 102, 241, 0.15);
-                        border-radius: 8px;
-                        display: flex; align-items: center; justify-content: center;">
-                        <i class="fas fa-external-link-alt" style="color: #818cf8; font-size: 12px;"></i>
-                    </div>
-                </div>
-
                 <!-- Fear & Greed -->
                 <div class="fear-greed-meter">
                     <div class="meter-header">
@@ -763,32 +727,32 @@
                         <div id="panel-ma" class="analysis-panel">
                             <div class="ma-grid">
                                 <div class="ma-item" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, transparent 100%); border: 1px solid rgba(59, 130, 246, 0.3);">
-                                    <div class="ma-label" style="color: #3b82f6;">EMA 9</div>
+                                    <div class="ma-label" style="color: #3b82f6;">EMA 20 (4h)</div>
                                     <div class="ma-value" id="ema-9">--</div>
                                     <div class="ma-signal" id="ema-9-signal"></div>
                                 </div>
                                 <div class="ma-item" style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, transparent 100%); border: 1px solid rgba(34, 197, 94, 0.3);">
-                                    <div class="ma-label" style="color: #22c55e;">EMA 20</div>
+                                    <div class="ma-label" style="color: #22c55e;">EMA 50 (1d)</div>
                                     <div class="ma-value" id="ema-20">--</div>
                                     <div class="ma-signal" id="ema-20-signal"></div>
                                 </div>
                                 <div class="ma-item" style="background: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, transparent 100%); border: 1px solid rgba(249, 115, 22, 0.3);">
-                                    <div class="ma-label" style="color: #f97316;">EMA 50</div>
+                                    <div class="ma-label" style="color: #f97316;">EMA 200 (1d)</div>
                                     <div class="ma-value" id="ema-50">--</div>
                                     <div class="ma-signal" id="ema-50-signal"></div>
                                 </div>
                                 <div class="ma-item">
-                                    <div class="ma-label">MA 50</div>
+                                    <div class="ma-label">SMA 50 (1d)</div>
                                     <div class="ma-value" id="ma-50">--</div>
                                     <div class="ma-signal" id="ma-50-signal"></div>
                                 </div>
                                 <div class="ma-item">
-                                    <div class="ma-label">MA 99</div>
+                                    <div class="ma-label">SMA 100 (1d)</div>
                                     <div class="ma-value" id="ma-99">--</div>
                                     <div class="ma-signal" id="ma-99-signal"></div>
                                 </div>
                                 <div class="ma-item">
-                                    <div class="ma-label">MA 200</div>
+                                    <div class="ma-label">SMA 200 (1d)</div>
                                     <div class="ma-value" id="ma-200">--</div>
                                     <div class="ma-signal" id="ma-200-signal"></div>
                                 </div>
@@ -797,7 +761,7 @@
                             <!-- Support and Resistance -->
                             <div style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 12px; border: 1px solid var(--border-subtle);">
                                 <div style="font-size: 12px; font-weight: 700; color: var(--accent-purple); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-                                    <i class="fas fa-layer-group"></i> Suporte & Resistência Inteligente
+                                    <i class="fas fa-layer-group"></i> Suporte & Resistência Inteligente (Clusters + Pivots)
                                 </div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                                     <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #22c55e;">
@@ -1127,7 +1091,7 @@
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
                         <div style="background:rgba(255,255,255,0.07);border-radius:10px;padding:10px 8px;text-align:center;">
                             <div id="dash-stat-avgconf" style="font-size:20px;font-weight:900;color:#a5b4fc;">--</div>
-                            <div style="font-size:9px;color:rgba(165,180,252,0.55);text-transform:uppercase;font-weight:700;margin-top:2px;">Média Conf.</div>
+                            <div style="font-size:9px;color:rgba(165,180,252,0.55);text-transform:uppercase;font-weight:700;margin-top:2px;">Assertividade</div>
                         </div>
                         <div style="background:rgba(255,255,255,0.07);border-radius:10px;padding:10px 8px;text-align:center;">
                             <div id="dash-stat-today" style="font-size:20px;font-weight:900;color:#fcd34d;">0</div>
@@ -1146,7 +1110,7 @@
                     </div>
                     <div id="dash-active-count" class="dash-pill">0 sinais</div>
                 </div>
-                <div id="dash-active-signals" style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px;">
+                <div id="dash-active-signals" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px;">
                     <div class="dash-empty-state">
                         <i class="fas fa-satellite-dish" style="font-size:32px;margin-bottom:12px;opacity:0.2;"></i>
                         <div style="font-size:14px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">Nenhum sinal ativo</div>
@@ -1186,7 +1150,7 @@
                         <div onclick="dashFilterHistory('short')" class="dash-hist-filter" data-filter="short">Short</div>
                     </div>
                 </div>
-                <div id="dash-history-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px;">
+                <div id="dash-history-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:4px;max-height:520px;overflow-y:auto;padding-right:2px;">
                     <div class="dash-empty-state">
                         <i class="fas fa-clock-rotate-left" style="font-size:32px;margin-bottom:12px;opacity:0.2;"></i>
                         <div style="font-size:14px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">Nenhum histórico ainda</div>
@@ -1210,7 +1174,7 @@
                             <div style="font-size:12px;font-weight:700;color:var(--text-primary);">Confiança mínima global</div>
                             <span id="dash-global-label" style="font-size:15px;font-weight:800;color:#6366f1;">70%</span>
                         </div>
-                        <input type="range" id="dash-global-slider" min="70" max="100" value="70" step="5"
+                           <input type="range" class="signal-conf-slider" id="dash-global-slider" min="70" max="100" value="70" step="5"
                                oninput="dashUpdateGlobalLabel(this.value)" onchange="dashSaveGlobalConf()"
                                style="width:100%;accent-color:#6366f1;height:4px;">
                         <div style="display:flex;justify-content:space-between;margin-top:4px;">
@@ -1270,6 +1234,7 @@
 
     <!-- App Modules (load order matters - core first, init/lifecycle last) -->
     <script src="js/config.js"></script>
+    <script src="js/auth.js"></script>
     <script src="js/core.js"></script>
     <script src="js/browser.js"></script>
     <script src="js/translation.js"></script>
@@ -1277,7 +1242,6 @@
     <script src="js/prices.js"></script>
     <script src="js/market.js"></script>
     <script src="js/navigation.js"></script>
-    <script src="js/macro.js"></script>
     <script src="js/init.js"></script>
     <script src="js/charts.js"></script>
     <script src="js/signals.js"></script>
