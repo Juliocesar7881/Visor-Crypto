@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.app.ActivityManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
@@ -21,7 +22,11 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -40,14 +45,17 @@ public class ScanForegroundService extends Service {
 
     private static final String TAG = "VisorScan";
     private static final String CHANNEL_ID = "visor_crypto_scan";
-    private static final String SIGNAL_CHANNEL_ID = "visor_signals";
+    private static final String SIGNAL_CHANNEL_ID = "visor_signals_v2";
     private static final String PREFS = "visor_scan";
     private static final String PREF_SERVICE_ENABLED = "service_enabled";
     private static final String PREF_SYMBOLS_CONFIG = "symbols_config";
+    private static final String PREF_LAST_RESULTS_JSON = "last_results_json";
+    private static final String PREF_LAST_RESULTS_UPDATED_AT = "last_results_updated_at";
     private static final int DEFAULT_MIN_CONFIDENCE = 70;
     private static final int NOTIFICATION_ID = 1001;
     private static final long SCAN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
     private static final long DEDUP_MS = 30 * 60 * 1000; // 30 min cooldown por simbolo
+    private static final int MAX_SYMBOLS_PER_SCAN = 25;
 
     private PowerManager.WakeLock wakeLock;
     private Handler handler;
@@ -55,8 +63,8 @@ public class ScanForegroundService extends Service {
     private int scanCount = 0;
     private final AtomicBoolean scanInProgress = new AtomicBoolean(false);
 
-    // Symbols to scan
-    private static final String[][] SCAN_SYMBOLS = {
+    // Fallback symbols when per-crypto config is missing.
+    private static final String[][] FALLBACK_SCAN_SYMBOLS = {
         {"BTCUSDT", "Bitcoin", "BTC"},
         {"ETHUSDT", "Ethereum", "ETH"},
         {"BNBUSDT", "BNB", "BNB"},
@@ -200,6 +208,7 @@ public class ScanForegroundService extends Service {
         SharedPreferences prefsCheck = getSharedPreferences(PREFS, MODE_PRIVATE);
         final int userMinConf = clampMinConfidence(prefsCheck.getInt("min_confidence", DEFAULT_MIN_CONFIDENCE));
         final JSONObject symbolsConfig = parseSymbolsConfig(prefsCheck.getString(PREF_SYMBOLS_CONFIG, ""));
+        final List<ScanTarget> scanTargets = buildScanTargets(symbolsConfig);
         if (!prefsCheck.getBoolean(PREF_SERVICE_ENABLED, false)) {
             Log.d(TAG, "Service is disabled by user. Stopping natively.");
             isRunning = false;
@@ -209,6 +218,12 @@ public class ScanForegroundService extends Service {
             }
             stopForeground(true);
             stopSelf();
+            return;
+        }
+
+        if (scanTargets.isEmpty()) {
+            Log.d(TAG, "No enabled symbols configured for native scan.");
+            updatePersistentNotification("Sem criptos ativas para monitorar");
             return;
         }
 
@@ -234,66 +249,105 @@ public class ScanForegroundService extends Service {
         updatePersistentNotification("Último scan: " + getCurrentTime() + " (#" + scanCount + ")");
 
         new Thread(() -> {
-            try {
             SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-            
-            for (String[] sym : SCAN_SYMBOLS) {
-                if (!isRunning) break;
-                try {
-                    String symbol = sym[0];
-                    String name = sym[1];
-                    String shortName = sym[2];
-                    SymbolConfig cfg = resolveSymbolConfig(symbol, symbolsConfig, userMinConf);
-                    if (!cfg.enabled) {
-                        continue;
-                    }
-
-                    // Fetch klines (1h, last 50 candles)
-                    String klinesJson = httpGet("https://api.binance.com/api/v3/klines?symbol=" + symbol + "&interval=1h&limit=50");
-                    if (klinesJson == null) continue;
-
-                    // Fetch ticker
-                    String tickerJson = httpGet("https://api.binance.com/api/v3/ticker/24hr?symbol=" + symbol);
-                    if (tickerJson == null) continue;
-
-                    // Fetch funding rate
-                    String fundingJson = httpGet("https://fapi.binance.com/fapi/v1/fundingRate?symbol=" + symbol + "&limit=1");
-
-                    // Simple analysis
-                    SignalResult result = analyzeSimple(klinesJson, tickerJson, fundingJson);
-                    
-                    if (result != null && result.confidence >= cfg.minConfidence) {
-                        long now = System.currentTimeMillis();
-                        long lastNotified = prefs.getLong("last_" + symbol, 0);
-                        if (now - lastNotified < DEDUP_MS) {
+            JSONObject latestResults = loadLatestResults(prefs);
+            try {
+                for (ScanTarget target : scanTargets) {
+                    if (!isRunning) break;
+                    try {
+                        String symbol = target.symbol;
+                        String shortName = target.shortName;
+                        SymbolConfig cfg = resolveSymbolConfig(symbol, symbolsConfig, userMinConf);
+                        if (!cfg.enabled) {
                             continue;
                         }
 
-                        String direction = result.isLong ? "LONG 🟢" : "SHORT 🔴";
-                        String title = shortName + " — " + direction;
-                        String body = "Confiança: " + result.confidence + "% | " + result.reason;
+                        // Fetch klines (1h, last 50 candles)
+                        String klinesJson = httpGet("https://api.binance.com/api/v3/klines?symbol=" + symbol + "&interval=1h&limit=50");
+                        if (klinesJson == null) continue;
 
-                        fireSignalNotification(title, body, symbol.hashCode());
+                        // Fetch ticker
+                        String tickerJson = httpGet("https://api.binance.com/api/v3/ticker/24hr?symbol=" + symbol);
+                        if (tickerJson == null) continue;
 
-                        // Save per-symbol cooldown timestamp
-                        prefs.edit()
-                            .putLong("last_" + symbol, now)
-                            .apply();
-                        
-                        Log.d(TAG, "Signal: " + title + " — " + body);
+                        double currentPrice = 0;
+                        try {
+                            currentPrice = new JSONObject(tickerJson).optDouble("lastPrice", 0);
+                        } catch (Exception ignored) {}
+
+                        // Fetch funding rate
+                        String fundingJson = httpGet("https://fapi.binance.com/fapi/v1/fundingRate?symbol=" + symbol + "&limit=1");
+
+                        // Simple analysis
+                        SignalResult result = analyzeSimple(klinesJson, tickerJson, fundingJson);
+                        long now = System.currentTimeMillis();
+
+                        String signal = "NEUTRO";
+                        int confidence = 0;
+                        String reason = "Sem sinal forte";
+                        if (result != null) {
+                            signal = result.isLong ? "LONG" : "SHORT";
+                            confidence = result.confidence;
+                            reason = result.reason;
+                        }
+
+                        boolean notified = false;
+                        if (result != null && result.confidence >= cfg.minConfidence) {
+                            long lastNotified = prefs.getLong("last_" + symbol, 0);
+
+                            // Se o relógio do dispositivo mudou e o timestamp ficou no futuro,
+                            // não deixar o dedup travar notificações por horas/dias.
+                            if (lastNotified > now + (5 * 60 * 1000L) || lastNotified < 0) {
+                                lastNotified = 0;
+                                prefs.edit().remove("last_" + symbol).apply();
+                            }
+
+                            boolean dedupBlocked = lastNotified > 0 && (now - lastNotified) < DEDUP_MS;
+                            if (!dedupBlocked) {
+                                String directionKey = result.isLong ? "LONG" : "SHORT";
+                                String direction = result.isLong ? "LONG 🟢" : "SHORT 🔴";
+                                String title = shortName + " — " + direction;
+                                String body = "Confiança: " + result.confidence + "% | " + result.reason;
+                                int notificationId = Math.abs((symbol + "_" + directionKey + "_" + (now / DEDUP_MS)).hashCode());
+
+                                fireSignalNotification(title, body, notificationId);
+
+                                // Save per-symbol cooldown timestamp
+                                prefs.edit()
+                                    .putLong("last_" + symbol, now)
+                                    .apply();
+
+                                Log.d(TAG, "Signal: " + title + " — " + body);
+                                notified = true;
+                            }
+                        }
+
+                        saveLatestResultEntry(
+                            latestResults,
+                            symbol,
+                            signal,
+                            confidence,
+                            currentPrice,
+                            reason,
+                            now,
+                            cfg.minConfidence,
+                            notified
+                        );
+
+                        // Small delay between symbols to avoid rate limiting
+                        Thread.sleep(500);
+
+                    } catch (Exception e) {
+                        Log.e(TAG, "Scan error for " + target.symbol + ": " + e.getMessage());
                     }
-
-                    // Small delay between symbols to avoid rate limiting
-                    Thread.sleep(500);
-
-                } catch (Exception e) {
-                    Log.e(TAG, "Scan error for " + sym[0] + ": " + e.getMessage());
                 }
-            }
-            Log.d(TAG, "Scan #" + scanCount + " complete");
+
+                persistLatestResults(prefs, latestResults);
+                Log.d(TAG, "Scan #" + scanCount + " complete");
             } catch (Exception e) {
                 Log.e(TAG, "Scan thread error: " + e.getMessage());
             } finally {
+                persistLatestResults(prefs, latestResults);
                 scanInProgress.set(false);
             }
         }).start();
@@ -472,9 +526,26 @@ public class ScanForegroundService extends Service {
         }
     }
 
-    private void fireSignalNotification(String title, String body, int id) {
+    private boolean isAppActuallyForeground() {
         try {
             if (MainActivity.isAppInForeground()) {
+                return true;
+            }
+
+            ActivityManager.RunningAppProcessInfo procState = new ActivityManager.RunningAppProcessInfo();
+            ActivityManager.getMyMemoryState(procState);
+            int importance = procState.importance;
+
+            return importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                || importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE;
+        } catch (Exception e) {
+            return MainActivity.isAppInForeground();
+        }
+    }
+
+    private void fireSignalNotification(String title, String body, int id) {
+        try {
+            if (isAppActuallyForeground()) {
                 Log.d(TAG, "Skipping signal notification while app is in foreground");
                 return;
             }
@@ -576,6 +647,88 @@ public class ScanForegroundService extends Service {
         }
     }
 
+    private JSONObject loadLatestResults(SharedPreferences prefs) {
+        if (prefs == null) {
+            return new JSONObject();
+        }
+
+        String raw = prefs.getString(PREF_LAST_RESULTS_JSON, "{}");
+        if (raw == null || raw.trim().isEmpty()) {
+            return new JSONObject();
+        }
+
+        try {
+            return new JSONObject(raw);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to parse cached native results: " + e.getMessage());
+            return new JSONObject();
+        }
+    }
+
+    private void persistLatestResults(SharedPreferences prefs, JSONObject latestResults) {
+        if (prefs == null || latestResults == null) {
+            return;
+        }
+
+        try {
+            prefs.edit()
+                .putString(PREF_LAST_RESULTS_JSON, latestResults.toString())
+                .putLong(PREF_LAST_RESULTS_UPDATED_AT, System.currentTimeMillis())
+                .apply();
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to persist native results: " + e.getMessage());
+        }
+    }
+
+    private void saveLatestResultEntry(
+        JSONObject latestResults,
+        String symbol,
+        String signal,
+        int confidence,
+        double currentPrice,
+        String reason,
+        long scanAt,
+        int minConfidence,
+        boolean notified
+    ) {
+        if (latestResults == null || symbol == null || symbol.trim().isEmpty()) {
+            return;
+        }
+
+        try {
+            JSONObject previous = latestResults.optJSONObject(symbol);
+            JSONObject entry = previous != null ? previous : new JSONObject();
+
+            String normalizedSignal = "NEUTRO";
+            if ("LONG".equalsIgnoreCase(signal)) {
+                normalizedSignal = "LONG";
+            } else if ("SHORT".equalsIgnoreCase(signal)) {
+                normalizedSignal = "SHORT";
+            }
+
+            double safePrice = currentPrice > 0
+                ? currentPrice
+                : entry.optDouble("currentPrice", entry.optDouble("price", 0));
+
+            entry.put("signal", normalizedSignal);
+            entry.put("direction", normalizedSignal);
+            entry.put("confidence", Math.max(0, Math.min(100, confidence)));
+            entry.put("currentPrice", safePrice);
+            entry.put("price", safePrice);
+            entry.put("reason", reason != null ? reason : "");
+            entry.put("lastScanAt", scanAt);
+            entry.put("minConfidence", minConfidence);
+            entry.put("source", "native_background");
+            if (notified) {
+                entry.put("lastNotifiedAt", scanAt);
+            }
+
+            latestResults.put(symbol, entry);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to save native result entry for " + symbol + ": " + e.getMessage());
+        }
+    }
+
     private JSONObject parseSymbolsConfig(String raw) {
         if (raw == null || raw.trim().isEmpty()) {
             return null;
@@ -586,6 +739,63 @@ public class ScanForegroundService extends Service {
             Log.w(TAG, "Invalid symbols config: " + e.getMessage());
             return null;
         }
+    }
+
+    private String normalizeScanSymbol(String raw) {
+        if (raw == null) return "";
+        String clean = raw.toUpperCase().replaceAll("[^A-Z0-9]", "");
+        if (clean.isEmpty()) return "";
+        if (!clean.endsWith("USDT")) {
+            clean = clean + "USDT";
+        }
+        return clean;
+    }
+
+    private List<ScanTarget> buildScanTargets(JSONObject symbolsConfig) {
+        List<ScanTarget> targets = new ArrayList<>();
+        HashSet<String> seen = new HashSet<>();
+
+        boolean hasConfig = symbolsConfig != null && symbolsConfig.length() > 0;
+        if (hasConfig) {
+            Iterator<String> keys = symbolsConfig.keys();
+            while (keys.hasNext()) {
+                String rawKey = keys.next();
+                JSONObject entry = symbolsConfig.optJSONObject(rawKey);
+                if (entry == null || !entry.optBoolean("enabled", false)) {
+                    continue;
+                }
+
+                String symbol = normalizeScanSymbol(rawKey);
+                if (symbol.isEmpty() || !seen.add(symbol)) {
+                    continue;
+                }
+
+                String shortName = symbol.endsWith("USDT")
+                    ? symbol.substring(0, symbol.length() - 4)
+                    : symbol;
+                targets.add(new ScanTarget(symbol, shortName, shortName));
+
+                if (targets.size() >= MAX_SYMBOLS_PER_SCAN) {
+                    break;
+                }
+            }
+            return targets;
+        }
+
+        for (String[] row : FALLBACK_SCAN_SYMBOLS) {
+            String symbol = normalizeScanSymbol(row[0]);
+            if (symbol.isEmpty() || !seen.add(symbol)) {
+                continue;
+            }
+            String displayName = row[1];
+            String shortName = row[2];
+            targets.add(new ScanTarget(symbol, displayName, shortName));
+            if (targets.size() >= MAX_SYMBOLS_PER_SCAN) {
+                break;
+            }
+        }
+
+        return targets;
     }
 
     private SymbolConfig resolveSymbolConfig(String symbol, JSONObject symbolsConfig, int globalMinConf) {
@@ -608,6 +818,18 @@ public class ScanForegroundService extends Service {
 
     private int clampMinConfidence(int value) {
         return Math.max(DEFAULT_MIN_CONFIDENCE, Math.min(100, value));
+    }
+
+    private static class ScanTarget {
+        String symbol;
+        String displayName;
+        String shortName;
+
+        ScanTarget(String symbol, String displayName, String shortName) {
+            this.symbol = symbol;
+            this.displayName = displayName;
+            this.shortName = shortName;
+        }
     }
 
     // Simple result holder

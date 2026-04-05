@@ -29,9 +29,9 @@
             const headers = [
                 'id','symbol','name','direction','confidence','entryPrice',
                 'timestamp','date',
-                'price_1h','price_4h','price_12h','price_24h',
-                'pnl_1h','pnl_4h','pnl_12h','pnl_24h',
-                'win_1h','win_4h','win_12h','win_24h',
+                'price_1h','price_2h','price_4h',
+                'pnl_1h','pnl_2h','pnl_4h',
+                'win_1h','win_2h','win_4h',
                 'regime','session','gatesPassed','gatesTotal','gateScore',
                 'displacement','volumeExpansion','setupFingerprint',
                 'btcAligned','mtfAligned','squeeze','volRegime',
@@ -48,9 +48,9 @@
                 return [
                     call.id, call.symbol, call.name, call.direction, call.confidence, call.entryPrice,
                     call.timestamp, new Date(call.timestamp).toISOString(),
-                    call.prices?.['1h']||'', call.prices?.['4h']||'', call.prices?.['12h']||'', call.prices?.['24h']||'',
-                    call.pnl?.['1h']??'', call.pnl?.['4h']??'', call.pnl?.['12h']??'', call.pnl?.['24h']??'',
-                    isWin('1h'), isWin('4h'), isWin('12h'), isWin('24h'),
+                    call.prices?.['1h']||'', call.prices?.['2h']||'', call.prices?.['4h']||'',
+                    call.pnl?.['1h']??'', call.pnl?.['2h']??'', call.pnl?.['4h']??'',
+                    isWin('1h'), isWin('2h'), isWin('4h'),
                     a.regime||'', a.session||'', a.v4GatesPassed||'', a.v4GatesTotal||'', a.v4GateScore||'',
                     a.displacement?.detected||'', a.volumeExpansion||'', a.setupFingerprint||'',
                     a.btcAlignment?.aligned??'', a.mtf ? a.mtf.alignedCount+'/'+a.mtf.totalAvailable : '',
@@ -78,42 +78,42 @@
             const history = getCallHistory();
             if (history.length === 0) return null;
             
-            const checked12h = history.filter(c => c.checked?.['12h']);
+            const checked4h = history.filter(c => c.checked?.['4h']);
             
             // Win rate por regime
             const byRegime = {};
-            checked12h.forEach(c => {
+            checked4h.forEach(c => {
                 const regime = c.analytics?.regime || 'unknown';
                 if (!byRegime[regime]) byRegime[regime] = { wins: 0, losses: 0, total: 0 };
                 byRegime[regime].total++;
-                const isWin = c.direction === 'LONG' ? c.prices?.['12h'] > c.entryPrice : c.prices?.['12h'] < c.entryPrice;
+                const isWin = c.direction === 'LONG' ? c.prices?.['4h'] > c.entryPrice : c.prices?.['4h'] < c.entryPrice;
                 if (isWin) byRegime[regime].wins++; else byRegime[regime].losses++;
             });
             
             // Win rate por sessão
             const bySession = {};
-            checked12h.forEach(c => {
+            checked4h.forEach(c => {
                 const session = c.analytics?.session || 'unknown';
                 if (!bySession[session]) bySession[session] = { wins: 0, losses: 0, total: 0 };
                 bySession[session].total++;
-                const isWin = c.direction === 'LONG' ? c.prices?.['12h'] > c.entryPrice : c.prices?.['12h'] < c.entryPrice;
+                const isWin = c.direction === 'LONG' ? c.prices?.['4h'] > c.entryPrice : c.prices?.['4h'] < c.entryPrice;
                 if (isWin) bySession[session].wins++; else bySession[session].losses++;
             });
             
             // Win rate por gate count
             const byGateCount = {};
-            checked12h.forEach(c => {
+            checked4h.forEach(c => {
                 const gates = c.analytics?.v4GatesPassed || 0;
                 const key = gates + ' gates';
                 if (!byGateCount[key]) byGateCount[key] = { wins: 0, losses: 0, total: 0 };
                 byGateCount[key].total++;
-                const isWin = c.direction === 'LONG' ? c.prices?.['12h'] > c.entryPrice : c.prices?.['12h'] < c.entryPrice;
+                const isWin = c.direction === 'LONG' ? c.prices?.['4h'] > c.entryPrice : c.prices?.['4h'] < c.entryPrice;
                 if (isWin) byGateCount[key].wins++; else byGateCount[key].losses++;
             });
             
             return {
                 totalCalls: history.length,
-                checked12h: checked12h.length,
+                checked4h: checked4h.length,
                 byRegime, bySession, byGateCount
             };
         }
@@ -163,23 +163,23 @@
                         </div>
                         <div>
                             <div class="ta-section-title">Histórico de Calls</div>
-                            <div class="ta-section-subtitle">${scopedHistory.length} calls de ${currentLabel} • Verificação em 1h, 4h, 12h, 24h</div>
+                            <div class="ta-section-subtitle">${scopedHistory.length} calls de ${currentLabel} • Verificação em 1h, 2h e 4h</div>
                         </div>
                     </div>`;
             
             // Stats summary
             if (scopedHistory.length > 0) {
                 html += `
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px;">`;
+                    <div style="display: grid; grid-template-columns: repeat(${CALL_CHECK_INTERVALS.length}, 1fr); gap: 6px; margin-bottom: 12px;">`;
                 
                 for (const iv of CALL_CHECK_INTERVALS) {
                     const s = scopedStats.byInterval[iv.key];
                     const wr = s.total > 0 ? ((s.wins / s.total) * 100).toFixed(0) : '—';
                     const wrColor = s.total === 0 ? 'var(--text-muted)' : parseFloat(wr) >= 55 ? '#22c55e' : parseFloat(wr) >= 45 ? '#f59e0b' : '#ef4444';
                     html += `
-                        <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 10px; text-align: center;">
+                        <div style="background: var(--bg-tertiary); padding: 8px; border-radius: 10px; text-align: center;">
                             <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Win Rate ${iv.label}</div>
-                            <div style="font-size: 20px; font-weight: 800; color: ${wrColor};">${wr}${s.total > 0 ? '%' : ''}</div>
+                            <div style="font-size: 17px; font-weight: 800; color: ${wrColor};">${wr}${s.total > 0 ? '%' : ''}</div>
                             <div style="font-size: 10px; color: var(--text-muted);">${s.wins}W / ${s.losses}L${s.pending > 0 ? ' / ' + s.pending + '⏳' : ''}</div>
                         </div>`;
                 }
@@ -211,16 +211,16 @@
                     const isCurrent = targetSymbol ? (normalizeSymbol(call.symbol) === targetSymbol) : false;
                     
                     html += `
-                        <div style="padding: 10px; background: ${isCurrent ? 'rgba(59,130,246,0.08)' : 'var(--bg-tertiary)'}; border-radius: 8px; border-left: 3px solid ${dirColor}; ${isCurrent ? 'border: 1px solid rgba(59,130,246,0.2);' : ''}">
+                        <div style="padding: 8px 9px; background: ${isCurrent ? 'rgba(59,130,246,0.08)' : 'var(--bg-tertiary)'}; border-radius: 8px; border-left: 3px solid ${dirColor}; ${isCurrent ? 'border: 1px solid rgba(59,130,246,0.2);' : ''}">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                 <div style="display: flex; align-items: center; gap: 6px;">
-                                    <span style="font-size: 12px; font-weight: 800; color: ${dirColor};">${dirIcon} ${call.direction}</span>
-                                    <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">${call.name || call.symbol}</span>
+                                    <span style="font-size: 11px; font-weight: 800; color: ${dirColor};">${dirIcon} ${call.direction}</span>
+                                    <span style="font-size: 10px; font-weight: 700; color: var(--text-primary);">${call.name || call.symbol}</span>
                                     <span style="font-size: 9px; padding: 1px 5px; border-radius: 4px; background: rgba(139,92,246,0.15); color: #a78bfa; font-weight: 600;">${call.confidence}%</span>
                                 </div>
                                 <span style="font-size: 9px; color: var(--text-muted);">${dateStr}</span>
                             </div>
-                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;">`;
+                            <div style="display: grid; grid-template-columns: repeat(${CALL_CHECK_INTERVALS.length}, 1fr); gap: 5px;">`;
                     
                     for (const iv of CALL_CHECK_INTERVALS) {
                         const p = call.prices[iv.key];
@@ -231,10 +231,10 @@
                         const resultBg = isWin === null ? 'var(--bg-card)' : isWin ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)';
                         
                         html += `
-                                <div style="text-align: center; padding: 8px 4px; background: ${resultBg}; border-radius: 8px;">
+                                <div style="text-align: center; padding: 6px 4px; background: ${resultBg}; border-radius: 8px;">
                                     <div style="font-size: 9px; color: var(--text-muted); font-weight: 600;">${iv.label}</div>
-                                    <div style="font-size: 18px; margin: 2px 0;">${resultIcon}</div>
-                                    <div style="font-size: 10px; font-weight: 700; color: ${resultColor};">${resultText}</div>
+                                    <div style="font-size: 15px; margin: 1px 0;">${resultIcon}</div>
+                                    <div style="font-size: 9px; font-weight: 700; color: ${resultColor};">${resultText}</div>
                                 </div>`;
                     }
                     
@@ -302,7 +302,19 @@
                     </div>
                 `;
 
-                modal.classList.add('active');
+                if (typeof cancelPendingTAModalClose === 'function') {
+                    try { cancelPendingTAModalClose(); } catch (_) {}
+                }
+                modal.classList.remove('closing');
+                const wasOpen = modal.classList.contains('active');
+                if (!wasOpen) {
+                    modal.classList.remove('active');
+                    requestAnimationFrame(() => {
+                        modal.classList.add('active');
+                    });
+                } else {
+                    modal.classList.add('active');
+                }
                 document.body.style.overflow = 'hidden';
 
                 // 🎯 Show interstitial ad while analysis loads in background
@@ -462,7 +474,14 @@
             } catch (fatalError) {
                 console.error("Fatal error in openTechnicalAnalysis:", fatalError);
                 if (document.getElementById('ta-modal-body')) {
-                    document.getElementById('ta-modal').classList.add('active');
+                    const taModal = document.getElementById('ta-modal');
+                    if (typeof cancelPendingTAModalClose === 'function') {
+                        try { cancelPendingTAModalClose(); } catch (_) {}
+                    }
+                    if (taModal) {
+                        taModal.classList.remove('closing');
+                        taModal.classList.add('active');
+                    }
                     document.getElementById('ta-modal-body').innerHTML = '<div style="padding:40px 20px; text-align:center;"><i class="fas fa-bug" style="font-size:48px; color:var(--accent-red); margin-bottom:16px;"></i><h3 style="color:var(--text-primary); margin-bottom:8px;">Erro Crítico</h3><p style="color:var(--text-secondary); font-size:12px; margin-bottom:20px;">' + (fatalError.message || 'Erro inesperado') + '</p><button onclick="closeTechnicalAnalysis()" style="padding:12px 24px; border-radius:12px; background:var(--bg-secondary); color:var(--text-primary); border:none; font-weight:600; cursor:pointer;">Voltar ao Início</button></div>';
                 } else {
                     console.error("Erro interno Crítico:", fatalError.message);
@@ -1020,6 +1039,7 @@
         const SCAN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
         const SCAN_LAST_RESULTS_KEY = 'vc_scan_last_results';
         const SCAN_DEDUP_MS = 30 * 60 * 1000; // 30 min cooldown por cripto
+        const SIGNAL_ALERT_CHANNEL_ID = 'visor_signals_v2';
         let autoScanTimer = null;
         let autoScanBootTimeout = null;
         let isScanning = false;
@@ -1033,7 +1053,7 @@
                     // Create notification channel for Android
                     try {
                         await LocalNotifications.createChannel({
-                            id: 'visor_signals',
+                            id: SIGNAL_ALERT_CHANNEL_ID,
                             name: 'Sinais de Trading',
                             description: 'Alertas de sinais LONG/SHORT confirmados',
                             importance: 5,
@@ -1061,7 +1081,7 @@
                             id: id || Math.floor(Math.random() * 100000),
                             title: title,
                             body: body,
-                            channelId: 'visor_signals',
+                            channelId: SIGNAL_ALERT_CHANNEL_ID,
                             schedule: { at: new Date(Date.now() + 500) },
                             sound: 'default',
                             smallIcon: 'ic_launcher',
@@ -1094,6 +1114,7 @@
                         minConfidence: Math.max(70, Number(prefs.globalConfidence || 70) || 70),
                         symbolsConfig: JSON.stringify(symbolsConfig)
                     });
+                    syncNativeBackgroundResults().catch(() => {});
                     return true;
                 }
             } catch (e) { /* console.warn('Background service start error:', e); */ }
@@ -1114,6 +1135,104 @@
         function saveScanLastResults(results) {
             try { localStorage.setItem(SCAN_LAST_RESULTS_KEY, JSON.stringify(results)); } catch {}
         }
+
+        function _normalizeScanSymbol(rawSymbol) {
+            const clean = String(rawSymbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (!clean) return '';
+            return clean.endsWith('USDT') ? clean : `${clean}USDT`;
+        }
+
+        function _mergeNativeBackgroundResults(nativeResults) {
+            if (!nativeResults || typeof nativeResults !== 'object') return false;
+
+            const merged = getScanLastResults();
+            let changed = false;
+
+            Object.entries(nativeResults).forEach(([rawSymbol, rawEntry]) => {
+                if (!rawEntry || typeof rawEntry !== 'object') return;
+
+                const symbol = _normalizeScanSymbol(rawSymbol);
+                if (!symbol) return;
+
+                const current = merged[symbol] || {};
+                const incomingTs = Number(rawEntry.lastScanAt || rawEntry.timestamp || 0);
+                const currentTs = Number(current.lastScanAt || current.timestamp || 0);
+                if (incomingTs > 0 && currentTs > incomingTs) return;
+
+                const rawSignal = String(rawEntry.direction || rawEntry.signal || '').toUpperCase();
+                const direction = rawSignal.includes('LONG')
+                    ? 'LONG'
+                    : rawSignal.includes('SHORT')
+                        ? 'SHORT'
+                        : 'NEUTRO';
+
+                const confidence = Math.max(0, Math.min(100, Math.round(Number(rawEntry.confidence || 0) || 0)));
+                const nextPrice = Number(rawEntry.currentPrice || rawEntry.price || current.price || 0) || 0;
+                const nextNotifiedAt = Number(rawEntry.lastNotifiedAt || current.notifiedAt || 0) || 0;
+                const nextLastScanAt = incomingTs || Number(current.lastScanAt || 0) || Date.now();
+
+                const before = `${current.signal || ''}|${current.direction || ''}|${Number(current.confidence || 0)}|${Number(current.price || 0)}|${Number(current.lastScanAt || 0)}|${Number(current.notifiedAt || 0)}`;
+
+                merged[symbol] = {
+                    ...current,
+                    signal: direction,
+                    direction,
+                    confidence,
+                    price: nextPrice,
+                    lastScanAt: nextLastScanAt,
+                    notifiedAt: nextNotifiedAt,
+                    source: String(rawEntry.source || current.source || 'native_background')
+                };
+
+                const afterEntry = merged[symbol];
+                const after = `${afterEntry.signal || ''}|${afterEntry.direction || ''}|${Number(afterEntry.confidence || 0)}|${Number(afterEntry.price || 0)}|${Number(afterEntry.lastScanAt || 0)}|${Number(afterEntry.notifiedAt || 0)}`;
+                if (before !== after) {
+                    changed = true;
+                }
+            });
+
+            if (changed) {
+                saveScanLastResults(merged);
+            }
+
+            return changed;
+        }
+
+        let _nativeResultsSyncPromise = null;
+        async function syncNativeBackgroundResults(options = {}) {
+            if (_nativeResultsSyncPromise) return _nativeResultsSyncPromise;
+
+            const force = !!options.force;
+            const now = Date.now();
+            const lastSync = Number(syncNativeBackgroundResults._lastSyncAt || 0);
+            if (!force && lastSync > 0 && (now - lastSync) < 15000) {
+                return false;
+            }
+
+            _nativeResultsSyncPromise = (async () => {
+                try {
+                    const plugin = window?.Capacitor?.Plugins?.BackgroundScan;
+                    if (!plugin || typeof plugin.getLatestResults !== 'function') return false;
+
+                    const payload = await plugin.getLatestResults();
+                    const changed = _mergeNativeBackgroundResults(payload?.results || {});
+                    syncNativeBackgroundResults._lastSyncAt = Date.now();
+
+                    if (changed) {
+                        try { dashRenderConfidenceGrid(); dashRenderActiveSignals(); dashUpdateStats(); } catch {}
+                    }
+
+                    return changed;
+                } catch (_) {
+                    return false;
+                } finally {
+                    _nativeResultsSyncPromise = null;
+                }
+            })();
+
+            return _nativeResultsSyncPromise;
+        }
+        syncNativeBackgroundResults._lastSyncAt = 0;
 
         function _isReliableSignalForNotification(analysis, minConf, resolved) {
             const finalSignal = resolved || _resolveScanSignal(analysis);
@@ -1376,6 +1495,7 @@
                     await initLocalNotifications();
                     startBackgroundService();
                     startAutoScan();
+                    syncNativeBackgroundResults({ force: true }).catch(() => {});
                 }
 
                 // Listen for notification taps → go to Dashboard
@@ -1390,6 +1510,21 @@
                 // Init dashboard home summary
                 if (typeof dashUpdateHomeSummary === 'function') dashUpdateHomeSummary();
             }, 5000);
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            try {
+                const prefs = getSignalPrefs();
+                if (!prefs.masterEnabled) return;
+
+                // Keep native background monitor alive across app hide/show transitions.
+                startBackgroundService();
+
+                if (document.visibilityState === 'visible') {
+                    syncNativeBackgroundResults({ force: true }).catch(() => {});
+                    runAutoScan();
+                }
+            } catch (e) {}
         });
         // ═══════════════════════════════════════
 
@@ -1581,6 +1716,7 @@
          */
         function dashLoad() {
             dashSyncMasterToggle();
+            syncNativeBackgroundResults({ force: true }).catch(() => {});
             dashRenderActiveSignals();
             dashRenderConfidenceGrid();
             dashRenderHistory();
@@ -1697,15 +1833,15 @@
 
                 activeHtml += `
                 <div class="dash-signal-card ${dir}" style="animation: fadeIn 0.25s ease;">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                        <img src="${crypto.img || ''}" style="width: 32px; height: 32px; border-radius: 50%;" onerror="this.style.display='none'">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <img src="${crypto.img || ''}" style="width: 28px; height: 28px; border-radius: 50%;" onerror="this.style.display='none'">
                         <div style="flex:1;">
-                            <div style="font-size: 14px; font-weight: 800; color: var(--text-primary);">${crypto.short || symbol} <span class="signal-badge ${dir}">${dirEmoji} ${dirLabel}</span></div>
-                            <div style="font-size: 11px; color: var(--text-muted);">${crypto.name || symbol} · ${timeAgo}</div>
+                            <div style="font-size: 13px; font-weight: 800; color: var(--text-primary);">${crypto.short || symbol} <span class="signal-badge ${dir}">${dirEmoji} ${dirLabel}</span></div>
+                            <div style="font-size: 10px; color: var(--text-muted);">${crypto.name || symbol} · ${timeAgo}</div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 18px; font-weight: 800; color: ${isLong ? '#22c55e' : '#ef4444'};">${conf}%</div>
-                            <div style="font-size: 10px; color: var(--text-muted);">${priceStr}</div>
+                            <div style="font-size: 16px; font-weight: 800; color: ${isLong ? '#22c55e' : '#ef4444'};">${conf}%</div>
+                            <div style="font-size: 9px; color: var(--text-muted);">${priceStr}</div>
                         </div>
                     </div>
                 </div>`;
@@ -1979,6 +2115,7 @@
 
         function dashRefreshConfidence() {
             if (_dashScanRunning) return;
+            syncNativeBackgroundResults({ force: true }).catch(() => {});
             const updatedEl = document.getElementById('dash-conf-updated');
             if (updatedEl) {
                 updatedEl.innerHTML = '<i class="fas fa-circle-notch fa-spin" style="font-size:8px;margin-right:3px;"></i> Atualizando sinais...';
@@ -2112,13 +2249,13 @@
                   const horizonTs = callTime + h.ms;
                   if (!callTime || now < horizonTs) {
                       const remainingMin = Math.max(1, Math.ceil((horizonTs - now) / 60000));
-                      return `<span class="dash-outcome-badge pending">${h.label}: ⏳ ${remainingMin}min</span>`;
+                      return `<span class="dash-outcome-badge pending">${h.label} ⏳ ${remainingMin}m</span>`;
                   }
 
                   const horizonData = cacheEntry?.horizons?.[h.key] || {};
                   const horizonPrice = Number(horizonData.price);
                   if (!Number.isFinite(horizonPrice) || horizonPrice <= 0 || entryPrice <= 0) {
-                      return `<span class="dash-outcome-badge neutral">${h.label}: --</span>`;
+                      return `<span class="dash-outcome-badge neutral">${h.label} --</span>`;
                   }
 
                   const pct = isLong
@@ -2128,7 +2265,7 @@
                   const cssClass = isWin ? 'win' : pct < 0 ? 'loss' : 'neutral';
                   const icon = isWin ? '✅' : pct < 0 ? '❌' : '➖';
                   const pctText = `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
-                  return `<span class="dash-outcome-badge ${cssClass}">${h.label}: ${_formatUsdCompact(horizonPrice)} · ${pctText} ${icon}</span>`;
+                  return `<span class="dash-outcome-badge ${cssClass}">${h.label} ${icon} ${pctText}</span>`;
               }).join('');
           }
 
@@ -2266,22 +2403,22 @@
                   html += `
                   <div class="dash-history-card" onclick="dashShowCallDetail(${call.id})">
                       <div class="hist-icon ${dir}">
-                          <i class="fas fa-arrow-${isLong ? 'up' : 'down'}" style="color: ${dirColor}; font-size: 14px;"></i>
+                          <i class="fas fa-arrow-${isLong ? 'up' : 'down'}" style="color: ${dirColor}; font-size: 12px;"></i>
                       </div>
                       <div style="flex:1; min-width:0;">
                           <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
                               <div style="display:flex; align-items:center; gap:6px; min-width:0;">
-                                  <span style="font-size: 12px; font-weight: 800; color: var(--text-primary);">${call.short || call.symbol}</span>
-                                  <span style="font-size: 9px; font-weight: 700; color: ${dirColor};">${call.direction}</span>
+                                  <span style="font-size: 11px; font-weight: 800; color: var(--text-primary);">${call.short || call.symbol}</span>
+                                  <span style="font-size: 8px; font-weight: 700; color: ${dirColor};">${call.direction}</span>
                               </div>
-                              <span style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${timeStr}</span>
+                              <span style="font-size: 8px; color: var(--text-muted); white-space: nowrap;">${timeStr}</span>
                           </div>
-                          <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">${priceStr ? 'Entrada: ' + priceStr + ' · ' : ''}${call.gates ? call.gates + ' gates' : 'sem gates'}</div>
+                          <div style="font-size: 9px; color: var(--text-muted); margin-top: 1px;">${priceStr ? 'Entrada: ' + priceStr + ' · ' : ''}${call.gates ? call.gates + ' gates' : 'sem gates'}</div>
                           ${reasonText ? `<div class="dash-history-reason">${reasonText}</div>` : ''}
                           <div class="dash-outcome-badges" id="call-outcomes-${domId}">${outcomeBadges}</div>
                       </div>
                       <div style="text-align: right;">
-                          <div style="font-size: 15px; font-weight: 800; color: ${dirColor};">${Number(call.confidence || 0)}%</div>
+                          <div style="font-size: 13px; font-weight: 800; color: ${dirColor};">${Number(call.confidence || 0)}%</div>
                       </div>
                   </div>`;
               });

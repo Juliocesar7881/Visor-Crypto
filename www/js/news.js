@@ -21,6 +21,31 @@
             // We store a marker so renderHotNewsList can use it
             news._fallbackImage = true;
         }
+
+        const _newsImageWarmCache = new Set();
+
+        function warmNewsImageCache(items, limit = 12) {
+            if (!Array.isArray(items) || typeof Image === 'undefined') return;
+
+            const candidates = items
+                .map((item) => String(item?.image || '').trim())
+                .filter((url) => !!url && isValidURL(url))
+                .slice(0, Math.max(1, limit));
+
+            if (_newsImageWarmCache.size > 400) {
+                _newsImageWarmCache.clear();
+            }
+
+            candidates.forEach((url) => {
+                if (_newsImageWarmCache.has(url)) return;
+                _newsImageWarmCache.add(url);
+                try {
+                    const img = new Image();
+                    img.decoding = 'async';
+                    img.src = url;
+                } catch (_) {}
+            });
+        }
         
         // Mapa de criptomoedas para imagens
         const cryptoImages = {
@@ -155,6 +180,13 @@
             `;
         }
 
+        function getNewsTitleForDisplay(news) {
+            const translated = String(news?.translatedTitle || '').trim();
+            if (translated) return translated;
+            if (news?.translationFailed) return 'Titulo indisponivel em portugues';
+            return '';
+        }
+
         async function openNewsModal(newsUrl) {
             // Decode URL encoded in onclick handler
             try { newsUrl = decodeURIComponent(newsUrl); } catch(e) {}
@@ -176,10 +208,16 @@
             const sentimentText = news.sentiment === 'positive' ? 'Positiva' : 'Negativa';
             
             // Traduzir título se ainda não foi traduzido
-            if (!news.translatedTitle) {
-                news.translatedTitle = await translateText(news.title);
+            if (!news.translatedTitle && !news.translationFailed) {
+                const translatedTitle = await translateText(news.title);
+                if (translatedTitle) {
+                    news.translatedTitle = translatedTitle;
+                    news.translationFailed = false;
+                } else {
+                    news.translationFailed = true;
+                }
             }
-            const translatedTitle = news.translatedTitle;
+            const translatedTitle = getNewsTitleForDisplay(news) || 'Titulo indisponivel em portugues';
             
             // Gerar resumo em português
             const summary = generateNewsSummary(news, translatedTitle);
@@ -899,10 +937,12 @@
                 // TRADUZIR PRIMEIRO as notícias antes de renderizar
                 // Isso evita que apareçam em inglês e depois mudem
                 if (newsFilter !== 'hot') {
+                    const initialTranslateCount = Math.min(120, Math.max(20, allNews.length));
+                    await translateNewsBeforeRender(initialTranslateCount);
                     await renderNews();
 
-                    // Tradução não deve bloquear o primeiro paint
-                    translateNewsBeforeRender(15)
+                    // Traduz restante em background após o primeiro render.
+                    preTranslateNews()
                         .then(() => { if (newsFilter !== 'hot') renderNews(); })
                         .catch(() => {});
                 }
@@ -1663,7 +1703,13 @@
                             const titles = chunk.map(n => n.title);
                             const translated = await translateBulk(titles);
                             for (let j = 0; j < chunk.length; j++) {
-                                chunk[j].translatedTitle = translated[j] || chunk[j].title;
+                                const translatedTitle = translated[j];
+                                if (translatedTitle) {
+                                    chunk[j].translatedTitle = translatedTitle;
+                                    chunk[j].translationFailed = false;
+                                } else {
+                                    chunk[j].translationFailed = true;
+                                }
                             }
                         })),
                         new Promise(resolve => setTimeout(resolve, 12000))
@@ -1672,13 +1718,20 @@
                 } catch(e) {}
             }
             
-            // Filtrar notícias que não foram traduzidas (não mostrar em inglês)
-            hotNews = hotNews.filter(n => !!n.translatedTitle);
+            // Never render English fallback in hot news cards.
+            hotNews = hotNews.map((item) => {
+                if (!item.translatedTitle && item.translationFailed) {
+                    item.translatedTitle = 'Titulo indisponivel em portugues';
+                }
+                return item;
+            }).filter(n => !!n.translatedTitle);
             
             if (hotNews.length === 0) {
                 container.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 20px;">Traduzindo notícias relevantes...</p>';
                 return;
             }
+
+            warmNewsImageCache(hotNews, 12);
             
             container.innerHTML = hotNews.map((news, index) => {
                 const categoryIcons = {
@@ -1708,7 +1761,9 @@
                 // Thumbnail image
                 let thumbHtml;
                 if (news.image) {
-                    thumbHtml = `<div class="news-item-thumb"><img src="${news.image}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-newspaper\\' style=\\'color:var(--accent-blue)\\'></i>'"></div>`;
+                    const thumbLoading = index < 6 ? 'eager' : 'lazy';
+                    const thumbPriority = index < 3 ? 'high' : 'low';
+                    thumbHtml = `<div class="news-item-thumb"><img src="${sanitizeHTML(news.image)}" alt="" loading="${thumbLoading}" fetchpriority="${thumbPriority}" decoding="async" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-newspaper\\' style=\\'color:var(--accent-blue)\\'></i>'"></div>`;
                 } else {
                     // Generate icon-based thumbnail from title keywords
                     const lowerTitle = (news.title || '').toLowerCase();
@@ -1789,10 +1844,16 @@
                 const sentimentText = news.sentiment === 'positive' ? 'Positiva' : 'Negativa';
                 
                 // Traduzir título se ainda não foi traduzido
-                if (!news.translatedTitle) {
-                    news.translatedTitle = await translateText(news.title);
+                if (!news.translatedTitle && !news.translationFailed) {
+                    const translatedTitle = await translateText(news.title);
+                    if (translatedTitle) {
+                        news.translatedTitle = translatedTitle;
+                        news.translationFailed = false;
+                    } else {
+                        news.translationFailed = true;
+                    }
                 }
-                const translatedTitle = news.translatedTitle;
+                const translatedTitle = getNewsTitleForDisplay(news) || 'Titulo indisponivel em portugues';
                 
                 // Gerar resumo para notícia importante
                 const categoryNames = {
@@ -1963,9 +2024,13 @@
             // Ordenar por mais recente primeiro e limitar a 200 notícias
             let sorted = [...filtered].sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 200);
             
-            // Não bloquear a primeira renderização por tradução.
-            // Exibe título original enquanto a tradução roda em background.
-            sorted = sorted.filter(n => !!(n.translatedTitle || n.title));
+            // Render only Portuguese-ready titles to avoid showing English cards.
+            sorted = sorted.map((news) => {
+                if (!news.translatedTitle && news.translationFailed) {
+                    news.translatedTitle = 'Titulo indisponivel em portugues';
+                }
+                return news;
+            }).filter(n => !!getNewsTitleForDisplay(n));
             
             // NÃO re-marcar notícias como hot aqui - elas já vêm marcadas do mergeNews()
             // Isso evita o problema de piscar/sumir
@@ -1981,6 +2046,18 @@
             }
             
             if (sorted.length === 0) {
+                const hasPendingTranslations = allNews.some(n => !n.translatedTitle && !n.translationFailed);
+                if (hasPendingTranslations) {
+                    container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Traduzindo noticias...</p></div>';
+                    if (!window._newsTranslationScheduled) {
+                        window._newsTranslationScheduled = true;
+                        translateNewsBeforeRender(60)
+                            .then(() => { window._newsTranslationScheduled = false; renderNews(); })
+                            .catch(() => { window._newsTranslationScheduled = false; });
+                    }
+                    isRenderingNews = false;
+                    return;
+                }
                 const isInitialLoading = newsFetchState === 'fetching' && allNews.length === 0;
                 if (isInitialLoading) {
                     container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Carregando notícias...</p></div>';
@@ -2000,6 +2077,9 @@
                 'MACRO': {icon: '📊', label: 'Macro', color: '#f59e0b'},
                 'RUIDO': {icon: '📰', label: 'News', color: '#6b7280'},
             };
+
+            warmNewsImageCache(sorted, 14);
+
             const _newsHtml = sorted.map((news, index) => {
               try {
                 // Verificar se é notícia importante - REVALIDAR aqui para garantir
@@ -2026,7 +2106,7 @@
                 }
                 
                 const timeAgo = getTimeAgo(news.published);
-                const displayTitle = sanitizeHTML(news.translatedTitle || news.title || 'Sem título');
+                const displayTitle = sanitizeHTML(getNewsTitleForDisplay(news) || 'Titulo indisponivel em portugues');
                 const shortSource = shortenSource(news.source);
                 const safeSource = sanitizeHTML(shortSource);
                 
@@ -2047,8 +2127,10 @@
                 }
                 
                 // Thumbnail image
+                const thumbLoading = index < 8 ? 'eager' : 'lazy';
+                const thumbPriority = index < 4 ? 'high' : 'low';
                 const thumbHtml = news.image 
-                    ? `<div class="news-item-thumb"><img src="${news.image}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-newspaper\\'></i>'"></div>`
+                    ? `<div class="news-item-thumb"><img src="${sanitizeHTML(news.image)}" alt="" loading="${thumbLoading}" fetchpriority="${thumbPriority}" decoding="async" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-newspaper\\'></i>'"></div>`
                     : `<div class="news-item-thumb"><i class="fas fa-newspaper"></i></div>`;
                 
                 return `

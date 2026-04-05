@@ -28,6 +28,13 @@
                 }
             } catch(e) {}
         }
+
+        function isTranslationUsable(original, translated) {
+            const src = String(original || '').trim().toLowerCase();
+            const dst = String(translated || '').trim().toLowerCase();
+            if (!dst) return false;
+            return src !== dst;
+        }
         
         async function translateText(text) {
             if (!text || text.trim() === '') return text;
@@ -51,7 +58,7 @@
                             translated += data[0][i][0];
                         }
                     }
-                    if (translated && translated.trim() !== '') {
+                    if (translated && translated.trim() !== '' && isTranslationUsable(text, translated)) {
                         translationCache[cacheKey] = translated;
                         return translated;
                     }
@@ -66,7 +73,7 @@
                 
                 if (data.responseStatus === 200 && data.responseData?.translatedText) {
                     let translated = data.responseData.translatedText;
-                    if (!translated.includes('QUERY') && !translated.includes('MYMEMORY') && !translated.includes('PLEASE')) {
+                    if (!translated.includes('QUERY') && !translated.includes('MYMEMORY') && !translated.includes('PLEASE') && isTranslationUsable(text, translated)) {
                         translationCache[cacheKey] = translated;
                         return translated;
                     }
@@ -74,7 +81,7 @@
             } catch (e) {
             }
             
-            return text; // Retorna original se tudo falhar
+            return null; // Keep unresolved so UI can avoid English fallback
         }
 
         // Traduzir múltiplos textos em UMA chamada de API (bulk)
@@ -117,27 +124,27 @@
                     for (let i = 0; i < toTranslateIndices.length; i++) {
                         const idx = toTranslateIndices[i];
                         const translated = (lines[i] || '').trim();
-                        if (translated) {
+                        if (translated && isTranslationUsable(toTranslate[i], translated)) {
                             results[idx] = translated;
                             const cacheKey = toTranslate[i].trim().toLowerCase();
                             translationCache[cacheKey] = translated;
                         } else {
-                            results[idx] = toTranslate[i];
+                            results[idx] = null;
                         }
                     }
                 }
             } catch (e) {
-                // Fallback: preencher com originais
+                // Keep unresolved entries when bulk translation fails
                 for (let i = 0; i < toTranslateIndices.length; i++) {
                     if (!results[toTranslateIndices[i]]) {
-                        results[toTranslateIndices[i]] = toTranslate[i];
+                        results[toTranslateIndices[i]] = null;
                     }
                 }
             }
 
-            // Garantir que nenhum slot ficou vazio
+            // Keep unresolved slots as null so callers can decide rendering
             for (let i = 0; i < results.length; i++) {
-                if (!results[i]) results[i] = texts[i];
+                if (results[i] === undefined) results[i] = null;
             }
 
             return results;
@@ -162,10 +169,16 @@
                     const titles = chunk.map(n => n.title);
                     const translated = await translateBulk(titles);
                     for (let j = 0; j < chunk.length; j++) {
-                        chunk[j].translatedTitle = translated[j] || chunk[j].title;
+                        const translatedTitle = translated[j];
+                        if (translatedTitle) {
+                            chunk[j].translatedTitle = translatedTitle;
+                            chunk[j].translationFailed = false;
+                        } else {
+                            chunk[j].translationFailed = true;
+                        }
                     }
                 } catch (e) {
-                    chunk.forEach(n => { n.translatedTitle = n.title; });
+                    chunk.forEach(n => { n.translationFailed = true; });
                 }
             }));
 
@@ -174,7 +187,7 @@
 
         // Pré-traduzir notícias restantes (roda em background após renderizar)
         async function preTranslateNews() {
-            const untranslated = allNews.filter(n => !n.translatedTitle);
+            const untranslated = allNews.filter(n => !n.translatedTitle && !n.translationFailed);
             if (untranslated.length === 0) return;
 
             const CHUNK = 10;
@@ -185,11 +198,17 @@
                     const titles = chunk.map(n => n.title);
                     const translated = await translateBulk(titles);
                     for (let j = 0; j < chunk.length; j++) {
-                        chunk[j].translatedTitle = translated[j] || chunk[j].title;
-                        translatedCount++;
+                        const translatedTitle = translated[j];
+                        if (translatedTitle) {
+                            chunk[j].translatedTitle = translatedTitle;
+                            chunk[j].translationFailed = false;
+                            translatedCount++;
+                        } else {
+                            chunk[j].translationFailed = true;
+                        }
                     }
                 } catch (e) {
-                    chunk.forEach(n => { n.translatedTitle = n.title; });
+                    chunk.forEach(n => { n.translationFailed = true; });
                 }
                 // Pausa entre batches para não sobrecarregar
                 if (i + CHUNK < untranslated.length) {

@@ -22,7 +22,6 @@
             .map(k => k.trim())
             .filter(Boolean);
     let currentTwelveDataKeyIndex = 0;
-    const ALPHA_VANTAGE_KEY = APP_CONFIG.ALPHA_VANTAGE_KEY || '';
     
     // Função para alternar chaves Twelve Data
     function getTwelveDataKey() {
@@ -54,6 +53,7 @@
     let indicatorPrices = {};
     let indicatorChanges = {};
     let previousIndicatorPrices = {};
+    let indicatorUpdatedAt = {};
     let wsConnected = false;
     let currentIndicatorSymbol = null;
     let indicatorChartPeriod = '1d';
@@ -104,8 +104,26 @@
     // CACHE DE PREÇOS - localStorage para load instantâneo
     // ============================================
     const INDICATOR_CACHE_KEY = 'vc_macro_indicator_cache';
-    const INDICATOR_CACHE_TTL = 10 * 60 * 1000; // 10 min máx de defasagem
-    const INDICATOR_STALE_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 dias (apenas valores reais já obtidos)
+    const INDICATOR_CACHE_TTL = 10 * 60 * 1000; // startup cache válido só quando recente
+    const INDICATOR_MAX_QUOTE_AGE_MS = 7 * 24 * 60 * 60 * 1000; // manter último fechamento real por até 7 dias
+    const INDICATOR_STALE_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // permitir cache real antigo no startup (revalida em rede)
+
+    function markIndicatorUpdated(symbol, timestamp) {
+        if (!symbol) return;
+        const ts = Number(timestamp || Date.now());
+        indicatorUpdatedAt[symbol] = Number.isFinite(ts) && ts > 0 ? ts : Date.now();
+    }
+
+    function isIndicatorDataFresh(symbol) {
+        const ts = Number(indicatorUpdatedAt[symbol] || 0);
+        return ts > 0 && (Date.now() - ts) <= INDICATOR_MAX_QUOTE_AGE_MS;
+    }
+
+    function getFreshIndicatorPrice(symbol) {
+        if (!isIndicatorDataFresh(symbol)) return 0;
+        const value = Number(indicatorPrices[symbol] || 0);
+        return Number.isFinite(value) && value > 0 ? value : 0;
+    }
     
     function loadCachedPrices(options = {}) {
         try {
@@ -121,6 +139,19 @@
             if (cache.prices) Object.assign(indicatorPrices, cache.prices);
             if (cache.changes) Object.assign(indicatorChanges, cache.changes);
             if (cache.prev) Object.assign(previousIndicatorPrices, cache.prev);
+            if (cache.updatedAt && typeof cache.updatedAt === 'object') Object.assign(indicatorUpdatedAt, cache.updatedAt);
+
+            // Compatibilidade com cache legado sem updatedAt por símbolo:
+            // usa o timestamp do cache como fallback para permitir render instantâneo.
+            const fallbackTs = Number(cache.ts || Date.now());
+            const loadedSymbols = Object.keys(cache.prices || {});
+            loadedSymbols.forEach((symbol) => {
+                const hasTs = Number(indicatorUpdatedAt[symbol] || 0) > 0;
+                if (!hasTs) {
+                    indicatorUpdatedAt[symbol] = fallbackTs;
+                }
+            });
+
             macroLog(isFresh
                 ? '📦 Cache de preços reais carregado (fresco)'
                 : '📦 Cache de preços reais carregado (stale temporário, atualizando em rede)', 'success');
@@ -134,6 +165,7 @@
                 prices: indicatorPrices,
                 changes: indicatorChanges,
                 prev: previousIndicatorPrices,
+                updatedAt: indicatorUpdatedAt,
                 ts: Date.now()
             }));
         } catch (e) {}
@@ -255,6 +287,7 @@
         indicatorPrices[symbol] = price;
         indicatorChanges[symbol] = change;
         previousIndicatorPrices[symbol] = prevClose;
+        markIndicatorUpdated(symbol, (meta?.regularMarketTime || 0) * 1000 || Date.now());
         macroLog(`✅ ${MARKET_INDICATORS[symbol].name}: ${price.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}%)`, 'success');
         return true;
     }
@@ -380,6 +413,7 @@
                         indicatorPrices[internalSymbol] = price;
                         indicatorChanges[internalSymbol] = change;
                         previousIndicatorPrices[internalSymbol] = prevClose;
+                        markIndicatorUpdated(internalSymbol, Date.now());
                         successCount++;
 
                         macroLog(`✅ ${MARKET_INDICATORS[internalSymbol].name}: ${price.toFixed(2)} (${change >= 0 ? '+' : ''}${change.toFixed(2)}%)`, 'success');
@@ -436,7 +470,7 @@
     // ============================================
     function formatIndicatorPrice(symbol) {
         const config = MARKET_INDICATORS[symbol];
-        const rawPrice = indicatorPrices[symbol] || 0;
+        const rawPrice = getFreshIndicatorPrice(symbol);
         if (!rawPrice) return '--';
         
         const decimals = config.decimals || 2;
@@ -456,7 +490,7 @@
         const el = document.getElementById(`indicator-${symbol}`);
         if (!el) return;
         
-        const price = indicatorPrices[symbol];
+        const price = getFreshIndicatorPrice(symbol);
         const prevPrice = previousIndicatorPrices[symbol];
         const change = indicatorChanges[symbol];
         const hasData = price && price > 0;
@@ -494,7 +528,7 @@
         
         let html = symbols.map(symbol => {
             const config = MARKET_INDICATORS[symbol];
-            const price = indicatorPrices[symbol] || 0;
+            const price = getFreshIndicatorPrice(symbol);
             const change = indicatorChanges[symbol];
             const displayPrice = formatIndicatorPrice(symbol);
             const imgSize = 42; // Tamanho fixo para todos os ícones
@@ -551,8 +585,11 @@
         indicatorCandleData = null;
         
         const config = MARKET_INDICATORS[symbol];
-        const price = indicatorPrices[symbol] || 0;
-        const change = indicatorChanges[symbol] || 0;
+        const price = getFreshIndicatorPrice(symbol);
+        const hasData = price > 0;
+        const change = hasData && Number.isFinite(indicatorChanges[symbol]) ? indicatorChanges[symbol] : null;
+        const changeColor = change !== null ? (change >= 0 ? '#00ff88' : '#ff4444') : '#888';
+        const changeText = change !== null ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : 'Sem cotação fresca';
         const imgSize = config.imgSize || 48;
         
         // Remover modal antigo se existir
@@ -586,8 +623,8 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                         <div>
                             <div id="indicator-modal-price" style="font-size: 28px; font-weight: bold; color: white;">${formatIndicatorPrice(symbol)}</div>
-                            <div id="indicator-modal-change" style="font-size: 14px; color: ${change >= 0 ? '#00ff88' : '#ff4444'};">
-                                ${change >= 0 ? '+' : ''}${change.toFixed(2)}%
+                            <div id="indicator-modal-change" style="font-size: 14px; color: ${changeColor};">
+                                ${changeText}
                             </div>
                         </div>
                         <button id="indicator-ta-btn" style="padding: 10px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; border-radius: 12px; color: white; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px;">
@@ -802,12 +839,13 @@
                     drawIndicatorLineChart(indicatorCandleData);
                 }
                 // Extrair preço do gráfico se o indicador ainda não carregou
-                if (indicatorCandleData.length > 0 && (!indicatorPrices[symbol] || indicatorPrices[symbol] === 0)) {
+                if (indicatorCandleData.length > 0 && (!indicatorPrices[symbol] || indicatorPrices[symbol] === 0 || !isIndicatorDataFresh(symbol))) {
                     const latestClose = indicatorCandleData[indicatorCandleData.length - 1][4];
                     const firstOpen = indicatorCandleData[0][1] || latestClose;
                     if (latestClose > 0) {
                         indicatorPrices[symbol] = latestClose;
                         previousIndicatorPrices[symbol] = firstOpen;
+                        markIndicatorUpdated(symbol, Number(indicatorCandleData[indicatorCandleData.length - 1][0] || Date.now()));
                         const pctChange = firstOpen > 0 ? ((latestClose - firstOpen) / firstOpen) * 100 : 0;
                         indicatorChanges[symbol] = pctChange;
                         const modalPrice = document.getElementById('indicator-modal-price');
@@ -1724,12 +1762,13 @@
             macroLog(`✅ Gráfico carregado: ${indicatorCandleData.length} candles`, 'success');
             
             // Extrair preço do gráfico se o indicador ainda não carregou
-            if (indicatorCandleData.length > 0 && (!indicatorPrices[symbol] || indicatorPrices[symbol] === 0)) {
+            if (indicatorCandleData.length > 0 && (!indicatorPrices[symbol] || indicatorPrices[symbol] === 0 || !isIndicatorDataFresh(symbol))) {
                 const latestClose = indicatorCandleData[indicatorCandleData.length - 1][4];
                 const firstOpen = indicatorCandleData[0][1] || latestClose;
                 if (latestClose > 0) {
                     indicatorPrices[symbol] = latestClose;
                     previousIndicatorPrices[symbol] = firstOpen;
+                    markIndicatorUpdated(symbol, Number(indicatorCandleData[indicatorCandleData.length - 1][0] || Date.now()));
                     const pctChange = firstOpen > 0 ? ((latestClose - firstOpen) / firstOpen) * 100 : 0;
                     indicatorChanges[symbol] = pctChange;
                     const modalPrice = document.getElementById('indicator-modal-price');
@@ -2402,8 +2441,8 @@
     }
 
     // ============================================
-    // FED WATCH - DADOS VIA FRED API + CÁLCULO CME
-    // FRED para taxa atual (DFF), cálculo avançado para probabilidades
+    // FED WATCH - DADOS REAIS
+    // FRED para taxa atual (DFF/target range) + Polymarket para probabilidades
     // ============================================
     
     // Cache para próximas reuniões FOMC (buscadas da API FMP)
@@ -2443,6 +2482,115 @@
         } catch (_) {}
     }
 
+    function toFiniteNumber(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const num = parseFloat(String(value).replace(',', '.'));
+        return Number.isFinite(num) ? num : null;
+    }
+
+    function normalizeRateRange(currentRate, targetLower, targetUpper, effectiveRate) {
+        if (currentRate && typeof currentRate === 'object') {
+            const lower = toFiniteNumber(currentRate.lower);
+            const upper = toFiniteNumber(currentRate.upper);
+            if (lower !== null && upper !== null) {
+                return {
+                    lower: Math.min(lower, upper),
+                    upper: Math.max(lower, upper)
+                };
+            }
+        }
+
+        if (typeof currentRate === 'string') {
+            const nums = String(currentRate).match(/-?\d+(?:[.,]\d+)?/g);
+            if (nums && nums.length >= 2) {
+                const lower = toFiniteNumber(nums[0]);
+                const upper = toFiniteNumber(nums[1]);
+                if (lower !== null && upper !== null) {
+                    return {
+                        lower: Math.min(lower, upper),
+                        upper: Math.max(lower, upper)
+                    };
+                }
+            }
+        }
+
+        const parsedLower = toFiniteNumber(targetLower);
+        const parsedUpper = toFiniteNumber(targetUpper);
+        if (parsedLower !== null && parsedUpper !== null) {
+            return {
+                lower: Math.min(parsedLower, parsedUpper),
+                upper: Math.max(parsedLower, parsedUpper)
+            };
+        }
+
+        const parsedEffective = toFiniteNumber(effectiveRate);
+        if (parsedEffective !== null) {
+            return {
+                lower: parsedEffective - 0.125,
+                upper: parsedEffective + 0.125
+            };
+        }
+
+        return null;
+    }
+
+    function normalizeFedProbabilities(probabilities) {
+        if (!probabilities || typeof probabilities !== 'object') return null;
+
+        const cutRaw = toFiniteNumber(probabilities.cut != null ? probabilities.cut : probabilities.cutProb);
+        const holdRaw = toFiniteNumber(probabilities.hold != null ? probabilities.hold : probabilities.holdProb);
+        const hikeRaw = toFiniteNumber(probabilities.hike != null ? probabilities.hike : probabilities.hikeProb);
+
+        if (cutRaw === null || holdRaw === null || hikeRaw === null) return null;
+
+        const cut = Math.max(0, cutRaw);
+        const hold = Math.max(0, holdRaw);
+        const hike = Math.max(0, hikeRaw);
+        const total = cut + hold + hike;
+        if (total <= 0) return null;
+
+        const normalizedCut = Math.round((cut / total) * 1000) / 10;
+        const normalizedHold = Math.round((hold / total) * 1000) / 10;
+        const normalizedHike = Math.max(0, Math.round((100 - normalizedCut - normalizedHold) * 10) / 10);
+
+        return {
+            cut: normalizedCut,
+            hold: normalizedHold,
+            hike: normalizedHike
+        };
+    }
+
+    function normalizeFedData(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+
+        const effectiveRate = toFiniteNumber(raw.effectiveRate);
+        const targetUpper = toFiniteNumber(raw.targetUpper);
+        const targetLower = toFiniteNumber(raw.targetLower);
+        const currentRate = normalizeRateRange(raw.currentRate, targetLower, targetUpper, effectiveRate);
+
+        if (!currentRate) return null;
+
+        return {
+            ...raw,
+            effectiveRate,
+            targetUpper,
+            targetLower,
+            cpi: toFiniteNumber(raw.cpi),
+            unemployment: toFiniteNumber(raw.unemployment),
+            currentRate,
+            probabilities: normalizeFedProbabilities(raw.probabilities)
+        };
+    }
+
+    function hasUsableFedRateData(data) {
+        return !!(
+            data &&
+            data.currentRate &&
+            Number.isFinite(data.currentRate.lower) &&
+            Number.isFinite(data.currentRate.upper)
+        );
+    }
+
     let fedDataCache = {
         effectiveRate: null,  // DFF - Effective Federal Funds Rate
         targetUpper: null,    // DFEDTARU - Target Range Upper Limit
@@ -2455,13 +2603,13 @@
         loading: false
     };
 
-    const _persistedFed = _loadFedPersistedCache();
+    const _persistedFed = normalizeFedData(_loadFedPersistedCache());
     if (_persistedFed) {
         fedDataCache = { ...fedDataCache, ..._persistedFed };
     }
     
-    // Cache TTL: 30 minutos
-    const FED_CACHE_TTL = 30 * 60 * 1000;
+    // Cache TTL curto para manter Fed Watch próximo do tempo real
+    const FED_CACHE_TTL = 5 * 60 * 1000;
     
     // Proxy CORS para contornar restrições do browser
     const CORS_PROXY = 'https://corsproxy.io/?';
@@ -2680,23 +2828,26 @@
         }
 
         // Fallback: worker proxy (server-side key only)
-        let url = ''+ APP_CONFIG.CALENDAR_WORKER_URL +'/proxy/fred/fred/series/observations?series_id=' + seriesId + '&file_type=json&sort_order=' + sortOrder + '&limit=' + limit;
-        if (units) url += '&units=' + units;
+        if (CALENDAR_WORKER_URL) {
+            let url = CALENDAR_WORKER_URL + '/proxy/fred/fred/series/observations?series_id=' + seriesId + '&file_type=json&sort_order=' + sortOrder + '&limit=' + limit;
+            if (units) url += '&units=' + units;
 
-        // Tentativa 1: direto
-        try {
-            return await nativeHttpGet(url);
-        } catch (e) {
-            macroLog('⚠️ FRED direto falhou (' + seriesId + '): ' + e.message + ', tentando proxy...', 'warn');
+            // Tentativa 1: direto
+            try {
+                return await nativeHttpGet(url);
+            } catch (e) {
+                macroLog('⚠️ FRED direto falhou (' + seriesId + '): ' + e.message + ', tentando proxy...', 'warn');
+            }
+
+            // Tentativa 2: via CORS proxy
+            try {
+                return await nativeHttpGet(CORS_PROXY + encodeURIComponent(url));
+            } catch (e2) {
+                macroLog('❌ FRED proxy falhou (' + seriesId + '): ' + e2.message, 'error');
+            }
         }
 
-        // Tentativa 2: via CORS proxy
-        try {
-            return await nativeHttpGet(CORS_PROXY + encodeURIComponent(url));
-        } catch (e2) {
-            macroLog('❌ FRED proxy falhou (' + seriesId + '): ' + e2.message, 'error');
-            return { observations: [] };
-        }
+        return { observations: [] };
     }
     
     // ============================================
@@ -2706,10 +2857,12 @@
     // ============================================
     async function fetchFedRateFromAPI() {
         // Verificar cache
+        const normalizedCache = normalizeFedData(fedDataCache);
         if (fedDataCache.lastUpdate && 
             (Date.now() - fedDataCache.lastUpdate) < FED_CACHE_TTL &&
-            fedDataCache.effectiveRate) {
+            hasUsableFedRateData(normalizedCache)) {
             macroLog('📦 Usando cache Fed (válido)', 'info');
+            fedDataCache = { ...fedDataCache, ...normalizedCache };
             return fedDataCache;
         }
         
@@ -2721,6 +2874,7 @@
             let cpi = null;
             let unemployment = null;
             let dffDate = null, cpiDate = null, unrateDate = null;
+            let dataSource = 'FRED';
             
             // Fetch all FRED series in parallel (instead of sequential)
             const [dffResult, upperResult, lowerResult, cpiResult, unResult] = await Promise.allSettled([
@@ -2768,35 +2922,33 @@
                 const obs = unResult.value.observations.find(o => o.value !== '.');
                 if (obs) { unemployment = parseFloat(obs.value); unrateDate = obs.date; macroLog('✅ Desemprego: ' + unemployment + '%', 'success'); }
             }
-            
+
             // Se não conseguiu NENHUM dado da FRED, retornar null (sem dados fake)
             if (!effectiveRate && !targetUpper) {
                 macroLog('⚠️ FRED indisponível, sem dados reais disponíveis', 'warn');
                 return null; // Vai mostrar mensagem de erro real
             }
             
-            // Calcular probabilidades com modelo avançado
-            const probabilities = calculateFedProbabilities({
-                effectiveRate,
-                targetUpper,
-                targetLower,
-                cpi,
-                unemployment
-            });
-            
             // Atualizar cache
-            fedDataCache = {
+            const freshFedData = normalizeFedData({
                 effectiveRate,
                 targetUpper,
                 targetLower,
                 currentRate: { lower: targetLower || (effectiveRate - 0.125), upper: targetUpper || (effectiveRate + 0.125) },
                 cpi,
                 unemployment,
-                probabilities,
+                probabilities: null,
                 lastUpdate: Date.now(),
-                dataSource: 'FRED',
+                dataSource,
                 obsDate: { dff: dffDate, cpi: cpiDate, unrate: unrateDate }
-            };
+            });
+
+            if (!hasUsableFedRateData(freshFedData)) {
+                macroLog('⚠️ Dados do Fed vieram incompletos, sem faixa de juros válida', 'warn');
+                return null;
+            }
+
+            fedDataCache = freshFedData;
 
             _saveFedPersistedCache(fedDataCache);
             
@@ -2804,180 +2956,310 @@
             
         } catch (e) {
             macroLog('❌ Erro FRED API: ' + e.message, 'error');
-            
-            // Usar cache expirado se disponível, senão retornar null
-            if (fedDataCache.effectiveRate) {
-                macroLog('⚠️ Usando cache expirado', 'warn');
-                return fedDataCache;
-            }
-
-            const persisted = _loadFedPersistedCache();
-            if (persisted) {
-                macroLog('⚠️ Usando cache persistido do dispositivo', 'warn');
-                fedDataCache = { ...fedDataCache, ...persisted };
-                return fedDataCache;
-            }
-            
             macroLog('❌ Sem dados disponíveis para Fed Watch', 'error');
             return null; // Sem dados fake - vai mostrar erro
         }
     }
     
     // ============================================
-    // CÁLCULO DE PROBABILIDADES - MODELO CME FEDWATCH
-    // Baseado em: taxa atual, inflação, desemprego e ciclo econômico
+    // FED WATCH - PROBABILIDADES REAIS (POLYMARKET)
     // ============================================
-    function calculateFedProbabilities(data) {
-        const { effectiveRate, targetUpper, targetLower, cpi, unemployment } = data;
-        
-        if (!effectiveRate && !targetUpper) {
-            return null; // Sem dados reais, não inventar probabilidades
+    function _parsePolymarketArray(raw) {
+        if (Array.isArray(raw)) return raw;
+        if (typeof raw !== 'string') return [];
+
+        const trimmed = raw.trim();
+        if (!trimmed) return [];
+
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) return parsed;
+        } catch (_) {}
+
+        return trimmed
+            .split(',')
+            .map((item) => item.replace(/^\s*"|"\s*$/g, '').trim())
+            .filter(Boolean);
+    }
+
+    function _extractPolymarketYesProbability(market) {
+        if (!market || typeof market !== 'object') return null;
+
+        const outcomes = _parsePolymarketArray(market.outcomes);
+        const prices = _parsePolymarketArray(market.outcomePrices);
+
+        let yesIndex = outcomes.findIndex((item) => String(item || '').trim().toLowerCase() === 'yes');
+        if (yesIndex < 0 && outcomes.length === 2) yesIndex = 0;
+
+        let yesPrice = null;
+        if (yesIndex >= 0 && yesIndex < prices.length) {
+            yesPrice = toFiniteNumber(prices[yesIndex]);
         }
-        
-        const currentRate = effectiveRate || ((targetUpper + targetLower) / 2);
-        
-        // Meta de inflação do Fed é 2%
-        const inflationTarget = 2.0;
-        // Taxa neutra estimada (r-star) ~2.5%
-        const neutralRate = 2.5;
-        // Desemprego natural (NAIRU) ~4.0%
-        const naturalUnemployment = 4.0;
-        
-        // ============================================
-        // FATORES DE DECISÃO (pesos baseados na Regra de Taylor modificada)
-        // ============================================
-        let cutScore = 0;
-        let holdScore = 0;
-        let hikeScore = 0;
-        
-        // FATOR 1: Inflação vs Meta (peso alto - 40%)
-        if (cpi !== null) {
-            const inflationGap = cpi - inflationTarget;
-            
-            if (inflationGap > 2.0) {
-                // Inflação muito acima da meta (>4%)
-                hikeScore += 35;
-                holdScore += 10;
-            } else if (inflationGap > 1.0) {
-                // Inflação acima da meta (3-4%)
-                hikeScore += 20;
-                holdScore += 20;
-            } else if (inflationGap > 0.3) {
-                // Inflação levemente acima (2.3-3%)
-                holdScore += 30;
-                hikeScore += 10;
-            } else if (inflationGap > -0.3) {
-                // Inflação na meta (1.7-2.3%)
-                holdScore += 25;
-                cutScore += 15;
-            } else if (inflationGap > -1.0) {
-                // Inflação abaixo da meta (1-1.7%)
-                cutScore += 25;
-                holdScore += 15;
-            } else {
-                // Inflação muito baixa (<1%)
-                cutScore += 35;
-                holdScore += 5;
+
+        if (yesPrice === null) {
+            yesPrice = toFiniteNumber(
+                market.yesPrice != null ? market.yesPrice :
+                market.bestYesPrice != null ? market.bestYesPrice :
+                market.lastTradePrice
+            );
+        }
+
+        if (yesPrice === null) return null;
+        if (yesPrice > 1) return Math.max(0, Math.min(100, yesPrice));
+        return Math.max(0, Math.min(100, yesPrice * 100));
+    }
+
+    function _getPolymarketWeight(market) {
+        const candidates = [
+            market?.volume24hr,
+            market?.volume24h,
+            market?.oneDayVolume,
+            market?.volumeNum,
+            market?.volume,
+            market?.liquidityNum,
+            market?.liquidity
+        ];
+
+        for (const value of candidates) {
+            const num = toFiniteNumber(value);
+            if (num !== null && num > 0) {
+                return num;
             }
-        } else {
-            holdScore += 20; // Default se não tem dados
         }
-        
-        // FATOR 2: Taxa atual vs Taxa neutra (peso médio - 25%)
-        const rateGap = currentRate - neutralRate;
-        
-        if (rateGap > 3.0) {
-            // Taxa muito restritiva (>5.5%)
-            cutScore += 25;
-            holdScore += 5;
-        } else if (rateGap > 2.0) {
-            // Taxa restritiva (4.5-5.5%)
-            cutScore += 15;
-            holdScore += 15;
-        } else if (rateGap > 1.0) {
-            // Taxa levemente restritiva (3.5-4.5%)
-            holdScore += 20;
-            cutScore += 10;
-        } else if (rateGap > 0) {
-            // Taxa próxima do neutro (2.5-3.5%)
-            holdScore += 25;
-        } else if (rateGap > -1.0) {
-            // Taxa levemente acomodativa (1.5-2.5%)
-            holdScore += 15;
-            hikeScore += 10;
-        } else {
-            // Taxa muito acomodativa (<1.5%)
-            hikeScore += 20;
-            holdScore += 5;
+
+        return 1;
+    }
+
+    function _fedOutcomeFromQuestion(question) {
+        const q = String(question || '').toLowerCase();
+        if (!q) return null;
+
+        const fedContext = /(fomc|federal reserve|fed funds|interest rate|policy rate|\bfed\b)/.test(q);
+        if (!fedContext) return null;
+
+        if (/(no change|hold|unchanged|maintain|pause|stay at)/.test(q)) return 'hold';
+        if (/(cut|decrease|lower|drop|down|easing)/.test(q)) return 'cut';
+        if (/(hike|increase|raise|higher|up|tightening)/.test(q)) return 'hike';
+        return null;
+    }
+
+    function _isMarketNearMeetingDate(market, nextMeeting) {
+        const meetingDate = nextMeeting?.date instanceof Date ? nextMeeting.date : null;
+        if (!(meetingDate instanceof Date) || Number.isNaN(meetingDate.getTime())) return false;
+
+        const rawEndDate = market?.endDate || market?.end_date || market?.closeTime || market?.close_date;
+        if (!rawEndDate) return false;
+
+        const endTs = Date.parse(String(rawEndDate));
+        if (!Number.isFinite(endTs)) return false;
+
+        const meetingTs = meetingDate.getTime();
+        const diff = Math.abs(endTs - meetingTs);
+        return diff <= (14 * 24 * 60 * 60 * 1000);
+    }
+
+    function _isQuestionForUpcomingMeeting(question, nextMeeting) {
+        const q = String(question || '').toLowerCase();
+        if (!q) return false;
+
+        if (q.includes('next fed') || q.includes('next fomc')) {
+            return true;
         }
-        
-        // FATOR 3: Desemprego (peso médio - 25%)
-        if (unemployment !== null) {
-            const unemploymentGap = unemployment - naturalUnemployment;
-            
-            if (unemploymentGap > 1.5) {
-                // Desemprego muito alto (>5.5%)
-                cutScore += 25;
-            } else if (unemploymentGap > 0.5) {
-                // Desemprego elevado (4.5-5.5%)
-                cutScore += 15;
-                holdScore += 10;
-            } else if (unemploymentGap > -0.5) {
-                // Desemprego normal (3.5-4.5%)
-                holdScore += 20;
-            } else if (unemploymentGap > -1.0) {
-                // Desemprego baixo (3-3.5%)
-                holdScore += 15;
-                hikeScore += 5;
-            } else {
-                // Desemprego muito baixo (<3%)
-                hikeScore += 15;
-                holdScore += 5;
+
+        const meetingDate = nextMeeting?.date instanceof Date ? nextMeeting.date : null;
+        if (!(meetingDate instanceof Date) || Number.isNaN(meetingDate.getTime())) {
+            return true;
+        }
+
+        const months = [
+            'january', 'february', 'march', 'april', 'may', 'june',
+            'july', 'august', 'september', 'october', 'november', 'december'
+        ];
+        const monthShort = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+        const monthName = months[meetingDate.getMonth()];
+        const monthAbbr = monthShort[meetingDate.getMonth()];
+        const year = String(meetingDate.getFullYear());
+        const monthNum = String(meetingDate.getMonth() + 1).padStart(2, '0');
+
+        if (q.includes(`${year}-${monthNum}`) || q.includes(`${monthNum}/${year}`)) {
+            return true;
+        }
+
+        const hasMonth = q.includes(monthName) || q.includes(`${monthAbbr}.`) || q.includes(`${monthAbbr} `) || q.endsWith(monthAbbr);
+        const hasYear = q.includes(year);
+        if (hasMonth && (hasYear || !/\b20\d{2}\b/.test(q))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function _extractPolymarketEventsPayload(payload) {
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload?.data)) return payload.data;
+        return [];
+    }
+
+    async function _fetchPolymarketEventsPage(limit, offset) {
+        const safeLimit = Math.max(50, Math.min(1000, Number(limit) || 200));
+        const safeOffset = Math.max(0, Number(offset) || 0);
+        const baseUrl = `https://gamma-api.polymarket.com/events?closed=false&limit=${safeLimit}&offset=${safeOffset}`;
+        const endpoints = [
+            baseUrl,
+            CORS_PROXY + encodeURIComponent(baseUrl),
+            'https://api.allorigins.win/raw?url=' + encodeURIComponent(baseUrl)
+        ];
+
+        for (const endpoint of endpoints) {
+            try {
+                const data = await nativeHttpGet(endpoint, {
+                    connectTimeout: 5200,
+                    readTimeout: 5200,
+                    fetchTimeoutMs: 5200
+                });
+                const events = _extractPolymarketEventsPayload(data);
+                if (events.length > 0) return events;
+            } catch (_) {}
+        }
+
+        return [];
+    }
+
+    async function fetchFedProbabilitiesFromPolymarket(nextMeeting) {
+        const meetingDate = nextMeeting?.date instanceof Date ? nextMeeting.date : null;
+        const selectFedCandidates = (eventList) => eventList.filter((event) => {
+            const title = String(event?.title || event?.slug || '').trim();
+            const lower = title.toLowerCase();
+            const isFedContext = /(fomc|federal reserve|fed decision|fed decisions|fed rate|fed funds)/.test(lower);
+            if (!isFedContext) return false;
+
+            const eventDate = event?.endDate ? new Date(event.endDate) : null;
+            const nearMeeting = (
+                meetingDate instanceof Date &&
+                eventDate instanceof Date &&
+                Number.isFinite(eventDate.getTime()) &&
+                Math.abs(eventDate.getTime() - meetingDate.getTime()) <= (16 * 24 * 60 * 60 * 1000)
+            );
+
+            return nearMeeting || _isQuestionForUpcomingMeeting(title, nextMeeting);
+        });
+
+        const events = [];
+        const firstBatch = await _fetchPolymarketEventsPage(500, 0);
+        if (firstBatch.length > 0) {
+            events.push(...firstBatch);
+        }
+
+        let fedCandidates = selectFedCandidates(events);
+
+        if (!fedCandidates.length) {
+            const pageSize = 200;
+            const maxExtraPages = 3;
+            for (let page = 1; page <= maxExtraPages; page++) {
+                const offset = page * pageSize;
+                const pageEvents = await _fetchPolymarketEventsPage(pageSize, offset);
+                if (!pageEvents.length) break;
+                events.push(...pageEvents);
+                fedCandidates = selectFedCandidates(events);
+                if (fedCandidates.length) break;
             }
-        } else {
-            holdScore += 15; // Default se não tem dados
         }
-        
-        // FATOR 4: Momento do ciclo (peso baixo - 10%)
-        // Quanto mais tempo no mesmo nível, mais chance de mudança
-        // Como não temos histórico detalhado, usamos aproximação
-        if (currentRate > 5.0 && (cpi === null || cpi < 3.5)) {
-            // Alta taxa + inflação controlada = possível corte
-            cutScore += 10;
-        } else if (currentRate < 2.0 && (cpi === null || cpi > 2.5)) {
-            // Baixa taxa + inflação subindo = possível alta
-            hikeScore += 10;
-        } else {
-            holdScore += 10;
+
+        if (!events.length) {
+            macroLog('⚠️ Polymarket não retornou eventos ativos', 'warn');
+            return null;
         }
-        
-        // ============================================
-        // NORMALIZAÇÃO PARA 100%
-        // ============================================
-        const totalScore = cutScore + holdScore + hikeScore;
-        
-        if (totalScore === 0) {
-            return null; // Sem dados suficientes para calcular - não inventar
+
+        if (!fedCandidates.length) {
+            macroLog('⚠️ Polymarket sem evento de decisão do Fed para a próxima reunião', 'warn');
+            return null;
         }
-        
-        let cut = Math.round((cutScore / totalScore) * 100);
-        let hold = Math.round((holdScore / totalScore) * 100);
-        let hike = 100 - cut - hold;
-        
-        // Garantir valores mínimos realistas (mercado sempre precifica alguma chance)
-        if (cut < 5) cut = 5;
-        if (hike < 3) hike = 3;
-        if (hold < 10) hold = 10;
-        
-        // Renormalizar após ajustes mínimos
-        const total = cut + hold + hike;
-        cut = Math.round((cut / total) * 100);
-        hold = Math.round((hold / total) * 100);
-        hike = 100 - cut - hold;
-        
-        macroLog(`📊 Probabilidades calculadas: Corte ${cut}%, Manutenção ${hold}%, Alta ${hike}%`, 'info');
-        
-        return { cut, hold, hike };
+
+        const selectedEvent = fedCandidates.sort((a, b) => {
+            const ad = a?.endDate ? new Date(a.endDate).getTime() : Number.MAX_SAFE_INTEGER;
+            const bd = b?.endDate ? new Date(b.endDate).getTime() : Number.MAX_SAFE_INTEGER;
+            const meetingTs = meetingDate instanceof Date ? meetingDate.getTime() : ad;
+            const da = Math.abs(ad - meetingTs);
+            const db = Math.abs(bd - meetingTs);
+            if (da !== db) return da - db;
+
+            const av = toFiniteNumber(a?.volume24hr) || 0;
+            const bv = toFiniteNumber(b?.volume24hr) || 0;
+            return bv - av;
+        })[0];
+
+        const eventMarkets = Array.isArray(selectedEvent?.markets) ? selectedEvent.markets : [];
+        if (!eventMarkets.length) {
+            macroLog('⚠️ Evento Fed da Polymarket veio sem mercados', 'warn');
+            return null;
+        }
+
+        const totals = { cut: 0, hold: 0, hike: 0 };
+        const counts = { cut: 0, hold: 0, hike: 0 };
+        let marketsUsed = 0;
+
+        eventMarkets.forEach((market) => {
+            if (market?.active === false || market?.closed === true) return;
+
+            const question = String(market?.question || market?.title || '').toLowerCase();
+            if (!question) return;
+
+            const yesProbability = _extractPolymarketYesProbability(market);
+            if (yesProbability === null) return;
+
+            let bucket = null;
+            if (/(no change|unchanged|maintain|pause|stay at|no-change)/.test(question)) {
+                bucket = 'hold';
+            } else if (/(decrease|cut|lower|down|easing)/.test(question)) {
+                bucket = 'cut';
+            } else if (/(increase|hike|raise|higher|up|tightening)/.test(question)) {
+                bucket = 'hike';
+            }
+
+            if (!bucket) return;
+
+            totals[bucket] += yesProbability;
+            counts[bucket] += 1;
+            marketsUsed++;
+        });
+
+        if (marketsUsed === 0) {
+            macroLog('⚠️ Mercados do evento Fed não puderam ser classificados em corte/manutenção/alta', 'warn');
+            return null;
+        }
+
+        let rawCut = Math.max(0, totals.cut);
+        let rawHold = Math.max(0, totals.hold);
+        let rawHike = Math.max(0, totals.hike);
+
+        if (rawHold <= 0 && (rawCut > 0 || rawHike > 0)) {
+            rawHold = Math.max(0, 100 - rawCut - rawHike);
+        }
+
+        const normalized = normalizeFedProbabilities({
+            cut: rawCut,
+            hold: rawHold,
+            hike: rawHike
+        });
+
+        if (!normalized) {
+            macroLog('⚠️ Polymarket retornou dados inválidos para normalização', 'warn');
+            return null;
+        }
+
+        macroLog(
+            `✅ Polymarket Fed: corte ${normalized.cut.toFixed(1)}% | manutenção ${normalized.hold.toFixed(1)}% | alta ${normalized.hike.toFixed(1)}%`,
+            'success'
+        );
+
+        return {
+            ...normalized,
+            source: 'Polymarket (Events API)',
+            eventTitle: String(selectedEvent?.title || selectedEvent?.slug || 'Fed decision event'),
+            marketsUsed,
+            fetchedAt: Date.now()
+        };
     }
 
     async function updateFedWatch() {
@@ -2986,14 +3268,19 @@
         const currentRateEl = document.getElementById('current-fed-rate');
         
         if (!container) return;
+        if (window.__vcFedWatchUpdating) return;
+        window.__vcFedWatchUpdating = true;
         
-        // Mostrar loading
-        container.innerHTML = `
-            <div style="text-align: center; padding: 20px; color: #888;">
-                <i class="fas fa-spinner fa-spin" style="font-size: 20px; margin-bottom: 8px;"></i>
-                <p style="margin: 0;">Carregando dados do Fed...</p>
-            </div>
-        `;
+        const hasRenderedData = !!container.querySelector('.fed-prob-item');
+        if (!hasRenderedData) {
+            // Mostrar loading apenas quando não há dados prévios renderizados
+            container.innerHTML = `
+                <div style="text-align: center; padding: 20px; color: #888;">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 20px; margin-bottom: 8px;"></i>
+                    <p style="margin: 0;">Carregando dados do Fed...</p>
+                </div>
+            `;
+        }
         
         // Safety timeout: if API calls hang, show error after 20s
         let _fedWatchDone = false;
@@ -3017,13 +3304,6 @@
         }, 20000);
         
         try {
-        // Buscar dados atualizados via Alpha Vantage
-        const fedData = await fetchFedRateFromAPI();
-        
-        if (_fedWatchDone) return; // Safety timer already fired
-        _fedWatchDone = true;
-        clearTimeout(_fedWatchSafetyTimer);
-        
         const today = new Date();
         let nextMeeting = { label: 'A definir', daysUntil: '--', date: null };
         try {
@@ -3042,9 +3322,25 @@
         // Formatar data da próxima reunião
         const meetingDateFormatted = nextMeeting.date ? nextMeeting.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
         if (nextMeetingEl) nextMeetingEl.innerHTML = `Reunião: <strong>${meetingDateFormatted}</strong> (${nextMeeting.daysUntil} dias)`;
+
+        // Buscar taxa e probabilidades em paralelo para reduzir latência total.
+        const [fedResult, probsResult] = await Promise.allSettled([
+            fetchFedRateFromAPI(),
+            fetchFedProbabilitiesFromPolymarket(nextMeeting)
+        ]);
+
+        if (_fedWatchDone) return; // Safety timer already fired
+        _fedWatchDone = true;
+        clearTimeout(_fedWatchSafetyTimer);
+
+        if (fedResult.status === 'rejected') {
+            macroLog('⚠️ Erro ao buscar taxa Fed: ' + (fedResult.reason?.message || fedResult.reason || 'desconhecido'), 'warn');
+        }
+
+        const fedData = normalizeFedData(fedResult.status === 'fulfilled' ? fedResult.value : null);
         
         // Se não há dados da API, mostrar erro
-        if (!fedData || !fedData.currentRate) {
+        if (!hasUsableFedRateData(fedData)) {
             if (currentRateEl) currentRateEl.textContent = '--';
             const lastDecisionEl = document.getElementById('last-fed-decision');
             if (lastDecisionEl) lastDecisionEl.innerHTML = `<span style="color: var(--text-muted);">--</span>`;
@@ -3062,7 +3358,10 @@
         }
         
         const rate = fedData.currentRate;
-        const probs = fedData.probabilities;
+        const probs = probsResult.status === 'fulfilled' ? probsResult.value : null;
+        if (probsResult.status === 'rejected') {
+            macroLog('⚠️ Erro ao buscar probabilidades no Polymarket: ' + (probsResult.reason?.message || probsResult.reason || 'desconhecido'), 'warn');
+        }
         
         if (currentRateEl) currentRateEl.textContent = `${rate.lower.toFixed(2)}% - ${rate.upper.toFixed(2)}%`;
         
@@ -3080,7 +3379,7 @@
                 <div style="text-align: center; padding: 20px; color: #f59e0b;">
                     <i class="fas fa-chart-bar" style="font-size: 28px; margin-bottom: 10px; opacity: 0.7;"></i>
                     <p style="margin: 0; font-weight: 600;">Taxa Atual: ${rate.lower.toFixed(2)}% - ${rate.upper.toFixed(2)}%</p>
-                    <p style="margin: 8px 0 0; font-size: 12px; color: #888;">Probabilidades temporariamente indisponíveis.<br>APIs de mercado não retornaram dados.</p>
+                    <p style="margin: 8px 0 0; font-size: 12px; color: #888;">Probabilidades indisponíveis no Polymarket no momento.<br>Nenhuma estimativa local foi aplicada.</p>
                     <button onclick="window.updateFedWatch()" style="margin-top: 12px; padding: 8px 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: white; cursor: pointer; font-size: 12px;">
                         <i class="fas fa-sync-alt"></i> Tentar novamente
                     </button>
@@ -3097,6 +3396,7 @@
         
         // Fonte dos dados
         const dataSource = fedData.dataSource || 'FRED';
+        const probabilitySource = probs.source || 'Polymarket';
         
         container.innerHTML = `
             <div class="fed-prob-item">
@@ -3123,14 +3423,15 @@
             <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 10px; color: #555; display: flex; flex-direction: column; gap: 4px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <span><i class="fas fa-sync-alt"></i> ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} BRT</span>
-                    <span><i class="fas fa-database"></i> ${dataSource}</span>
+                    <span><i class="fas fa-database"></i> Taxa: ${dataSource}</span>
                 </div>
                 <div style="font-size: 9px; color: #444;">
+                    Probabilidades: ${probabilitySource}${probs.eventTitle ? ' · ' + probs.eventTitle : ''}${probs.marketsUsed ? ' (' + probs.marketsUsed + ' mercados)' : ''}<br>
                     DFF: ${fedData.effectiveRate ? fedData.effectiveRate.toFixed(2) + '%' : '--'}${fedData.obsDate?.dff ? ' (' + new Date(fedData.obsDate.dff + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit'}) + ')' : ''} | CPI: ${fedData.cpi ? fedData.cpi.toFixed(1) + '%' : '--'}${fedData.obsDate?.cpi ? ' (' + new Date(fedData.obsDate.cpi + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit'}) + ')' : ''} | Desemp: ${fedData.unemployment ? fedData.unemployment.toFixed(1) + '%' : '--'}${fedData.obsDate?.unrate ? ' (' + new Date(fedData.obsDate.unrate + 'T00:00:00').toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit'}) + ')' : ''}
                 </div>
                 <div style="margin-top: 6px; padding: 6px 8px; background: rgba(234,179,8,0.10); border-radius: 6px; font-size: 9px; color: #b89a00; line-height: 1.4;">
                     <i class="fas fa-info-circle" style="margin-right: 3px;"></i>
-                    Modelo Regra de Taylor com dados reais do FRED (DFF diário, CPI e Desemprego mensais). As probabilidades mudam quando novos dados são publicados pelo Fed/BLS. Não reflete o CME FedWatch oficial.
+                    Probabilidades exibidas apenas de mercados ativos do Polymarket (Gamma API), sem modelo interno de estimativa.
                 </div>
             </div>
         `;
@@ -3150,6 +3451,8 @@
                     </div>
                 `;
             }
+        } finally {
+            window.__vcFedWatchUpdating = false;
         }
     }
 
@@ -4922,6 +5225,7 @@
     // Preload em background para abrir a aba MACRO já com dados prontos.
     setTimeout(() => {
         try { warmupMacroPrices(); } catch(_) {}
+        try { updateFedWatch(); } catch(_) {}
     }, 120);
 
     macroLog('✓ macro-section.js v22.0 carregado! (IDs ÚNICOS)', 'success');

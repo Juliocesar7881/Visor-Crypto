@@ -4,11 +4,19 @@
         let currentSection = 'home'; // Guarda seção atual
         let lastBackPressTime = 0;
         let _lastModalCloseTime = 0; // Guard contra double-fire do back button
+        let _lastBackEventAt = 0;
 
         // Dirty flags para renderização adiada de seções inativas
         const _dirtyFlags = { home: false, news: false, analysis: false, whale: false };
 
         function handleBackButton() {
+            const now = Date.now();
+            // Multiple Android back listeners can fire almost simultaneously.
+            if (now - _lastBackEventAt < 250) {
+                return true;
+            }
+            _lastBackEventAt = now;
+
             // ====== WHALE PERIOD MODAL ======
             const whalePeriodModal = document.getElementById('whale-period-modal');
             if (whalePeriodModal) {

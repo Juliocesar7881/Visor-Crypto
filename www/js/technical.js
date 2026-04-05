@@ -13,6 +13,19 @@
         const TA_POPSTATE_SKIP_FLAG = '__vcSkipNextLifecyclePopstate';
         let _taSharedCallsCache = [];
         let _taSharedCallsCacheTs = 0;
+        let taModalCloseTimer = null;
+        const TA_MODAL_CLOSE_MS = 320;
+
+        function cancelPendingTAModalClose() {
+            if (taModalCloseTimer) {
+                clearTimeout(taModalCloseTimer);
+                taModalCloseTimer = null;
+            }
+            const modal = document.getElementById('ta-modal');
+            if (modal) modal.classList.remove('closing');
+        }
+
+        window.cancelPendingTAModalClose = cancelPendingTAModalClose;
         
         // Cache sistema para análise técnica
         function getTACache(symbol) {
@@ -60,6 +73,26 @@
             return clean.endsWith('USDT') ? clean : `${clean}USDT`;
         }
 
+        const CALL_INTERVAL_KEYS = ['1h', '2h', '4h'];
+
+        function buildDefaultCallIntervalMap(fillValue) {
+            const map = {};
+            CALL_INTERVAL_KEYS.forEach((key) => {
+                map[key] = fillValue;
+            });
+            return map;
+        }
+
+        function normalizeCallIntervalMap(source, fillValue) {
+            const map = (source && typeof source === 'object') ? { ...source } : {};
+            CALL_INTERVAL_KEYS.forEach((key) => {
+                if (map[key] === undefined) {
+                    map[key] = fillValue;
+                }
+            });
+            return map;
+        }
+
         function normalizeSharedCall(rawCall) {
             if (!rawCall || typeof rawCall !== 'object') return null;
             const symbol = normalizeCallSymbol(rawCall.symbol || rawCall.short || rawCall.name || '');
@@ -78,9 +111,9 @@
                 time,
                 entryPrice,
                 price: rawCall.price != null ? rawCall.price : (entryPrice > 0 ? entryPrice : ''),
-                prices: (rawCall.prices && typeof rawCall.prices === 'object') ? rawCall.prices : { '1h': null, '4h': null, '12h': null, '24h': null },
-                pnl: (rawCall.pnl && typeof rawCall.pnl === 'object') ? rawCall.pnl : { '1h': null, '4h': null, '12h': null, '24h': null },
-                checked: (rawCall.checked && typeof rawCall.checked === 'object') ? rawCall.checked : { '1h': false, '4h': false, '12h': false, '24h': false }
+                prices: normalizeCallIntervalMap(rawCall.prices, null),
+                pnl: normalizeCallIntervalMap(rawCall.pnl, null),
+                checked: normalizeCallIntervalMap(rawCall.checked, false)
             };
         }
 
@@ -273,9 +306,8 @@
         const CALL_HISTORY_KEY = 'vc_call_history';
         const CALL_CHECK_INTERVALS = [
             { key: '1h', ms: 3600000, label: '1h' },
-            { key: '4h', ms: 14400000, label: '4h' },
-            { key: '12h', ms: 43200000, label: '12h' },
-            { key: '24h', ms: 86400000, label: '24h' }
+            { key: '2h', ms: 7200000, label: '2h' },
+            { key: '4h', ms: 14400000, label: '4h' }
         ];
         
         function getCallHistory() {
@@ -417,9 +449,9 @@
                 confidence: normalizedConfidence,
                 entryPrice: normalizedEntry,
                 timestamp: Date.now(),
-                prices: { '1h': null, '4h': null, '12h': null, '24h': null },
-                pnl: { '1h': null, '4h': null, '12h': null, '24h': null },
-                checked: { '1h': false, '4h': false, '12h': false, '24h': false },
+                prices: buildDefaultCallIntervalMap(null),
+                pnl: buildDefaultCallIntervalMap(null),
+                checked: buildDefaultCallIntervalMap(false),
                 analytics: analytics
             });
             
@@ -443,11 +475,9 @@
             
             for (const call of history) {
                 // Ensure new fields exist for older records
-                if (!call.prices || typeof call.prices !== 'object') call.prices = { '1h': null, '4h': null, '12h': null, '24h': null };
-                if (!call.pnl || typeof call.pnl !== 'object') call.pnl = { '1h': null, '4h': null, '12h': null, '24h': null };
-                if (!call.checked || typeof call.checked !== 'object') call.checked = { '1h': false, '4h': false, '12h': false, '24h': false };
-                if (call.checked['24h'] === undefined) call.checked['24h'] = false;
-                if (call.prices['24h'] === undefined) call.prices['24h'] = null;
+                call.prices = normalizeCallIntervalMap(call.prices, null);
+                call.pnl = normalizeCallIntervalMap(call.pnl, null);
+                call.checked = normalizeCallIntervalMap(call.checked, false);
 
                 const callTimestamp = Number(call.timestamp || call.time || 0);
                 const entry = Number(call.entryPrice || call.price || 0);
@@ -584,11 +614,20 @@
             
             const modal = document.getElementById('ta-modal');
             if (!modal) return;
-            modal.classList.remove('active');
-            const chartModal = document.getElementById('chart-modal');
-            const keepLocked = !!(chartModal && chartModal.classList.contains('active'));
-            document.body.style.overflow = keepLocked ? 'hidden' : '';
-            document.documentElement.style.overflow = keepLocked ? 'hidden' : '';
+            cancelPendingTAModalClose();
+            if (!modal.classList.contains('active') && !modal.classList.contains('closing')) return;
+            if (!modal.classList.contains('closing')) {
+                modal.classList.add('closing');
+            }
+
+            taModalCloseTimer = setTimeout(() => {
+                modal.classList.remove('active', 'closing');
+                const chartModal = document.getElementById('chart-modal');
+                const keepLocked = !!(chartModal && (chartModal.classList.contains('active') || chartModal.classList.contains('closing')));
+                document.body.style.overflow = keepLocked ? 'hidden' : '';
+                document.documentElement.style.overflow = keepLocked ? 'hidden' : '';
+                taModalCloseTimer = null;
+            }, TA_MODAL_CLOSE_MS);
             
             // Voltar para o modal do gráfico
             taNavigationStack.pop();

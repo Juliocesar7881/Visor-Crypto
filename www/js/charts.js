@@ -7,6 +7,8 @@
         let chartInstance = null;
         let candleData = null;
         let chartRefreshInterval = null; // Intervalo para atualização em tempo real
+        let chartModalCloseTimer = null;
+        const CHART_MODAL_CLOSE_MS = 300;
 
         async function openChartModal(symbol) {
             try {
@@ -27,8 +29,24 @@
             if (priceEl) priceEl.innerHTML = `$${price.toLocaleString(undefined, {minimumFractionDigits: 2})} <span class="${change >= 0 ? 'pnl-positive' : 'pnl-negative'}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</span>`;
             
             // Mostrar modal
-            if (modalEl) modalEl.classList.add('active');
+            if (modalEl) {
+                const wasOpen = modalEl.classList.contains('active');
+                if (chartModalCloseTimer) {
+                    clearTimeout(chartModalCloseTimer);
+                    chartModalCloseTimer = null;
+                }
+                modalEl.classList.remove('closing');
+                if (!wasOpen) {
+                    modalEl.classList.remove('active');
+                    requestAnimationFrame(() => {
+                        modalEl.classList.add('active');
+                    });
+                } else {
+                    modalEl.classList.add('active');
+                }
+            }
             document.body.style.overflow = 'hidden';
+            document.documentElement.style.overflow = 'hidden';
             
             // Reset filtro para 15m (padrão)
             currentChartPeriod = '15m';
@@ -57,21 +75,42 @@
 
         function closeChartModal() {
             const el = document.getElementById('chart-modal');
-            if (el) el.classList.remove('active');
-            document.body.style.overflow = '';
-            currentChartSymbol = null;
-            candleData = null;
-            
-            // Parar atualização em tempo real
-            if (chartRefreshInterval) {
-                clearInterval(chartRefreshInterval);
-                chartRefreshInterval = null;
+            if (!el) return;
+
+            if (chartModalCloseTimer) {
+                clearTimeout(chartModalCloseTimer);
+                chartModalCloseTimer = null;
             }
-            
-            // Destruir gráfico
-            if (chartInstance) {
-                chartInstance = null;
-            }
+
+            if (!el.classList.contains('active') && !el.classList.contains('closing')) return;
+            if (el.classList.contains('closing')) return;
+
+            el.classList.add('closing');
+
+            chartModalCloseTimer = setTimeout(() => {
+                el.classList.remove('active', 'closing');
+
+                const taModal = document.getElementById('ta-modal');
+                const keepLocked = !!(taModal && (taModal.classList.contains('active') || taModal.classList.contains('closing')));
+                document.body.style.overflow = keepLocked ? 'hidden' : '';
+                document.documentElement.style.overflow = keepLocked ? 'hidden' : '';
+
+                currentChartSymbol = null;
+                candleData = null;
+
+                // Parar atualização em tempo real
+                if (chartRefreshInterval) {
+                    clearInterval(chartRefreshInterval);
+                    chartRefreshInterval = null;
+                }
+
+                // Destruir gráfico
+                if (chartInstance) {
+                    chartInstance = null;
+                }
+
+                chartModalCloseTimer = null;
+            }, CHART_MODAL_CLOSE_MS);
         }
 
 
