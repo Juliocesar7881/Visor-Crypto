@@ -1,0 +1,237 @@
+VISOR CRYPTO - ARQUITETURA, ESCALABILIDADE E PLANO PARA ESCALA MASSIVA
+Data: 2026-03-18
+
+====================================================================
+1) RESUMO EXECUTIVO
+====================================================================
+
+Estado atual:
+- O app e hibrido (Capacitor) com frontend JS rodando no cliente.
+- Parte dos dados vem direto de APIs publicas (Binance, CoinGecko, Yahoo etc).
+- Existe um Cloudflare Worker para calendario/historico/liquidacoes/calls.
+- Existe tambem um backend em Render para endpoints de analise avancada (V4).
+
+Problema principal:
+- A arquitetura esta funcional para escala pequena/media, mas nao para escala massiva.
+- O sistema depende de polling frequente no cliente e de multiplas chamadas por usuario.
+- Em picos, o gargalo tende a concentrar no backend Render e em limites de APIs externas.
+
+Objetivo deste documento:
+- Explicar como a arquitetura esta montada hoje.
+- Explicar porque ela nao e escalavel do jeito atual.
+- Mostrar como tornar escalavel para "usuarios praticamente infinitos" mantendo atualizacao real.
+
+====================================================================
+2) COMO A ARQUITETURA ESTA MONTADA HOJE
+====================================================================
+
+2.1 Camada Cliente (App)
+- Modulos JS com atualizacao por WebSocket + polling + fetch.
+- Precos: WebSocket Binance e fallback REST.
+- Dashboard/Signals: scans periodicos, analise tecnica por simbolo com varias fontes.
+- Macro: polling periodico para indicadores/economia.
+- TA v4: chamadas para backend em Render para partes de analise coletiva/notificacoes.
+
+2.2 Camada Edge (Cloudflare Worker)
+- Endpoints de negocio:
+  - /calendar
+  - /history
+  - /liquidations
+  - /calls (GET/POST)
+  - /ai-summary
+- Usa KV para cache e persistencia leve.
+- Tem rate limit por IP em endpoints criticos.
+- Tem cron para pre-processar/acumular parte dos dados.
+
+2.3 Backend adicional (Render)
+- Endpoints /analysis, /collective, /notifications etc.
+- Atua como camada central para features avancadas do motor V4.
+- Pode virar gargalo em carga alta se nao houver autoscaling robusto.
+
+2.4 Dependencias externas
+- Binance, CoinGecko, Yahoo, FRED, FMP, Groq e outras fontes.
+- Cada fonte possui limite de taxa, disponibilidade e latencia proprios.
+
+====================================================================
+3) POR QUE NAO ESTA ESCALAVEL NO MODELO ATUAL
+====================================================================
+
+3.1 Fan-out de requisicoes por usuario
+- Um unico usuario ativo pode disparar varias requisicoes por minuto em multiplas telas.
+- Quando N usuarios fazem isso ao mesmo tempo, custo cresce quase linearmente com N.
+- Em dashboard/scans, o custo pode crescer mais que linear por volume de simbolos e etapas.
+
+3.2 Polling pesado no cliente
+- Polling de 30s, 2s, 5min etc em diferentes modulos.
+- Mesmo sem mudanca de dados, as chamadas continuam ocorrendo.
+- Isso aumenta custo de rede e pressao em APIs/backends sem necessidade.
+
+3.3 Dependencia de APIs de terceiros sem camada forte de agregacao
+- Muitas chamadas saem direto do app para terceiros.
+- Isso dificulta controle central de cache, quota, priorizacao e degradacao elegante.
+- Se um provedor cair ou limitar, o cliente sofre diretamente.
+
+3.4 Backend central em Render para funcoes criticas
+- Em picos, endpoints de analise coletiva e notificacoes podem saturar.
+- Sem arquitetura orientada a fila/evento, bursts derrubam latencia e estabilidade.
+
+3.5 Persistencia e mensageria nao desenhadas para escala extrema
+- KV e excelente para leitura/cache, mas nao substitui banco transacional + stream.
+- Falta um barramento de eventos global para distribuir atualizacoes em tempo real.
+
+3.6 Seguranca e governanca de chaves
+- Chaves no cliente elevam risco de abuso e quota theft.
+- Em escala grande, abuso de key acelera throttling de provedores e indisponibilidade.
+
+====================================================================
+4) O QUE SIGNIFICA "ESCALAR PARA INFINITOS USUARIOS"
+====================================================================
+
+Tecnicamente, "infinito" nao existe. O alvo real e:
+- Escala horizontal elastica.
+- Custo previsivel por usuario ativo.
+- Degradacao graciosa em picos.
+- Baixo acoplamento com limites de fornecedores.
+
+Ou seja: suportar crescimento muito alto sem reescrever toda semana.
+
+====================================================================
+5) ARQUITETURA ALVO (ESCALAVEL + TEMPO REAL)
+====================================================================
+
+5.1 Principio central
+Trocar o modelo "cada cliente busca tudo" por:
+- "plataforma agrega uma vez" +
+- "distribui para muitos clientes".
+
+5.2 Camadas recomendadas
+
+A) Ingestion Layer (coleta)
+- Workers/servicos dedicados por provedor (Binance, FRED, FMP etc).
+- Conexao persistente com providers (WS quando disponivel).
+- Retry, circuit breaker e backoff por provedor.
+
+B) Stream/Bus (eventos)
+- Kafka / Pulsar / Redpanda / NATS JetStream.
+- Topicos por dominio: preco, orderflow, macro, news, signal.
+- Permite absorver bursts e desacoplar produtores/consumidores.
+
+C) Processing Layer (tempo real)
+- Microservicos stateless consumindo topicos.
+- Agregacoes por janela (1s, 5s, 1m, 5m).
+- Features de sinal em pipeline incremental (nao recalcular tudo sempre).
+
+D) Serving Layer
+- Cache quente global: Redis/Dragonfly/KeyDB.
+- Storage de series temporais: ClickHouse/Timescale/BigQuery.
+- KV/CDN para payloads estaticos e snapshots.
+
+E) Realtime Delivery
+- Gateway WebSocket/SSE global (Cloudflare, Fly, ou k8s ingress dedicado).
+- Pub/Sub por canal simbolo/sala (ex: btcusdt, macro_us, calls_global).
+- Fan-out eficiente: 1 atualizacao processada -> N clientes.
+
+F) API Gateway
+- Auth, rate limit por plano, quotas, feature flags.
+- Response cache e ETag para endpoints nao realtime.
+
+G) Control Plane / Observabilidade
+- OpenTelemetry, metrics, tracing, logs estruturados.
+- SLOs (latencia P95/P99, erro, lag de stream, custo por 1k usuarios).
+- Alertas e auto-healing.
+
+====================================================================
+6) COMO MANTER ATUALIZACAO REAL EM ESCALA MASSIVA
+====================================================================
+
+6.1 Regras de ouro
+- Requisitar menos, empurrar mais (push > pull).
+- Agregar antes de distribuir.
+- Enviar so deltas, nao snapshot completo toda hora.
+- Priorizar canais de alto valor (simbolos visiveis/tela ativa).
+
+6.2 Estrategia pratica
+- Precos/orderflow: ingestao por WS do provedor + broadcast por WS/SSE proprio.
+- Macro/news: polling centralizado no backend + cache + push de eventos de mudanca.
+- Signals: pipeline assinado por eventos (novo candle, nova anomalia, novo OI).
+- Cliente recebe stream consolidado e faz render local leve.
+
+6.3 Controle de custo
+- Throttling adaptativo por usuario/canal.
+- Sampling para telemetria pesada.
+- Atualizacao progressiva por prioridade (on-screen first).
+
+====================================================================
+7) ROADMAP DE MIGRACAO (SEM QUEBRAR O APP)
+====================================================================
+
+Fase 0 - Higiene imediata (1-2 semanas)
+- Remover segredos do cliente.
+- Centralizar chamadas sensiveis no edge/backend.
+- Definir SLO inicial e dashboard de observabilidade.
+
+Fase 1 - Edge-first e cache inteligente (2-4 semanas)
+- Padronizar endpoints no Worker para tudo que e "fan-out".
+- Implementar cache por chave de negocio + stale-while-revalidate.
+- Reduzir polling no app e aumentar consumo de dados agregados.
+
+Fase 2 - Realtime backbone (4-8 semanas)
+- Introduzir bus de eventos (NATS/Kafka).
+- Criar servico de fan-out WS/SSE por canais.
+- Migrar modulo de precos e orderflow para push nativo.
+
+Fase 3 - Analytics e signals em pipeline (6-12 semanas)
+- Processamento incremental de indicadores.
+- Persistencia temporal otimizada.
+- Motor de sinais desacoplado do request de usuario.
+
+Fase 4 - Escala global (continuo)
+- Multi-regiao ativa.
+- Failover automatico por regiao/provedor.
+- Testes de carga recorrentes e capacity planning mensal.
+
+====================================================================
+8) METAS DE CAPACIDADE (EXEMPLO REALISTA)
+====================================================================
+
+Meta SLO inicial:
+- P95 latencia API <= 250ms (cache hit)
+- P99 latencia stream <= 1s
+- Erro <= 0.5%
+
+Meta de capacidade evolutiva:
+- Etapa A: 1k simultaneos estaveis
+- Etapa B: 10k simultaneos estaveis
+- Etapa C: 100k simultaneos estaveis
+
+Com arquitetura de event streaming + fan-out, escalar de 100k para mais passa a ser
+problema de infraestrutura/custo, nao de redesign completo do produto.
+
+====================================================================
+9) CHECKLIST PRIORITARIO PARA ESTE PROJETO
+====================================================================
+
+1. Corrigir URL real do Worker no config de producao.
+2. Tirar chaves do cliente (migrar para secrets server-side).
+3. Reduzir polling duplicado e intervalos agressivos no app.
+4. Consolidar chamadas de dados em endpoints agregados no edge.
+5. Introduzir WS/SSE proprio para atualizacao de preco/sinais.
+6. Colocar observabilidade forte antes de escalar campanhas.
+7. Definir limites por feature/plano e degradacao graciosa.
+
+====================================================================
+10) CONCLUSAO
+====================================================================
+
+A arquitetura atual funciona, mas cresce com friccao porque o cliente ainda faz
+muitas chamadas e o backend de analise pode virar gargalo.
+
+Para chegar em escala massiva com atualizacao real, o caminho e:
+- centralizar ingestao,
+- processar por eventos,
+- distribuir por push,
+- usar cache global,
+- e operar com observabilidade + autoscaling.
+
+Isso transforma a plataforma de "app consumindo APIs" para "sistema realtime
+multi-tenant escalavel".
