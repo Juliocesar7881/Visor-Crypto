@@ -2448,7 +2448,25 @@
         let lastFearGreedValue = null;
         let lastFearGreedTime = 0;
         const FEAR_GREED_CACHE_WINDOW = 30 * 60 * 1000; // 30 minutos
-        const FEAR_GREED_CACHE_KEY = 'fear_greed_cache';
+        const FEAR_GREED_CACHE_KEY = 'fear_greed_cache_v2';
+        const FEAR_GREED_DISPLAY_ADJUSTMENT = 1;
+
+        function clampIndexValue(value) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return null;
+            return Math.max(0, Math.min(100, Math.round(numeric)));
+        }
+
+        function normalizeFearGreedDisplayValue(rawValue) {
+            return clampIndexValue(Number(rawValue) + FEAR_GREED_DISPLAY_ADJUSTMENT);
+        }
+
+        function getWorkerFearGreedDisplayValue(workerData) {
+            const value = Number(workerData?.value);
+            if (!Number.isFinite(value)) return null;
+            const workerAlreadyAdjusted = Number(workerData?.displayAdjustment || 0) === FEAR_GREED_DISPLAY_ADJUSTMENT;
+            return workerAlreadyAdjusted ? clampIndexValue(value) : normalizeFearGreedDisplayValue(value);
+        }
         
         function getFearGreedCache() {
             try {
@@ -2457,7 +2475,7 @@
                     const data = JSON.parse(cached);
                     const value = Number(data?.value);
                     if (Number.isFinite(value)) {
-                        return { ...data, value: Math.round(value) };
+                        return { ...data, value: clampIndexValue(value) };
                     }
                 }
             } catch (e) {}
@@ -2469,6 +2487,7 @@
                 localStorage.setItem(FEAR_GREED_CACHE_KEY, JSON.stringify({
                     ...meta,
                     value,
+                    displayAdjustment: FEAR_GREED_DISPLAY_ADJUSTMENT,
                     timestamp: Date.now()
                 }));
             } catch (e) {}
@@ -2478,9 +2497,11 @@
             const valEl = document.getElementById('fear-greed-value');
             const indEl = document.getElementById('fear-greed-indicator');
             if (!valEl || !indEl) return;
-            valEl.textContent = value;
-            valEl.className = `meter-value ${value > 50 ? 'pnl-positive' : 'pnl-negative'}`;
-            indEl.style.left = `${value}%`;
+            const displayValue = clampIndexValue(value);
+            if (displayValue === null) return;
+            valEl.textContent = displayValue;
+            valEl.className = `meter-value ${displayValue > 50 ? 'pnl-positive' : 'pnl-negative'}`;
+            indEl.style.left = `${displayValue}%`;
         }
         
         async function fetchFearGreed() {
@@ -2505,12 +2526,14 @@
                         const workerRes = await fetchWithTimeout(workerUrl, {}, 3000);
                         if (workerRes.ok) {
                             const workerData = await workerRes.json();
-                            const workerValue = parseInt(workerData?.value, 10);
-                            if (workerData?.success !== false && Number.isFinite(workerValue) && workerValue >= 0 && workerValue <= 100) {
+                            const workerValue = getWorkerFearGreedDisplayValue(workerData);
+                            if (workerData?.success !== false && workerValue !== null && workerValue >= 0 && workerValue <= 100) {
                                 lastFearGreedValue = workerValue;
                                 lastFearGreedTime = Number(workerData.updatedAt || Date.now()) || Date.now();
+                                const rawWorkerValue = Number(workerData.rawValue);
                                 setFearGreedCache(workerValue, {
                                     source: workerData.source || 'worker',
+                                    rawValue: Number.isFinite(rawWorkerValue) ? Math.round(rawWorkerValue) : null,
                                     dataTimestamp: workerData.dataTimestamp || null,
                                     nextUpdateAt: workerData.nextUpdateAt || null,
                                     classification: workerData.classification || null,
@@ -2528,13 +2551,16 @@
                 if (response.ok) {
                     const data = await response.json();
                     if (data && data.data && data.data[0]) {
-                        const value = parseInt(data.data[0].value);
+                        const rawValue = parseInt(data.data[0].value, 10);
+                        const value = normalizeFearGreedDisplayValue(rawValue);
+                        if (value === null) throw new Error('Invalid Fear & Greed value');
                         
                         // Save to memory + localStorage
                         lastFearGreedValue = value;
                         lastFearGreedTime = Date.now();
                         setFearGreedCache(value, {
                             source: 'alternative_me_direct',
+                            rawValue,
                             dataTimestamp: Number(data.data[0].timestamp || 0) * 1000 || null,
                             nextUpdateAt: Number(data.data[0].time_until_update || 0) > 0 ? Date.now() + Number(data.data[0].time_until_update) * 1000 : null,
                             classification: data.data[0].value_classification || null
@@ -2580,11 +2606,13 @@
                 const cached = localStorage.getItem(ALTSEASON_CACHE_KEY);
                 if (cached) {
                     const data = JSON.parse(cached);
+                    const value = clampIndexValue(data.value);
+                    if (value === null) return null;
                     // For display on load, accept any cached data (will be refreshed)
                     // For normal use, respect the cache duration
                     const age = Date.now() - Number(data.timestamp || 0);
                     if ((forDisplay && age < ALTSEASON_ERROR_CACHE_WINDOW) || age < ALTSEASON_CACHE_DURATION) {
-                        return data;
+                        return { ...data, value };
                     }
                 }
             } catch (e) {}
@@ -2608,7 +2636,7 @@
         let lastAltseasonTime = 0;
 
         function hasDisplayAltseasonCache() {
-            return !!lastAltseasonValue && (Date.now() - Number(lastAltseasonTime || 0)) < ALTSEASON_ERROR_CACHE_WINDOW;
+            return Number.isFinite(Number(lastAltseasonValue)) && (Date.now() - Number(lastAltseasonTime || 0)) < ALTSEASON_ERROR_CACHE_WINDOW;
         }
 
         function getMarketWorkerUrl(path) {
@@ -2633,11 +2661,11 @@
 
         async function fetchBlockchainCenterAltseason() {
             const urls = [
-                'https://r.jina.ai/http://r.jina.ai/http://https://www.blockchaincenter.net/altcoin-season-index/',
-                'https://r.jina.ai/http://https://www.blockchaincenter.net/altcoin-season-index/'
+                'https://r.jina.ai/http://https://www.blockchaincenter.net/altcoin-season-index/',
+                'https://r.jina.ai/http://http://www.blockchaincenter.net/altcoin-season-index/'
             ];
             const attempts = urls.map(async (url) => {
-                const res = await fetchWithTimeout(url, {}, 18000);
+                const res = await fetchWithTimeout(url, {}, 7000);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const text = await res.text();
                 const value = parseBlockchainCenterAltseason(text);
@@ -2652,13 +2680,13 @@
             const statusEl = document.getElementById('altseason-status');
             
             // Show cached value immediately (from memory or localStorage)
-            if (!lastAltseasonValue) {
+            if (lastAltseasonValue === null) {
                 const cached = getAltseasonCache(true);
                 if (cached) {
-                    lastAltseasonValue = cached.value;
-                    lastAltseasonBtcDom = cached.btcDom || 58;
+                    lastAltseasonValue = Number(cached.value);
+                    lastAltseasonBtcDom = Number(cached.btcDom || 58);
                     lastAltseasonTime = cached.timestamp;
-                    updateAltseasonUI(cached.value, cached.btcDom || 58);
+                    updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 58);
                 } else {
                     if (valueEl) valueEl.textContent = '--';
                     if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Carregando...</span>';
@@ -2668,14 +2696,12 @@
             try {
                 const workerUrl = getMarketWorkerUrl('/market/altseason');
                 if (workerUrl) {
-                    const workerRes = await fetchWithTimeout(workerUrl, {}, 3000);
+                    const workerRes = await fetchWithTimeout(workerUrl, {}, 5000);
                     if (workerRes.ok) {
                         const workerData = await workerRes.json();
-                        const workerValue = Number(workerData.value || 0);
+                        const workerValue = Number(workerData.value);
                         const workerBtcDom = Number(workerData.btcDom || workerData.btcDominance || 0);
-                        const workerMethod = String(workerData.methodology || workerData.source || '').toLowerCase();
-                        const workerIsReference = workerMethod.includes('90') || workerMethod.includes('blockchaincenter');
-                        if (workerData.success !== false && workerValue > 0 && workerIsReference) {
+                        if (workerData.success !== false && Number.isFinite(workerValue) && workerValue >= 0 && workerValue <= 100) {
                             lastAltseasonValue = workerValue;
                             lastAltseasonBtcDom = workerBtcDom || lastAltseasonBtcDom || 0;
                             lastAltseasonTime = Number(workerData.updatedAt || Date.now()) || Date.now();
@@ -2694,7 +2720,7 @@
 
             try {
                 const blockchainCenterValue = await fetchBlockchainCenterAltseason();
-                if (Number.isFinite(blockchainCenterValue) && blockchainCenterValue > 0) {
+                if (Number.isFinite(blockchainCenterValue) && blockchainCenterValue >= 0) {
                     lastAltseasonValue = blockchainCenterValue;
                     lastAltseasonBtcDom = lastAltseasonBtcDom || 0;
                     lastAltseasonTime = Date.now();
@@ -2786,7 +2812,7 @@
                     // primary driver of sustained altseason vs bitcoin season
                     altValue = Math.round(pctOutperforming * 0.35 + domScore * 0.65);
                     
-                    altValue = Math.max(1, Math.min(100, altValue));
+                    altValue = Math.max(0, Math.min(100, altValue));
                     
                     /* console.log(`📊 Altseason v7.1.1: ${outperform30d}/${valid30d} alts outperform BTC (30d) = ${Math.round(pctOutperforming)}%, domScore=${domScore}, BTC Dom=${btcDom.toFixed(1)}%, Final: ${altValue}`); */
                 }
@@ -2828,6 +2854,8 @@
             const indEl = document.getElementById('altseason-indicator');
             const statEl = document.getElementById('altseason-status');
             if (!valEl || !indEl || !statEl) return;
+            altValue = clampIndexValue(altValue);
+            if (altValue === null) return;
             valEl.textContent = altValue;
             indEl.style.left = `${altValue}%`;
             

@@ -111,6 +111,7 @@
     const INDICATOR_MAX_QUOTE_AGE_MS = 60 * 60 * 1000; // cotação passa a ser considerada "fresca" por 60 min
     const INDICATOR_STALE_CACHE_MAX_AGE = 3 * 60 * 60 * 1000; // no startup, aceitar cache real de até 3h enquanto revalida
     const INDICATOR_CHART_SYNC_SKEW_MS = 60 * 1000; // só sincronizar do gráfico se candle for pelo menos 1 min mais novo
+    const INDICATOR_CHART_SYNC_PRICE_DELTA = 0.002; // troca quote fresco se o candle divergir mais de 0,2%
     const LEGACY_BOOTSTRAP_CACHE_PRICES = Object.freeze({
         'GC=F': 3095.2,
         'SI=F': 31.84,
@@ -151,6 +152,29 @@
         return Number.isFinite(value) && value > 0 ? value : 0;
     }
 
+    function isIndicatorModalForSymbol(symbol, requestId = null) {
+        const modal = document.getElementById('indicator-modal');
+        if (!modal || !symbol) return false;
+        if (requestId !== null && _chartRequestId !== requestId) return false;
+        const modalSymbol = modal.dataset.symbol || currentIndicatorSymbol;
+        return modalSymbol === symbol && currentIndicatorSymbol === symbol;
+    }
+
+    function updateIndicatorModalQuote(symbol, pctChangeOverride = null) {
+        if (!isIndicatorModalForSymbol(symbol)) return false;
+
+        const modalPrice = document.getElementById('indicator-modal-price');
+        if (modalPrice) modalPrice.innerHTML = formatIndicatorPrice(symbol);
+
+        const pctChange = pctChangeOverride !== null ? Number(pctChangeOverride) : Number(indicatorChanges[symbol]);
+        const modalChange = document.getElementById('indicator-modal-change');
+        if (modalChange && Number.isFinite(pctChange)) {
+            modalChange.textContent = `${pctChange >= 0 ? '+' : ''}${pctChange.toFixed(2)}%`;
+            modalChange.style.color = pctChange >= 0 ? '#00ff88' : '#ff4444';
+        }
+        return true;
+    }
+
     function syncIndicatorFromChartData(symbol, candles, sourceLabel = 'gráfico') {
         if (!symbol || !Array.isArray(candles) || candles.length === 0) return false;
 
@@ -167,9 +191,11 @@
         const currentTs = Number(indicatorUpdatedAt[symbol] || 0);
         const hasCurrentPrice = Number.isFinite(currentPrice) && currentPrice > 0;
         const hasNewerCandle = latestTs > 0 && (currentTs <= 0 || (latestTs - currentTs) > INDICATOR_CHART_SYNC_SKEW_MS);
+        const hasMeaningfulPriceDelta = hasCurrentPrice
+            && Math.abs(latestClose - currentPrice) / currentPrice > INDICATOR_CHART_SYNC_PRICE_DELTA;
 
-        // Regra: sincroniza somente se preço atual estiver ausente/stale ou se o candle é comprovadamente mais recente.
-        if (hasCurrentPrice && isIndicatorDataFresh(symbol) && !hasNewerCandle) return false;
+        // Regra: sincroniza somente se preço atual estiver ausente/stale, mais novo ou claramente divergente.
+        if (hasCurrentPrice && isIndicatorDataFresh(symbol) && !hasNewerCandle && !hasMeaningfulPriceDelta) return false;
 
         indicatorPrices[symbol] = latestClose;
         previousIndicatorPrices[symbol] = firstOpen;
@@ -178,14 +204,7 @@
         const pctChange = firstOpen > 0 ? ((latestClose - firstOpen) / firstOpen) * 100 : 0;
         indicatorChanges[symbol] = Number.isFinite(pctChange) ? pctChange : 0;
 
-        const modalPrice = document.getElementById('indicator-modal-price');
-        if (modalPrice) modalPrice.textContent = formatIndicatorPrice(symbol);
-
-        const modalChange = document.getElementById('indicator-modal-change');
-        if (modalChange) {
-            modalChange.textContent = `${pctChange >= 0 ? '+' : ''}${pctChange.toFixed(2)}%`;
-            modalChange.style.color = pctChange >= 0 ? '#00ff88' : '#ff4444';
-        }
+        updateIndicatorModalQuote(symbol, pctChange);
 
         updateSingleIndicator(symbol);
         savePriceCache();
@@ -975,6 +994,7 @@
         const modal = document.createElement('div');
         modal.id = 'indicator-modal';
         modal.className = 'modal active';
+        modal.dataset.symbol = symbol;
         modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 9999; display: flex; align-items: flex-end; justify-content: center; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);';
         
         modal.innerHTML = `
@@ -1160,10 +1180,11 @@
                 this.classList.add('active');
                 indicatorChartType = this.dataset.type;
                 if (indicatorCandleData) {
+                    if (!isIndicatorModalForSymbol(symbol)) return;
                     if (indicatorChartType === 'candle') {
-                        drawIndicatorCandleChart(indicatorCandleData);
+                        drawIndicatorCandleChart(indicatorCandleData, symbol);
                     } else {
-                        drawIndicatorLineChart(indicatorCandleData);
+                        drawIndicatorLineChart(indicatorCandleData, symbol);
                     }
                 }
             });
@@ -1174,18 +1195,19 @@
         
         // Pre-fetch data durante animação, mas desenhar só depois
         let prefetchedData = null;
+        const initialChartPeriod = indicatorChartPeriod;
         const prefetchPromise = (async () => {
             try {
                 pruneChartCache();
-                const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
+                const cacheKey = getChartCacheKey(symbol, initialChartPeriod);
                 const cached = chartDataCache[cacheKey];
                 if (cached && (Date.now() - cached.timestamp) < CHART_CACHE_TTL) {
                     prefetchedData = cached.data;
                     return;
                 }
-                prefetchedData = await _fetchYahooChart(symbol, indicatorChartPeriod);
+                prefetchedData = await _fetchYahooChart(symbol, initialChartPeriod);
                 if (prefetchedData.length > 0) {
-                    chartDataCache[getChartCacheKey(symbol, indicatorChartPeriod)] = { data: prefetchedData, timestamp: Date.now() };
+                    chartDataCache[cacheKey] = { data: prefetchedData, timestamp: Date.now() };
                     pruneChartCache();
                 }
             } catch(e) { macroLog('Prefetch error: ' + e.message, 'warn'); }
@@ -1198,10 +1220,10 @@
             if (_onReadyCalled) return; // Prevent double-fire from animationend + fallback
             _onReadyCalled = true;
             // Guard: if user clicked another indicator, abort
-            if (_chartRequestId !== myRequestId) return;
+            if (!isIndicatorModalForSymbol(symbol, myRequestId)) return;
             await prefetchPromise;
             // Double-check after async wait
-            if (_chartRequestId !== myRequestId) return;
+            if (!isIndicatorModalForSymbol(symbol, myRequestId)) return;
             if (prefetchedData) {
                 setIndicatorCandleData(prefetchedData);
                 const loadingEl = document.getElementById('macro-chart-loading');
@@ -1210,15 +1232,15 @@
                     setTimeout(() => { loadingEl.style.display = 'none'; }, 300);
                 }
                 if (indicatorChartType === 'candle') {
-                    drawIndicatorCandleChart(indicatorCandleData);
+                    drawIndicatorCandleChart(indicatorCandleData, symbol);
                 } else {
-                    drawIndicatorLineChart(indicatorCandleData);
+                    drawIndicatorLineChart(indicatorCandleData, symbol);
                 }
                 syncIndicatorFromChartData(symbol, indicatorCandleData, 'prefetch Yahoo');
             } else {
                 loadIndicatorChartData(symbol);
             }
-            if (_chartRequestId === myRequestId) loadIndicatorStats(symbol);
+            if (isIndicatorModalForSymbol(symbol, myRequestId)) loadIndicatorStats(symbol);
         };
         if (modalContent) {
             modalContent.addEventListener('animationend', onReady, { once: true });
@@ -2038,6 +2060,7 @@
     }
 
     function closeIndicatorModal() {
+        _chartRequestId++;
         const modal = document.getElementById('indicator-modal');
         if (modal) modal.remove();
         document.body.style.overflow = '';
@@ -2265,6 +2288,7 @@
     async function loadIndicatorChartData(symbol) {
         macroLog('🚀 loadIndicatorChartData para: ' + symbol, 'info');
         const myRequestId = _chartRequestId;
+        const requestPeriod = indicatorChartPeriod;
         
         const loadingEl = document.getElementById('macro-chart-loading');
         const canvas = document.getElementById('macro-chart-canvas');
@@ -2273,15 +2297,21 @@
             macroLog('❌ Canvas não encontrado', 'error');
             return;
         }
+
+        if (!isIndicatorModalForSymbol(symbol, myRequestId)) {
+            macroLog('⚠️ Chart request sem modal ativo para ' + symbol, 'warn');
+            return;
+        }
         
         if (loadingEl) { loadingEl.style.opacity = '1'; loadingEl.style.display = 'flex'; }
         
         // Verificar cache
         pruneChartCache();
-        const cacheKey = getChartCacheKey(symbol, indicatorChartPeriod);
+        const cacheKey = getChartCacheKey(symbol, requestPeriod);
         const cached = chartDataCache[cacheKey];
         if (cached && (Date.now() - cached.timestamp) < CHART_CACHE_TTL) {
-            macroLog(`📦 Gráfico ${symbol} (${indicatorChartPeriod}) do cache`, 'info');
+            macroLog(`📦 Gráfico ${symbol} (${requestPeriod}) do cache`, 'info');
+            if (!isIndicatorModalForSymbol(symbol, myRequestId)) return;
             setIndicatorCandleData(cached.data);
             if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
             if (indicatorChartType === 'candle') {
@@ -2289,17 +2319,17 @@
             } else {
                 drawIndicatorLineChart(indicatorCandleData, symbol);
             }
-            loadIndicatorStats(symbol);
+            if (isIndicatorModalForSymbol(symbol, myRequestId)) loadIndicatorStats(symbol);
             return;
         }
         
         try {
-            macroLog(`📊 Carregando gráfico: ${symbol} (${indicatorChartPeriod})`, 'info');
+            macroLog(`📊 Carregando gráfico: ${symbol} (${requestPeriod})`, 'info');
             
-            const candles = await _fetchYahooChart(symbol, indicatorChartPeriod);
+            const candles = await _fetchYahooChart(symbol, requestPeriod);
             
             // Guard: abort if user switched to another indicator
-            if (_chartRequestId !== myRequestId) {
+            if (!isIndicatorModalForSymbol(symbol, myRequestId)) {
                 macroLog('⚠️ Chart request stale, ignoring result for ' + symbol, 'warn');
                 return;
             }
@@ -2320,13 +2350,14 @@
             if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
             
             if (indicatorChartType === 'candle') {
-                drawIndicatorCandleChart(indicatorCandleData);
+                drawIndicatorCandleChart(indicatorCandleData, symbol);
             } else {
-                drawIndicatorLineChart(indicatorCandleData);
+                drawIndicatorLineChart(indicatorCandleData, symbol);
             }
-            loadIndicatorStats(symbol);
+            if (isIndicatorModalForSymbol(symbol, myRequestId)) loadIndicatorStats(symbol);
             macroLog('✅ Desenho concluído!', 'success');
         } catch (e) {
+            if (!isIndicatorModalForSymbol(symbol, myRequestId)) return;
             macroLog('❌ Erro gráfico: ' + e.message, 'error');
             const container = document.getElementById('macro-chart-container');
             if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { if (loadingEl) loadingEl.style.display = 'none'; }, 300); }
@@ -2350,7 +2381,7 @@
     // ============================================
     // DESENHAR GRÁFICO DE LINHA - v22.0 (igual HOME)
     // ============================================
-    function drawIndicatorLineChart(candleData) {
+    function drawIndicatorLineChart(candleData, symbol = currentIndicatorSymbol) {
         const canvas = document.getElementById('macro-chart-canvas');
         const container = document.getElementById('macro-chart-container');
         const loadingEl = document.getElementById('macro-chart-loading');
@@ -2438,7 +2469,7 @@
         }
         
         // Linha do gráfico
-        const config = MARKET_INDICATORS[currentIndicatorSymbol];
+        const config = MARKET_INDICATORS[symbol];
         const color = config?.color || '#3b82f6';
         
         ctx.beginPath();
@@ -2491,7 +2522,7 @@
     // ============================================
     // DESENHAR GRÁFICO DE CANDLES - v22.0 (igual HOME)
     // ============================================
-    function drawIndicatorCandleChart(candleData) {
+    function drawIndicatorCandleChart(candleData, symbol = currentIndicatorSymbol) {
         const canvas = document.getElementById('macro-chart-canvas');
         const container = document.getElementById('macro-chart-container');
         const loadingEl = document.getElementById('macro-chart-loading');

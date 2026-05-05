@@ -38,8 +38,8 @@ const SIGNALS_SNAPSHOT_KEY = 'signals_snapshot_v1';
 const SIGNALS_SNAPSHOT_TTL_SECONDS = 6 * 60;
 const MARKET_MACRO_QUOTES_KEY = 'market_macro_quotes_v1';
 const MARKET_GLOBAL_KEY = 'market_global_v1';
-const MARKET_ALTSEASON_KEY = 'market_altseason_v2';
-const MARKET_FEAR_GREED_KEY = 'market_fear_greed_v1';
+const MARKET_ALTSEASON_KEY = 'market_altseason_v3';
+const MARKET_FEAR_GREED_KEY = 'market_fear_greed_v2';
 const MARKET_NEWS_KEY = 'market_news_v1';
 const MARKET_FEDWATCH_KEY_PREFIX = 'market_fedwatch_polymarket_v1_';
 const MARKET_FRESH_SECONDS = 5 * 60;
@@ -49,6 +49,7 @@ const FEDWATCH_STALE_SECONDS = 24 * 60 * 60;
 const NEWS_FRESH_SECONDS = 4 * 60;
 const NEWS_STALE_SECONDS = 45 * 60;
 const BTC_DOMINANCE_ADJUSTMENT = 2.1;
+const FEAR_GREED_DISPLAY_ADJUSTMENT = 1;
 const NOTIF_TOKEN_PREFIX = 'notif_token_';
 const NOTIF_PREF_PREFIX = 'notif_prefs_';
 const NOTIF_DEDUP_PREFIX = 'notif_dedup_';
@@ -1535,7 +1536,7 @@ function calculateAltseasonValue(globalData, topCoins) {
     const pctOutperforming = valid30d > 0 ? (outperform30d / valid30d) * 100 : 50;
     const btcDom = btcDomRaw + BTC_DOMINANCE_ADJUSTMENT;
     const domScore = Math.max(0, Math.min(100, 150 - 2 * btcDom));
-    const value = Math.max(1, Math.min(100, Math.round(pctOutperforming * 0.35 + domScore * 0.65)));
+    const value = Math.max(0, Math.min(100, Math.round(pctOutperforming * 0.35 + domScore * 0.65)));
 
     return {
         value,
@@ -1565,7 +1566,7 @@ function parseBlockchainCenterAltseason(text) {
 async function fetchBlockchainCenterAltseason() {
     const urls = [
         'https://www.blockchaincenter.net/altcoin-season-index/',
-        'https://r.jina.ai/http://r.jina.ai/http://https://www.blockchaincenter.net/altcoin-season-index/',
+        'https://r.jina.ai/http://https://www.blockchaincenter.net/altcoin-season-index/',
     ];
     for (const url of urls) {
         try {
@@ -1606,13 +1607,25 @@ async function buildAltseasonPayload() {
     };
 }
 
+function clampIndexValue(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+function normalizeFearGreedDisplayValue(rawValue) {
+    return clampIndexValue(Number(rawValue) + FEAR_GREED_DISPLAY_ADJUSTMENT);
+}
+
 async function buildFearGreedPayload() {
     const data = await fetchJsonWithTimeout('https://api.alternative.me/fng/?limit=1&format=json', { cf: { cacheTtl: 300 } }, 5000);
     const item = data?.data?.[0];
-    const value = Number(item?.value);
-    if (!Number.isFinite(value) || value < 0 || value > 100) {
+    const rawValue = Number(item?.value);
+    if (!Number.isFinite(rawValue) || rawValue < 0 || rawValue > 100) {
         throw new Error('Invalid Fear & Greed payload');
     }
+    const displayValue = normalizeFearGreedDisplayValue(rawValue);
+    if (displayValue === null) throw new Error('Invalid Fear & Greed display value');
 
     const dataTimestamp = Number(item?.timestamp || 0) * 1000;
     const secondsUntilUpdate = Number(item?.time_until_update || 0);
@@ -1623,7 +1636,9 @@ async function buildFearGreedPayload() {
         dataTimestamp: dataTimestamp > 0 ? dataTimestamp : null,
         nextUpdateAt: secondsUntilUpdate > 0 ? Date.now() + secondsUntilUpdate * 1000 : null,
         secondsUntilUpdate: Number.isFinite(secondsUntilUpdate) ? secondsUntilUpdate : null,
-        value: Math.round(value),
+        value: displayValue,
+        rawValue: Math.round(rawValue),
+        displayAdjustment: FEAR_GREED_DISPLAY_ADJUSTMENT,
         classification: String(item?.value_classification || '').trim() || null,
     };
 }
@@ -2347,11 +2362,11 @@ export default {
             return serveCachedMarketPayload(env, ctx, corsHeaders, {
                 key: MARKET_ALTSEASON_KEY,
                 freshSeconds: 60 * 60,
-                staleSeconds: MARKET_STALE_SECONDS,
+                staleSeconds: 24 * 60 * 60,
                 builder: buildAltseasonPayload,
                 error: 'Altseason data unavailable',
                 source: 'blockchaincenter',
-                headers: { 'Cache-Control': 'public, max-age=600, stale-while-revalidate=3600' },
+                headers: { 'Cache-Control': 'public, max-age=600, stale-while-revalidate=86400' },
             });
         }
 

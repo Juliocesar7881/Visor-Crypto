@@ -39,7 +39,7 @@
                 const startupTasks = [
                     { delay: 0, fn: () => fetchFearGreed() },
                     { delay: 0, fn: () => { if (window.loadMacroData) window.loadMacroData(); } },
-                    { delay: 500, fn: () => fetchAltseasonIndex() },
+                    { delay: 0, fn: () => fetchAltseasonIndex() },
                     { delay: 900, fn: () => fetchGlobalData() },
                     { delay: 1300, fn: () => fetchVolume() },
                     { delay: 1700, fn: () => fetchCryptoStats() },
