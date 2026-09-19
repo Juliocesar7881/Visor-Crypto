@@ -1,0 +1,4 @@
+- Patikimesni 24 valandas per parą, 7 dienas per savaitę, perspėjimai su FCM ir automatiniu atkūrimu.
+- Pasitikėjimas atnaujinamas atidarius programą ir daugiausia kas 10 minučių, kai ji atidaryta.
+- Automatinis sistemos kalbos pasirinkimas, RTL palaikymas ir globali lokalizacija.
+- Našumo ir stabilumo patobulinimai.

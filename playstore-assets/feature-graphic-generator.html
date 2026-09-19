@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visor Crypto Feature Graphics</title>
+  <style>
+    :root {
+      --bg: #050813;
+      --panel: #0b1020;
+      --panel-2: #111827;
+      --line: rgba(96, 165, 250, 0.22);
+      --blue: #3b82f6;
+      --cyan: #22d3ee;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 1024px;
+      height: 500px;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+    }
+
+    body {
+      position: relative;
+    }
+
+    .artboard {
+      width: 1024px;
+      height: 500px;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 18% 22%, rgba(34, 211, 238, 0.18), transparent 28%),
+        radial-gradient(circle at 82% 16%, rgba(59, 130, 246, 0.22), transparent 30%),
+        linear-gradient(135deg, #050813 0%, #08111f 48%, #07111b 100%);
+    }
+
+    .artboard::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.055) 1px, transparent 1px);
+      background-size: 34px 34px;
+      mask-image: linear-gradient(90deg, rgba(0,0,0,0.78), rgba(0,0,0,0.3));
+    }
+
+    .candles {
+      position: absolute;
+      inset: 0;
+      opacity: 0.2;
+    }
+
+    .candle {
+      position: absolute;
+      width: 7px;
+      border-radius: 4px;
+      background: var(--green);
+      box-shadow: 0 0 16px currentColor;
+    }
+
+    .candle::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: -20px;
+      width: 1px;
+      height: calc(100% + 40px);
+      background: currentColor;
+      opacity: 0.55;
+    }
+
+    .candle.red { background: var(--red); color: var(--red); }
+    .candle.green { background: var(--green); color: var(--green); }
+
+    .brand-mark {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .brand-mark img {
+      width: 58px;
+      height: 58px;
+      border-radius: 15px;
+      box-shadow: 0 16px 44px rgba(34, 211, 238, 0.18);
+    }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .eyebrow {
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      margin-bottom: 12px;
+    }
+
+    .headline {
+      font-size: 48px;
+      line-height: 1.04;
+      font-weight: 900;
+      max-width: 430px;
+      letter-spacing: 0;
+    }
+
+    .headline span {
+      color: var(--cyan);
+      text-shadow: 0 0 24px rgba(34, 211, 238, 0.4);
+    }
+
+    .subcopy {
+      margin-top: 16px;
+      color: #cbd5e1;
+      font-size: 20px;
+      line-height: 1.38;
+      max-width: 450px;
+      font-weight: 500;
+    }
+
+    .chips {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 26px;
+      max-width: 440px;
+    }
+
+    .chip {
+      padding: 10px 13px;
+      border-radius: 999px;
+      border: 1px solid rgba(59, 130, 246, 0.32);
+      background: rgba(15, 23, 42, 0.72);
+      color: #dbeafe;
+      font-size: 13px;
+      font-weight: 800;
+      box-shadow: 0 10px 28px rgba(2, 6, 23, 0.2);
+    }
+
+    .left-copy {
+      position: absolute;
+      left: 58px;
+      top: 54px;
+      z-index: 2;
+    }
+
+    .phone {
+      position: absolute;
+      width: 246px;
+      height: 456px;
+      border-radius: 36px;
+      background: #020617;
+      border: 8px solid #111827;
+      box-shadow:
+        0 38px 70px rgba(0, 0, 0, 0.48),
+        0 0 0 1px rgba(148, 163, 184, 0.22),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+      overflow: hidden;
+      z-index: 3;
+    }
+
+    .phone.large {
+      width: 286px;
+      height: 468px;
+    }
+
+    .phone.secondary {
+      transform: scale(0.84);
+      opacity: 0.92;
+      z-index: 2;
+    }
+
+    .screen {
+      width: 100%;
+      height: 100%;
+      padding: 17px 14px 12px;
+      background:
+        radial-gradient(circle at 32% 5%, rgba(59, 130, 246, 0.18), transparent 28%),
+        linear-gradient(180deg, #070b16 0%, #0a0f1c 100%);
+      overflow: hidden;
+    }
+
+    .status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #e5e7eb;
+      font-size: 10px;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    .status-dots {
+      display: flex;
+      gap: 4px;
+    }
+
+    .status-dots span {
+      width: 5px;
+      height: 5px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      opacity: 0.85;
+    }
+
+    .app-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .app-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .app-title img {
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+    }
+
+    .pill {
+      padding: 5px 8px;
+      border-radius: 999px;
+      color: #bfdbfe;
+      background: rgba(37, 99, 235, 0.18);
+      border: 1px solid rgba(96, 165, 250, 0.22);
+      font-size: 9px;
+      font-weight: 900;
+    }
+
+    .card {
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 18px;
+      padding: 12px;
+      margin-bottom: 10px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+
+    .card-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 9px;
+    }
+
+    .asset {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .asset-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      color: white;
+      background: linear-gradient(135deg, #f59e0b, #f97316);
+    }
+
+    .change {
+      color: #86efac;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .price {
+      font-size: 23px;
+      line-height: 1;
+      font-weight: 950;
+      margin-bottom: 10px;
+    }
+
+    .chart {
+      height: 88px;
+      border-radius: 14px;
+      background:
+        linear-gradient(180deg, rgba(34, 197, 94, 0.14), rgba(34, 197, 94, 0.02)),
+        repeating-linear-gradient(90deg, rgba(148, 163, 184, 0.08), rgba(148, 163, 184, 0.08) 1px, transparent 1px, transparent 31px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chart svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .metric {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 12px;
+      padding: 8px 7px;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      margin-top: 3px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .signal-card {
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.16), rgba(59, 130, 246, 0.08));
+      border-color: rgba(34, 197, 94, 0.28);
+    }
+
+    .signal-tag {
+      color: #bbf7d0;
+      background: rgba(34, 197, 94, 0.18);
+      border: 1px solid rgba(34, 197, 94, 0.32);
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 10px;
+      font-weight: 950;
+    }
+
+    .signal-title {
+      font-size: 16px;
+      font-weight: 950;
+      margin-bottom: 4px;
+    }
+
+    .signal-sub {
+      color: #cbd5e1;
+      font-size: 10px;
+      line-height: 1.35;
+    }
+
+    .bars {
+      margin-top: 9px;
+      display: grid;
+      gap: 7px;
+    }
+
+    .bar {
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.18);
+      overflow: hidden;
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--blue), var(--cyan));
+    }
+
+    .nav {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 12px;
+      height: 45px;
+      border-radius: 18px;
+      background: rgba(15, 23, 42, 0.94);
+      border: 1px solid rgba(148, 163, 184, 0.13);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+    }
+
+    .nav span {
+      width: 25px;
+      height: 25px;
+      border-radius: 9px;
+      background: rgba(148, 163, 184, 0.12);
+    }
+
+    .nav span.active {
+      background: linear-gradient(135deg, var(--blue), var(--cyan));
+      box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+    }
+
+    .news-item {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 10px;
+      padding: 10px 0;
+      border-top: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .news-thumb {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.7), rgba(34, 211, 238, 0.5));
+    }
+
+    .news-title {
+      font-size: 10px;
+      line-height: 1.25;
+      font-weight: 850;
+    }
+
+    .news-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 750;
+    }
+
+    .macro-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .macro-card {
+      background: rgba(30, 41, 59, 0.84);
+      border: 1px solid rgba(148, 163, 184, 0.13);
+      border-radius: 14px;
+      padding: 9px;
+    }
+
+    .macro-label {
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+
+    .macro-value {
+      margin-top: 4px;
+      font-size: 15px;
+      font-weight: 950;
+    }
+
+    .gauge {
+      position: relative;
+      height: 72px;
+      border-radius: 999px 999px 12px 12px;
+      background:
+        conic-gradient(from 230deg at 50% 100%, #22c55e 0deg, #f59e0b 70deg, #ef4444 138deg, transparent 139deg);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .gauge::after {
+      content: "58";
+      position: absolute;
+      inset: 18px 26px 0;
+      display: grid;
+      place-items: center;
+      border-radius: 999px 999px 10px 10px;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 20px;
+      font-weight: 950;
+    }
+
+    .variant-signals .phone-main {
+      right: 86px;
+      top: 16px;
+    }
+
+    .variant-signals .phone-back {
+      right: 274px;
+      top: 58px;
+      filter: blur(0.1px);
+    }
+
+    .variant-macro .left-copy {
+      left: 560px;
+      top: 58px;
+    }
+
+    .variant-macro .headline,
+    .variant-macro .subcopy,
+    .variant-macro .chips {
+      max-width: 405px;
+    }
+
+    .variant-macro .phone-main {
+      left: 78px;
+      top: 18px;
+    }
+
+    .variant-macro .phone-back {
+      left: 300px;
+      top: 60px;
+      filter: blur(0.1px);
+    }
+
+    .hide { display: none; }
+  </style>
+</head>
+<body>
+  <main id="signals" class="artboard variant-signals">
+    <div class="candles">
+      <i class="candle green" style="left:482px;top:78px;height:42px"></i>
+      <i class="candle red" style="left:512px;top:118px;height:62px"></i>
+      <i class="candle green" style="left:552px;top:92px;height:88px"></i>
+      <i class="candle green" style="left:882px;top:310px;height:72px"></i>
+      <i class="candle red" style="left:922px;top:264px;height:50px"></i>
+    </div>
+
+    <section class="left-copy">
+      <div class="brand-mark">
+        <img src="../www/Icone.png" alt="">
+        <div>
+          <div class="brand-name">Visor Crypto</div>
+          <div class="eyebrow" style="margin:2px 0 0;">Bitcoin e altcoins</div>
+        </div>
+      </div>
+      <div class="eyebrow">Painel cripto inteligente</div>
+      <h1 class="headline">Sinais cripto <span>em tempo real</span></h1>
+      <p class="subcopy">Análise técnica, alertas e leitura rápida do mercado em uma tela feita para celular.</p>
+      <div class="chips">
+        <span class="chip">BTC em tempo real</span>
+        <span class="chip">Multi-timeframe</span>
+        <span class="chip">Alertas</span>
+      </div>
+    </section>
+
+    <section class="phone secondary phone-back">
+      <div class="screen">
+        <div class="status"><span>16:24</span><div class="status-dots"><span></span><span></span><span></span></div></div>
+        <div class="app-top">
+          <div class="app-title"><img src="../www/Icone.png" alt="">Home</div>
+          <span class="pill">LIVE</span>
+        </div>
+        <div class="card">
+          <div class="card-title-row">
+            <div class="asset"><span class="asset-icon">B</span>BTCUSDT</div>
+            <span class="change">+2.48%</span>
+          </div>
+          <div class="price">$ 103.842</div>
+          <div class="chart">
+            <svg viewBox="0 0 240 88" preserveAspectRatio="none">
+              <path d="M0 68 C24 62 35 48 58 53 S100 68 124 42 166 31 192 38 222 22 240 18" fill="none" stroke="#22c55e" stroke-width="4"/>
+              <path d="M0 88 L0 68 C24 62 35 48 58 53 S100 68 124 42 166 31 192 38 222 22 240 18 L240 88 Z" fill="rgba(34,197,94,.16)"/>
+            </svg>
+          </div>
+          <div class="metric-row">
+            <div class="metric"><div class="metric-label">Volume</div><div class="metric-value">$42B</div></div>
+            <div class="metric"><div class="metric-label">Fear</div><div class="metric-value">58</div></div>
+            <div class="metric"><div class="metric-label">Macro</div><div class="metric-value">Neutro</div></div>
+          </div>
+        </div>
+        <div class="nav"><span class="active"></span><span></span><span></span><span></span></div>
+      </div>
+    </section>
+
+    <section class="phone large phone-main">
+      <div class="screen">
+        <div class="status"><span>16:24</span><div class="status-dots"><span></span><span></span><span></span></div></div>
+        <div class="app-top">
+          <div class="app-title"><img src="../www/Icone.png" alt="">Sinais</div>
+          <span class="pill">1h / 4h</span>
+        </div>
+        <div class="card signal-card">
+          <div class="card-title-row">
+            <div class="asset"><span class="asset-icon">B</span>Bitcoin</div>
+            <span class="signal-tag">Tendência forte</span>
+          </div>
+          <div class="signal-title">Leitura técnica ativa</div>
+          <div class="signal-sub">Confluência de momentum, volume e estrutura de preço.</div>
+          <div class="bars">
+            <div class="bar"><span style="width:82%"></span></div>
+            <div class="bar"><span style="width:68%"></span></div>
+            <div class="bar"><span style="width:74%"></span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title-row">
+            <div class="asset">Indicadores</div>
+            <span class="change">Atualizado</span>
+          </div>
+          <div class="metric-row">
+            <div class="metric"><div class="metric-label">RSI</div><div class="metric-value">61.4</div></div>
+            <div class="metric"><div class="metric-label">MACD</div><div class="metric-value">Alta</div></div>
+            <div class="metric"><div class="metric-label">ADX</div><div class="metric-value">29</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title-row">
+            <div class="asset">Alertas</div>
+            <span class="pill">Push</span>
+          </div>
+          <div class="signal-sub">Receba notificações quando uma leitura importante surgir.</div>
+        </div>
+        <div class="nav"><span></span><span class="active"></span><span></span><span></span></div>
+      </div>
+    </section>
+  </main>
+
+  <main id="macro" class="artboard variant-macro hide">
+    <div class="candles">
+      <i class="candle green" style="left:36px;top:86px;height:70px"></i>
+      <i class="candle red" style="left:684px;top:332px;height:54px"></i>
+      <i class="candle green" style="left:724px;top:292px;height:76px"></i>
+      <i class="candle red" style="left:958px;top:96px;height:90px"></i>
+    </div>
+
+    <section class="left-copy">
+      <div class="brand-mark">
+        <img src="../www/Icone.png" alt="">
+        <div>
+          <div class="brand-name">Visor Crypto</div>
+          <div class="eyebrow" style="margin:2px 0 0;">Mercado em contexto</div>
+        </div>
+      </div>
+      <div class="eyebrow">Notícias + macro</div>
+      <h1 class="headline">Tudo que move o <span>Bitcoin</span></h1>
+      <p class="subcopy">Notícias filtradas, Fed Watch, Fear & Greed e indicadores macro em um painel visual.</p>
+      <div class="chips">
+        <span class="chip">Notícias cripto</span>
+        <span class="chip">Fed Watch</span>
+        <span class="chip">Fear & Greed</span>
+      </div>
+    </section>
+
+    <section class="phone large phone-main">
+      <div class="screen">
+        <div class="status"><span>16:24</span><div class="status-dots"><span></span><span></span><span></span></div></div>
+        <div class="app-top">
+          <div class="app-title"><img src="../www/Icone.png" alt="">Notícias</div>
+          <span class="pill">Ao vivo</span>
+        </div>
+        <div class="card">
+          <div class="card-title-row">
+            <div class="asset">Radar cripto</div>
+            <span class="change">Relevante</span>
+          </div>
+          <div class="news-item">
+            <div class="news-thumb"></div>
+            <div><div class="news-title">Bitcoin reage a dados macro e fluxo institucional</div><div class="news-meta">Mercado · 4 min</div></div>
+          </div>
+          <div class="news-item">
+            <div class="news-thumb" style="background:linear-gradient(135deg,#22c55e,#0ea5e9)"></div>
+            <div><div class="news-title">Altcoins ganham força com melhora de liquidez</div><div class="news-meta">Altcoins · 12 min</div></div>
+          </div>
+          <div class="news-item">
+            <div class="news-thumb" style="background:linear-gradient(135deg,#f59e0b,#3b82f6)"></div>
+            <div><div class="news-title">Dólar e juros seguem no radar do mercado cripto</div><div class="news-meta">Macro · 21 min</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title-row">
+            <div class="asset">Resumo IA</div>
+            <span class="pill">Filtrado</span>
+          </div>
+          <div class="signal-sub">Leitura curta para entender impacto no mercado.</div>
+        </div>
+        <div class="nav"><span></span><span></span><span class="active"></span><span></span></div>
+      </div>
+    </section>
+
+    <section class="phone secondary phone-back">
+      <div class="screen">
+        <div class="status"><span>16:24</span><div class="status-dots"><span></span><span></span><span></span></div></div>
+        <div class="app-top">
+          <div class="app-title"><img src="../www/Icone.png" alt="">Macro</div>
+          <span class="pill">Fed</span>
+        </div>
+        <div class="card">
+          <div class="card-title-row">
+            <div class="asset">Fed Watch</div>
+            <span class="change">Atual</span>
+          </div>
+          <div class="macro-grid">
+            <div class="macro-card"><div class="macro-label">Manter</div><div class="macro-value">64%</div></div>
+            <div class="macro-card"><div class="macro-label">Cortar</div><div class="macro-value">31%</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title-row">
+            <div class="asset">Fear & Greed</div>
+            <span class="pill">58</span>
+          </div>
+          <div class="gauge"></div>
+        </div>
+        <div class="card">
+          <div class="metric-row">
+            <div class="metric"><div class="metric-label">VIX</div><div class="metric-value">17.2</div></div>
+            <div class="metric"><div class="metric-label">DXY</div><div class="metric-value">104.1</div></div>
+            <div class="metric"><div class="metric-label">S&P</div><div class="metric-value">+0.4%</div></div>
+          </div>
+        </div>
+        <div class="nav"><span></span><span></span><span></span><span class="active"></span></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const variant = new URLSearchParams(location.search).get("variant") || "signals";
+    document.getElementById("signals").classList.toggle("hide", variant !== "signals");
+    document.getElementById("macro").classList.toggle("hide", variant !== "macro");
+  </script>
+</body>
+</html>

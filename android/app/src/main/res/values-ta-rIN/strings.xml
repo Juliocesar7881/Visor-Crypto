@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">வர்த்தக சமிக்ஞைகள்</string>
+    <string name="signal_channel_description">உறுதிப்படுத்தப்பட்ட LONG மற்றும் SHORT சமிக்ஞை எச்சரிக்கைகள்</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">நம்பிக்கை: %1$d%%</string>
+</resources>

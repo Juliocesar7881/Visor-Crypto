@@ -1,0 +1,4 @@
+- Alertes de signal plus fiables 24h/24 et 7j/7 avec FCM et récupération automatique.
+- La confiance se rafraîchit lorsque l'application s'ouvre et au maximum toutes les 10 minutes lorsqu'elle est ouverte.
+- Sélection automatique de la langue, sélecteur manuel, prise en charge RTL et localisation mondiale.
+- Améliorations des performances et de la stabilité.

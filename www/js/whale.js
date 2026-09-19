@@ -1216,13 +1216,27 @@
                 // Estratégia 1: WalletExplorer.com API (cluster analysis)
                 try {
                     const weUrl = `https://www.walletexplorer.com/api/1/address-lookup?address=${address}&caller=visor-crypto`;
-                    const proxyUrls = [
-                        weUrl,
-                        `https://api.allorigins.win/raw?url=${encodeURIComponent(weUrl)}`,
-                        `https://corsproxy.io/?${encodeURIComponent(weUrl)}`
+                    let workerUrls = [];
+                    try {
+                        const cfg = window.APP_CONFIG || {};
+                        const configured = typeof window.getVisorWorkerUrls === 'function'
+                            ? window.getVisorWorkerUrls()
+                            : [
+                                cfg.CALENDAR_WORKER_URL,
+                                cfg.CALENDAR_WORKER_FALLBACK_URL
+                            ];
+                        const active = localStorage.getItem('vc_active_worker_url_v1');
+                        workerUrls = [...new Set([active, ...configured]
+                            .map(url => String(url || '').trim().replace(/\/+$/, ''))
+                            .filter(Boolean))];
+                    } catch (_) {}
+
+                    const sourceUrls = [
+                        ...workerUrls.map(url => `${url}/wallet/label?address=${encodeURIComponent(address)}`),
+                        weUrl
                     ];
                     
-                    for (const url of proxyUrls) {
+                    for (const url of sourceUrls) {
                         try {
                             const controller = new AbortController();
                             const timer = setTimeout(() => controller.abort(), 5000);
@@ -1981,7 +1995,7 @@
                     }
                     
                     if (items.length === 0) {
-                        // Parse como XML/RSS (para fetch direto ou allorigins)
+                        // Parse como XML/RSS (fetch direto)
                         const titleMatches = text.match(/<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<pubDate>([\s\S]*?)<\/pubDate>[\s\S]*?<\/item>/gi);
                         if (titleMatches) {
                             for (const match of titleMatches) {
@@ -2108,7 +2122,7 @@
             };
             
             const lastUpdate = whaleActivityLastUpdate 
-                ? whaleActivityLastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                ? whaleActivityLastUpdate.toLocaleTimeString(window.VisorI18n?.getLocale?.() || 'en-US', { hour: '2-digit', minute: '2-digit' })
                 : '--:--';
             
             const cacheIndicator = data._cacheAge ? ` (${data._cacheAge}min atrás)` : '';
@@ -2160,7 +2174,7 @@
             // ── Exchange Flow view ──
             if (_whaleViewMode === 'exchange') {
                 const ef = _exchangeFlowData;
-                const efUpdate = ef.lastUpdate ? ef.lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+                const efUpdate = ef.lastUpdate ? ef.lastUpdate.toLocaleTimeString(window.VisorI18n?.getLocale?.() || 'en-US', { hour: '2-digit', minute: '2-digit' }) : '--:--';
                 const fmtVol = formatVolume;
                 const efOutflow = ef.outflow || 0;
                 const efInflow = ef.inflow || 0;

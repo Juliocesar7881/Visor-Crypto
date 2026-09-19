@@ -1,0 +1,3 @@
+- Els anuncis discrets en pauses naturals ajuden a mantenir Visor Crypto lliure.
+- Drecera del mapa de calor Bitcoin de neteja a la pantalla d'inici.
+- Millores de seguretat, rendiment, eficiència de l'animació i estabilitat.

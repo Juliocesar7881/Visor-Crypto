@@ -1,0 +1,4 @@
+- Alertas de sinal mais fiáveis ​​​​24 horas por dia, 7 dias por semana, com FCM e recuperação automática.
+- A confiança é atualizada quando a aplicação é aberta e, no máximo, a cada 10 minutos enquanto está aberta.
+- Seleção automática do idioma do sistema, suporte RTL e localização global.
+- Melhorias de desempenho e estabilidade.

@@ -1,0 +1,4 @@
+- Betrouwbaardere 24/7 signaalwaarschuwingen met FCM en automatisch herstel.
+- Het vertrouwen wordt vernieuwd wanneer de app wordt geopend en maximaal elke 10 minuten wanneer deze open is.
+- Automatische taalselectie, handmatige selector, RTL-ondersteuning en wereldwijde lokalisatie.
+- Prestatie- en stabiliteitsverbeteringen.

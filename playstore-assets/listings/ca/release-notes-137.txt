@@ -1,0 +1,4 @@
+- Alertes de senyal més fiables 24/7 amb FCM i recuperació automàtica.
+- La confiança es refresca quan s'obre l'aplicació i com a màxim cada 10 minuts mentre està oberta.
+- Selecció automàtica de l'idioma del sistema, suport RTL i localització global.
+- Millores de rendiment i estabilitat.

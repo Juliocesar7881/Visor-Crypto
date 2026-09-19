@@ -1,0 +1,4 @@
+- FCM və avtomatik bərpa ilə daha etibarlı 24/7 siqnal siqnalları.
+- Tətbiq açıldıqda və ən çoxu açıq olduqda hər 10 dəqiqədən bir güvən yenilənir.
+- Avtomatik sistem dili seçimi, RTL dəstəyi və qlobal lokalizasiya.
+- Performans və sabitlik təkmilləşdirmələri.

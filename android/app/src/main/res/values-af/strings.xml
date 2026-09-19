@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Handel seine</string>
+    <string name="signal_channel_description">Bevestigde LONG en SHORT seinwaarskuwings</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Vertroue: %1$d%%</string>
+</resources>

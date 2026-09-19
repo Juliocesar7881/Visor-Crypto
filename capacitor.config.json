@@ -18,6 +18,10 @@
       "https://api.mymemory.translated.net",
       "https://api.groq.com",
       "https://api.twelvedata.com",
+      "https://visorcrypto.loan",
+      "https://www.visorcrypto.loan",
+      "https://visor-crypto-calendar.visorcrypto.workers.dev",
+      "https://visor-crypto-calendar.visor-crypto.workers.dev",
       "wss://stream.binance.com"
     ]
   },
@@ -25,11 +29,5 @@
     "allowMixedContent": false,
     "captureInput": true,
     "webContentsDebuggingEnabled": false
-  },
-  "plugins": {
-    "AdMob": {
-      "appId": "ca-app-pub-6014128977421637~6845308314",
-      "autoInit": true
-    }
   }
 }

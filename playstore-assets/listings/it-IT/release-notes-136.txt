@@ -1,0 +1,4 @@
+- Avvisi di segnale più affidabili 24 ore su 24, 7 giorni su 7 con FCM e ripristino automatico.
+- La sicurezza viene aggiornata all'apertura dell'app e al massimo ogni 10 minuti mentre è aperta.
+- Selezione automatica della lingua, selettore manuale, supporto RTL e localizzazione globale.
+- Miglioramenti delle prestazioni e della stabilità.

@@ -1,0 +1,608 @@
+<af>
+- Meer betroubare 24/7 seinwaarskuwings met FCM en outomatiese herstel.
+- Vertroue verfris wanneer die toepassing oopmaak en hoogstens elke 10 minute terwyl dit oop is.
+- Outomatiese stelseltaalkeuse, RTL-ondersteuning en globale lokalisering.
+- Prestasie- en stabiliteitverbeterings.
+</af>
+
+<sq>
+- Sinjalizime më të besueshme të sinjalit 24/7 me FCM dhe rikuperim automatik.
+- Besimi rifreskohet kur hapet aplikacioni dhe maksimumi çdo 10 minuta kur është i hapur.
+- Zgjedhja automatike e gjuhës së sistemit, mbështetja RTL dhe lokalizimi global.
+- Përmirësime të performancës dhe stabilitetit.
+</sq>
+
+<am>
+- ይበልጥ አስተማማኝ የ24/7 የምልክት ማንቂያዎች ከFCM እና በራስ ሰር መልሶ ማግኛ።
+- በራስ መተማመን መተግበሪያው ሲከፈት እና ቢበዛ በየ10 ደቂቃው ሲከፈት ያድሳል።
+- ራስ-ሰር የሥርዓት ቋንቋ ምርጫ፣ የ RTL ድጋፍ እና ዓለም አቀፋዊ አካባቢ።
+- የአፈጻጸም እና የመረጋጋት ማሻሻያዎች.
+</am>
+
+<ar>
+- تنبيهات إشارة أكثر موثوقية على مدار 24 ساعة طوال أيام الأسبوع مع FCM والاسترداد التلقائي.
+- يتم تحديث الثقة عند فتح التطبيق وكل 10 دقائق على الأكثر أثناء فتحه.
+- التحديد التلقائي للغة النظام ودعم RTL والتعريب العالمي.
+- تحسينات الأداء والاستقرار.
+</ar>
+
+<hy-AM>
+- Ավելի հուսալի 24/7 ազդանշանային ազդանշաններ FCM-ով և ավտոմատ վերականգնմամբ:
+- Վստահությունը թարմացվում է, երբ հավելվածը բացվում է, և առավելագույնը 10 րոպեն մեկ՝ բաց լինելու դեպքում:
+- Համակարգի լեզվի ավտոմատ ընտրություն, RTL աջակցություն և գլոբալ տեղայնացում:
+- Կատարողականության և կայունության բարելավումներ:
+</hy-AM>
+
+<az-AZ>
+- FCM və avtomatik bərpa ilə daha etibarlı 24/7 siqnal siqnalları.
+- Tətbiq açıldıqda və ən çoxu açıq olduqda hər 10 dəqiqədən bir güvən yenilənir.
+- Avtomatik sistem dili seçimi, RTL dəstəyi və qlobal lokalizasiya.
+- Performans və sabitlik təkmilləşdirmələri.
+</az-AZ>
+
+<bn-BD>
+- FCM এবং স্বয়ংক্রিয় পুনরুদ্ধারের সাথে আরও নির্ভরযোগ্য 24/7 সংকেত সতর্কতা।
+- অ্যাপটি খুললে এবং খোলার সময় প্রতি 10 মিনিটে আত্মবিশ্বাস রিফ্রেশ হয়।
+- স্বয়ংক্রিয় সিস্টেম ভাষা নির্বাচন, RTL সমর্থন এবং বিশ্বব্যাপী স্থানীয়করণ।
+- কর্মক্ষমতা এবং স্থিতিশীলতার উন্নতি।
+</bn-BD>
+
+<eu-ES>
+- 24/7 seinalearen alerta fidagarriagoak FCM eta berreskuratze automatikoarekin.
+- Konfiantza freskatzen da aplikazioa irekitzen denean eta irekita dagoen bitartean gehienez 10 minutuz behin.
+- Sistemaren hizkuntza aukeraketa automatikoa, RTL euskarria eta lokalizazio globala.
+- Errendimendua eta egonkortasuna hobetzea.
+</eu-ES>
+
+<be>
+- Больш надзейныя сігналы 24/7 з FCM і аўтаматычным аднаўленнем.
+- Упэўненасць абнаўляецца пры адкрыцці праграмы і максімум кожныя 10 хвілін, калі яна адкрыта.
+- Аўтаматычны выбар мовы сістэмы, падтрымка RTL і глабальная лакалізацыя.
+- Паляпшэнні прадукцыйнасці і стабільнасці.
+</be>
+
+<bg>
+- По-надеждни сигнални сигнали 24/7 с FCM и автоматично възстановяване.
+- Увереността се обновява, когато приложението се отвори и най-много на всеки 10 минути, докато е отворено.
+- Автоматичен избор на системен език, поддръжка на RTL и глобална локализация.
+- Подобрения в производителността и стабилността.
+</bg>
+
+<my-MM>
+- FCM နှင့် အလိုအလျောက် ပြန်လည်ရယူခြင်းတို့ဖြင့် ပိုမိုယုံကြည်စိတ်ချရသော 24/7 အချက်ပြမှုများ။
+- အက်ပ်ကိုဖွင့်သည့်အခါနှင့် အများဆုံးဖွင့်နေချိန် 10 မိနစ်တိုင်းတွင် ယုံကြည်မှုသည် ပြန်လည်ဆန်းသစ်လာသည်။
+- အလိုအလျောက် စနစ်ဘာသာစကား ရွေးချယ်မှု၊ RTL ပံ့ပိုးမှုနှင့် ကမ္ဘာလုံးဆိုင်ရာ ဒေသန္တရပြုမှု။
+- စွမ်းဆောင်ရည်နှင့် တည်ငြိမ်မှုကို မြှင့်တင်ပေးခြင်း။
+</my-MM>
+
+<ca>
+- Alertes de senyal més fiables 24/7 amb FCM i recuperació automàtica.
+- La confiança es refresca quan s'obre l'aplicació i com a màxim cada 10 minuts mentre està oberta.
+- Selecció automàtica de l'idioma del sistema, suport RTL i localització global.
+- Millores de rendiment i estabilitat.
+</ca>
+
+<zh-HK>
+- 透過 FCM 和自動恢復提供更可靠的 24/7 訊號警報。
+- 應用程式開啟時信心會刷新一次，開啟時最多每 10 分鐘刷新一次。
+- 自動系統語言選擇、RTL 支援和全球本地化。
+- 性能和穩定性改進。
+</zh-HK>
+
+<zh-CN>
+- 通过 FCM 和自动恢复提供更可靠的 24/7 信号警报。
+- 应用程序打开时信心会刷新一次，打开时最多每 10 分钟刷新一次。
+- 自动系统语言选择、​​RTL 支持和全球本地化。
+- 性能和稳定性改进。
+</zh-CN>
+
+<zh-TW>
+- 透過 FCM 和自動恢復提供更可靠的 24/7 訊號警報。
+- 應用程式開啟時信心會刷新一次，開啟時最多每 10 分鐘刷新一次。
+- 自動系統語言選擇、RTL 支援和全球本地化。
+- 性能和穩定性改進。
+</zh-TW>
+
+<hr>
+- Pouzdanija 24/7 signalna upozorenja s FCM-om i automatskim oporavkom.
+- Povjerenje se osvježava kada se aplikacija otvori, a najviše svakih 10 minuta dok je otvorena.
+- Automatski odabir jezika sustava, RTL podrška i globalna lokalizacija.
+- Poboljšanja performansi i stabilnosti.
+</hr>
+
+<cs-CZ>
+- Spolehlivější upozornění na signál 24/7 s FCM a automatickou obnovou.
+- Důvěra se obnovuje při otevření aplikace a maximálně každých 10 minut, když je otevřená.
+- Automatický výběr jazyka systému, podpora RTL a globální lokalizace.
+- Vylepšení výkonu a stability.
+</cs-CZ>
+
+<da-DK>
+- Mere pålidelige 24/7 signalalarmer med FCM og automatisk gendannelse.
+- Tillid opdateres, når appen åbner og højst hvert 10. minut, mens den er åben.
+- Automatisk valg af systemsprog, RTL-understøttelse og global lokalisering.
+- Ydeevne og stabilitetsforbedringer.
+</da-DK>
+
+<nl-NL>
+- Betrouwbaardere 24/7 signaalwaarschuwingen met FCM en automatisch herstel.
+- Het vertrouwen wordt vernieuwd wanneer de app wordt geopend en maximaal elke 10 minuten wanneer deze open is.
+- Automatische systeemtaalselectie, RTL-ondersteuning en wereldwijde lokalisatie.
+- Prestatie- en stabiliteitsverbeteringen.
+</nl-NL>
+
+<en-AU>
+- More reliable 24/7 signal alerts with FCM and automatic recovery.
+- Confidence refreshes when the app opens and at most every 10 minutes while open.
+- Automatic system language selection, RTL support and global localization.
+- Performance and stability improvements.
+</en-AU>
+
+<en-CA>
+- More reliable 24/7 signal alerts with FCM and automatic recovery.
+- Confidence refreshes when the app opens and at most every 10 minutes while open.
+- Automatic system language selection, RTL support and global localization.
+- Performance and stability improvements.
+</en-CA>
+
+<en-US>
+- More reliable 24/7 signal alerts with FCM and automatic recovery.
+- Confidence refreshes when the app opens and at most every 10 minutes while open.
+- Automatic system language selection, RTL support and global localization.
+- Performance and stability improvements.
+</en-US>
+
+<en-GB>
+- More reliable 24/7 signal alerts with FCM and automatic recovery.
+- Confidence refreshes when the app opens and at most every 10 minutes while open.
+- Automatic system language selection, RTL support and global localization.
+- Performance and stability improvements.
+</en-GB>
+
+<en-IN>
+- More reliable 24/7 signal alerts with FCM and automatic recovery.
+- Confidence refreshes when the app opens and at most every 10 minutes while open.
+- Automatic system language selection, RTL support and global localization.
+- Performance and stability improvements.
+</en-IN>
+
+<en-SG>
+- More reliable 24/7 signal alerts with FCM and automatic recovery.
+- Confidence refreshes when the app opens and at most every 10 minutes while open.
+- Automatic system language selection, RTL support and global localization.
+- Performance and stability improvements.
+</en-SG>
+
+<en-ZA>
+- More reliable 24/7 signal alerts with FCM and automatic recovery.
+- Confidence refreshes when the app opens and at most every 10 minutes while open.
+- Automatic system language selection, RTL support and global localization.
+- Performance and stability improvements.
+</en-ZA>
+
+<et>
+- Usaldusväärsemad 24/7 signaalihoiatused koos FCM-i ja automaatse taastamisega.
+- Usaldus värskendab rakenduse avanemisel ja avatud olekus maksimaalselt iga 10 minuti järel.
+- Automaatne süsteemi keele valik, RTL tugi ja globaalne lokaliseerimine.
+- Jõudluse ja stabiilsuse täiustused.
+</et>
+
+<fil>
+- Mas maaasahang 24/7 signal alert na may FCM at awtomatikong pagbawi.
+- Nagre-refresh ang kumpiyansa kapag bumukas ang app at hindi hihigit sa bawat 10 minuto habang bukas.
+- Awtomatikong pagpili ng wika ng system, suporta sa RTL at global na lokalisasyon.
+- Mga pagpapabuti sa pagganap at katatagan.
+</fil>
+
+<fi-FI>
+- Luotettavammat 24/7 signaalihälytykset FCM:llä ja automaattisella palautuksella.
+- Luottamus päivittyy sovelluksen avautuessa ja enintään 10 minuutin välein, kun se on auki.
+- Automaattinen järjestelmän kielen valinta, RTL-tuki ja globaali lokalisointi.
+- Suorituskyvyn ja vakauden parannuksia.
+</fi-FI>
+
+<fr-CA>
+- Alertes de signal plus fiables 24h/24 et 7j/7 avec FCM et récupération automatique.
+- La confiance se rafraîchit lorsque l'application s'ouvre et au maximum toutes les 10 minutes lorsqu'elle est ouverte.
+- Sélection automatique de la langue du système, prise en charge RTL et localisation mondiale.
+- Améliorations des performances et de la stabilité.
+</fr-CA>
+
+<fr-FR>
+- Alertes de signal plus fiables 24h/24 et 7j/7 avec FCM et récupération automatique.
+- La confiance se rafraîchit lorsque l'application s'ouvre et au maximum toutes les 10 minutes lorsqu'elle est ouverte.
+- Sélection automatique de la langue du système, prise en charge RTL et localisation mondiale.
+- Améliorations des performances et de la stabilité.
+</fr-FR>
+
+<gl-ES>
+- Alertas de sinal máis fiables 24/7 con FCM e recuperación automática.
+- A confianza refresca cando se abre a aplicación e como máximo cada 10 minutos mentres está aberta.
+- Selección automática do idioma do sistema, soporte RTL e localización global.
+- Melloras de rendemento e estabilidade.
+</gl-ES>
+
+<ka-GE>
+- უფრო საიმედო 24/7 სიგნალის გაფრთხილებები FCM-ით და ავტომატური აღდგენით.
+- ნდობა განახლდება აპის გახსნისას და მაქსიმუმ ყოველ 10 წუთში გახსნისას.
+- სისტემის ენის ავტომატური შერჩევა, RTL მხარდაჭერა და გლობალური ლოკალიზაცია.
+- შესრულების და სტაბილურობის გაუმჯობესება.
+</ka-GE>
+
+<de-DE>
+- Zuverlässigere Signalwarnungen rund um die Uhr mit FCM und automatischer Wiederherstellung.
+- Das Vertrauen wird aktualisiert, wenn die App geöffnet wird und höchstens alle 10 Minuten, während sie geöffnet ist.
+- Automatische Systemsprachenauswahl, RTL-Unterstützung und globale Lokalisierung.
+- Leistungs- und Stabilitätsverbesserungen.
+</de-DE>
+
+<el-GR>
+- Πιο αξιόπιστες ειδοποιήσεις σήματος 24/7 με FCM και αυτόματη ανάκτηση.
+- Η εμπιστοσύνη ανανεώνεται όταν ανοίγει η εφαρμογή και το πολύ κάθε 10 λεπτά ενώ είναι ανοιχτή.
+- Αυτόματη επιλογή γλώσσας συστήματος, υποστήριξη RTL και καθολική τοπική προσαρμογή.
+- Βελτιώσεις απόδοσης και σταθερότητας.
+</el-GR>
+
+<gu>
+- FCM અને સ્વચાલિત પુનઃપ્રાપ્તિ સાથે વધુ વિશ્વસનીય 24/7 સિગ્નલ ચેતવણીઓ.
+- જ્યારે એપ્લિકેશન ખુલે છે ત્યારે આત્મવિશ્વાસ તાજું થાય છે અને જ્યારે ખુલે છે ત્યારે વધુમાં વધુ દર 10 મિનિટે.
+- સ્વચાલિત સિસ્ટમ ભાષા પસંદગી, RTL સપોર્ટ અને વૈશ્વિક સ્થાનિકીકરણ.
+- પ્રદર્શન અને સ્થિરતા સુધારણા.
+</gu>
+
+<iw-IL>
+- התראות אות אמינות יותר 24/7 עם FCM ושחזור אוטומטי.
+- הביטחון מתרענן כאשר האפליקציה נפתחת ולכל היותר כל 10 דקות בזמן פתיחה.
+- בחירת שפת מערכת אוטומטית, תמיכה ב-RTL ולוקליזציה גלובלית.
+- שיפורי ביצועים ויציבות.
+</iw-IL>
+
+<hi-IN>
+- एफसीएम और स्वचालित पुनर्प्राप्ति के साथ अधिक विश्वसनीय 24/7 सिग्नल अलर्ट।
+- ऐप खुलने पर और खुलने के दौरान अधिकतम हर 10 मिनट में आत्मविश्वास ताज़ा हो जाता है।
+- स्वचालित सिस्टम भाषा चयन, आरटीएल समर्थन और वैश्विक स्थानीयकरण।
+- प्रदर्शन और स्थिरता में सुधार.
+</hi-IN>
+
+<hu-HU>
+- Megbízhatóbb, éjjel-nappali riasztások FCM-mel és automatikus helyreállítással.
+- A bizalom frissül az alkalmazás megnyitásakor, és legfeljebb 10 percenként, amíg nyitva van.
+- Automatikus rendszernyelv-választás, RTL támogatás és globális lokalizáció.
+- A teljesítmény és a stabilitás javítása.
+</hu-HU>
+
+<is-IS>
+- Áreiðanlegri 24/7 merki viðvaranir með FCM og sjálfvirkri endurheimt.
+- Sjálfstraust endurnýjast þegar appið opnast og í mesta lagi á 10 mínútna fresti þegar það er opið.
+- Sjálfvirkt kerfismálsval, RTL stuðningur og alþjóðleg staðsetning.
+- Endurbætur á afköstum og stöðugleika.
+</is-IS>
+
+<id>
+- Peringatan sinyal 24/7 yang lebih andal dengan FCM dan pemulihan otomatis.
+- Keyakinan disegarkan saat aplikasi dibuka dan paling banyak setiap 10 menit saat dibuka.
+- Pemilihan bahasa sistem otomatis, dukungan RTL dan lokalisasi global.
+- Peningkatan kinerja dan stabilitas.
+</id>
+
+<it-IT>
+- Avvisi di segnale più affidabili 24 ore su 24, 7 giorni su 7 con FCM e ripristino automatico.
+- La sicurezza viene aggiornata all'apertura dell'app e al massimo ogni 10 minuti mentre è aperta.
+- Selezione automatica della lingua del sistema, supporto RTL e localizzazione globale.
+- Miglioramenti delle prestazioni e della stabilità.
+</it-IT>
+
+<ja-JP>
+- FCM と自動回復による、より信頼性の高い 24 時間年中無休の信号アラート。
+- 信頼度は、アプリを開いたときと、開いている間最大 10 分ごとに更新されます。
+- システム言語の自動選択、RTL サポート、およびグローバル ローカリゼーション。
+- パフォーマンスと安定性の向上。
+</ja-JP>
+
+<kn-IN>
+- FCM ಮತ್ತು ಸ್ವಯಂಚಾಲಿತ ಚೇತರಿಕೆಯೊಂದಿಗೆ ಹೆಚ್ಚು ವಿಶ್ವಾಸಾರ್ಹ 24/7 ಸಿಗ್ನಲ್ ಎಚ್ಚರಿಕೆಗಳು.
+- ಆ್ಯಪ್ ತೆರೆದಾಗ ಮತ್ತು ತೆರೆದಾಗ ಪ್ರತಿ 10 ನಿಮಿಷಗಳಿಗೊಮ್ಮೆ ಆತ್ಮವಿಶ್ವಾಸವು ರಿಫ್ರೆಶ್ ಆಗುತ್ತದೆ.
+- ಸ್ವಯಂಚಾಲಿತ ಸಿಸ್ಟಂ ಭಾಷೆಯ ಆಯ್ಕೆ, RTL ಬೆಂಬಲ ಮತ್ತು ಜಾಗತಿಕ ಸ್ಥಳೀಕರಣ.
+- ಕಾರ್ಯಕ್ಷಮತೆ ಮತ್ತು ಸ್ಥಿರತೆಯ ಸುಧಾರಣೆಗಳು.
+</kn-IN>
+
+<kk>
+- FCM және автоматты қалпына келтіру арқылы тәулік бойы сенімді сигналдар.
+- Қолданба ашылған кезде сенімділік жаңартылады және ашық болған кезде ең көбі 10 минут сайын.
+- Жүйе тілін автоматты таңдау, RTL қолдауы және жаһандық локализация.
+- Өнімділік пен тұрақтылықты жақсарту.
+</kk>
+
+<km-KH>
+- ការដាស់តឿនសញ្ញា 24/7 ដែលអាចទុកចិត្តបានបន្ថែមទៀតជាមួយ FCM និងការសង្គ្រោះដោយស្វ័យប្រវត្តិ។
+- ទំនុកចិត្តនឹងធ្វើឱ្យស្រស់ឡើងវិញនៅពេលដែលកម្មវិធីបើក ហើយភាគច្រើនរៀងរាល់ 10 នាទីម្តងពេលបើក។
+- ការជ្រើសរើសភាសាប្រព័ន្ធដោយស្វ័យប្រវត្តិ ការគាំទ្រ RTL និងការធ្វើមូលដ្ឋានីយកម្មសកល។
+- ការកែលម្អការអនុវត្ត និងស្ថេរភាព។
+</km-KH>
+
+<ko-KR>
+- FCM 및 자동 복구 기능을 통해 보다 안정적인 연중무휴 신호 알림을 제공합니다.
+- 신뢰도는 앱이 열릴 때 그리고 열려 있는 동안 최대 10분마다 새로 고쳐집니다.
+- 자동 시스템 언어 선택, RTL 지원 및 글로벌 현지화.
+- 성능 및 안정성이 향상되었습니다.
+</ko-KR>
+
+<ky-KG>
+- FCM жана автоматтык калыбына келтирүү менен дагы ишенимдүү 24/7 сигнал эскертүүлөрү.
+- Ишенимдүүлүк колдонмо ачылганда жана эң көп дегенде ар бир 10 мүнөт сайын жаңырып турат.
+- Автоматтык система тилин тандоо, RTL колдоо жана глобалдык локалдаштыруу.
+- Иштин майнаптуулугу жана туруктуулугу жакшыртылды.
+</ky-KG>
+
+<lo-LA>
+- ການແຈ້ງເຕືອນສັນຍານ 24/7 ທີ່ເຊື່ອຖືໄດ້ຫຼາຍຂຶ້ນກັບ FCM ແລະການຟື້ນຟູອັດຕະໂນມັດ.
+- ຄວາມ​ໝັ້ນ​ໃຈ​ຈະ​ສົດ​ຊື່ນ​ເມື່ອ​ແອັບ​ເປີດ ແລະ​ຫຼາຍ​ສຸດ​ທຸກໆ 10 ນາ​ທີ​ໃນ​ຂະ​ນະ​ທີ່​ເປີດ.
+- ການເລືອກພາສາລະບົບອັດຕະໂນມັດ, ການສະຫນັບສະຫນູນ RTL ແລະການທ້ອງຖິ່ນທົ່ວໂລກ.
+- ການປັບປຸງປະສິດທິພາບ ແລະສະຖຽນລະພາບ.
+</lo-LA>
+
+<lv>
+- Uzticamāki 24/7 signālu brīdinājumi ar FCM un automātisko atkopšanu.
+- Pārliecība tiek atsvaidzināta, kad lietotne tiek atvērta, un ne vairāk kā ik pēc 10 minūtēm, kad tā tiek atvērta.
+- Automātiska sistēmas valodas izvēle, RTL atbalsts un globālā lokalizācija.
+- Veiktspējas un stabilitātes uzlabojumi.
+</lv>
+
+<lt>
+- Patikimesni 24 valandas per parą, 7 dienas per savaitę, perspėjimai su FCM ir automatiniu atkūrimu.
+- Pasitikėjimas atnaujinamas atidarius programą ir daugiausia kas 10 minučių, kai ji atidaryta.
+- Automatinis sistemos kalbos pasirinkimas, RTL palaikymas ir globali lokalizacija.
+- Našumo ir stabilumo patobulinimai.
+</lt>
+
+<mk-MK>
+- Посигурни сигнали 24/7 со FCM и автоматско враќање.
+- Довербата се освежува кога ќе се отвори апликацијата и најмногу на секои 10 минути додека е отворена.
+- Автоматски избор на системски јазик, поддршка за RTL и глобална локализација.
+- Подобрување на перформансите и стабилноста.
+</mk-MK>
+
+<ms-MY>
+- Makluman isyarat 24/7 yang lebih dipercayai dengan FCM dan pemulihan automatik.
+- Keyakinan disegarkan apabila apl dibuka dan paling banyak setiap 10 minit semasa dibuka.
+- Pemilihan bahasa sistem automatik, sokongan RTL dan penyetempatan global.
+- Peningkatan prestasi dan kestabilan.
+</ms-MY>
+
+<ms>
+- Makluman isyarat 24/7 yang lebih dipercayai dengan FCM dan pemulihan automatik.
+- Keyakinan disegarkan apabila apl dibuka dan paling banyak setiap 10 minit semasa dibuka.
+- Pemilihan bahasa sistem automatik, sokongan RTL dan penyetempatan global.
+- Peningkatan prestasi dan kestabilan.
+</ms>
+
+<ml-IN>
+- FCM, സ്വയമേവ വീണ്ടെടുക്കൽ എന്നിവയ്‌ക്കൊപ്പം കൂടുതൽ വിശ്വസനീയമായ 24/7 സിഗ്നൽ അലേർട്ടുകൾ.
+- ആപ്പ് തുറക്കുമ്പോഴും പരമാവധി ഓരോ 10 മിനിറ്റിലും തുറക്കുമ്പോൾ ആത്മവിശ്വാസം പുതുക്കുന്നു.
+- ഓട്ടോമാറ്റിക് സിസ്റ്റം ഭാഷ തിരഞ്ഞെടുക്കൽ, RTL പിന്തുണ, ആഗോള പ്രാദേശികവൽക്കരണം.
+- പ്രകടനവും സ്ഥിരതയും മെച്ചപ്പെടുത്തുന്നു.
+</ml-IN>
+
+<mr-IN>
+- FCM आणि स्वयंचलित पुनर्प्राप्तीसह अधिक विश्वासार्ह 24/7 सिग्नल सूचना.
+- ॲप उघडल्यावर आत्मविश्वास ताजेतवाने होतो आणि उघडताना जास्तीत जास्त दर 10 मिनिटांनी.
+- स्वयंचलित प्रणाली भाषा निवड, RTL समर्थन आणि जागतिक स्थानिकीकरण.
+- कामगिरी आणि स्थिरता सुधारणा.
+</mr-IN>
+
+<mn-MN>
+- FCM болон автомат сэргээлт бүхий илүү найдвартай 24/7 дохионы дохиолол.
+- Апп-ыг нээх үед өөртөө итгэх итгэл сэргээгддэг ба нээлттэй үед хамгийн ихдээ 10 минут тутамд.
+- Системийн хэлийг автоматаар сонгох, RTL дэмжлэг, дэлхийн нутагшуулах.
+- Гүйцэтгэл болон тогтвортой байдлын сайжруулалт.
+</mn-MN>
+
+<ne-NP>
+- FCM र स्वचालित रिकभरीको साथ थप भरपर्दो 24/7 सिग्नल अलर्टहरू।
+- एप खोल्दा र खुला हुँदा हरेक १० मिनेटमा आत्मविश्वास ताजा हुन्छ।
+- स्वचालित प्रणाली भाषा चयन, RTL समर्थन र वैश्विक स्थानीयकरण।
+- प्रदर्शन र स्थिरता सुधार।
+</ne-NP>
+
+<no-NO>
+- Mer pålitelige 24/7-signalvarsler med FCM og automatisk gjenoppretting.
+- Tillit oppdateres når appen åpnes og maksimalt hvert 10. minutt mens den er åpen.
+- Automatisk systemspråkvalg, RTL-støtte og global lokalisering.
+- Ytelses- og stabilitetsforbedringer.
+</no-NO>
+
+<fa>
+- هشدارهای سیگنال 24/7 قابل اعتمادتر با FCM و بازیابی خودکار.
+- هنگامی که برنامه باز می شود و حداکثر هر 10 دقیقه در هنگام باز شدن، Confidence به روز می شود.
+- انتخاب خودکار زبان سیستم، پشتیبانی RTL و محلی سازی جهانی.
+- بهبود عملکرد و ثبات
+</fa>
+
+<fa-AE>
+- هشدارهای سیگنال 24/7 قابل اعتمادتر با FCM و بازیابی خودکار.
+- هنگامی که برنامه باز می شود و حداکثر هر 10 دقیقه در هنگام باز شدن، Confidence به روز می شود.
+- انتخاب خودکار زبان سیستم، پشتیبانی RTL و محلی سازی جهانی.
+- بهبود عملکرد و ثبات
+</fa-AE>
+
+<fa-AF>
+- هشدارهای سیگنال 24/7 قابل اعتمادتر با FCM و بازیابی خودکار.
+- هنگامی که برنامه باز می شود و حداکثر هر 10 دقیقه در هنگام باز شدن، Confidence به روز می شود.
+- انتخاب خودکار زبان سیستم، پشتیبانی RTL و محلی سازی جهانی.
+- بهبود عملکرد و ثبات
+</fa-AF>
+
+<fa-IR>
+- هشدارهای سیگنال 24/7 قابل اعتمادتر با FCM و بازیابی خودکار.
+- هنگامی که برنامه باز می شود و حداکثر هر 10 دقیقه در هنگام باز شدن، Confidence به روز می شود.
+- انتخاب خودکار زبان سیستم، پشتیبانی RTL و محلی سازی جهانی.
+- بهبود عملکرد و ثبات
+</fa-IR>
+
+<pl-PL>
+- Bardziej niezawodne alerty sygnałowe dostępne 24 godziny na dobę, 7 dni w tygodniu dzięki FCM i automatycznemu przywracaniu.
+- Zaufanie odświeża się po otwarciu aplikacji i maksymalnie co 10 minut, gdy jest otwarta.
+- Automatyczny wybór języka systemu, obsługa RTL i globalna lokalizacja.
+- Poprawa wydajności i stabilności.
+</pl-PL>
+
+<pt-BR>
+- Alertas de sinal mais confiáveis ​​24 horas por dia, 7 dias por semana, com FCM e recuperação automática.
+- A confiança é atualizada quando o aplicativo é aberto e, no máximo, a cada 10 minutos enquanto estiver aberto.
+- Seleção automática de idioma do sistema, suporte RTL e localização global.
+- Melhorias de desempenho e estabilidade.
+</pt-BR>
+
+<pt-PT>
+- Alertas de sinal mais fiáveis ​​​​24 horas por dia, 7 dias por semana, com FCM e recuperação automática.
+- A confiança é atualizada quando a aplicação é aberta e, no máximo, a cada 10 minutos enquanto está aberta.
+- Seleção automática do idioma do sistema, suporte RTL e localização global.
+- Melhorias de desempenho e estabilidade.
+</pt-PT>
+
+<pa>
+- FCM ਅਤੇ ਆਟੋਮੈਟਿਕ ਰਿਕਵਰੀ ਦੇ ਨਾਲ ਵਧੇਰੇ ਭਰੋਸੇਮੰਦ 24/7 ਸਿਗਨਲ ਚੇਤਾਵਨੀਆਂ।
+- ਜਦੋਂ ਐਪ ਖੁੱਲ੍ਹਦਾ ਹੈ ਅਤੇ ਖੁੱਲ੍ਹਣ ਵੇਲੇ ਵੱਧ ਤੋਂ ਵੱਧ ਹਰ 10 ਮਿੰਟ ਬਾਅਦ ਆਤਮ-ਵਿਸ਼ਵਾਸ ਤਾਜ਼ਾ ਹੁੰਦਾ ਹੈ।
+- ਆਟੋਮੈਟਿਕ ਸਿਸਟਮ ਭਾਸ਼ਾ ਦੀ ਚੋਣ, RTL ਸਮਰਥਨ ਅਤੇ ਗਲੋਬਲ ਸਥਾਨਕਕਰਨ।
+- ਪ੍ਰਦਰਸ਼ਨ ਅਤੇ ਸਥਿਰਤਾ ਸੁਧਾਰ।
+</pa>
+
+<ro>
+- Alerte de semnal mai fiabile 24/7 cu FCM și recuperare automată.
+- Încrederea se reîmprospătează când aplicația se deschide și cel mult la fiecare 10 minute când este deschisă.
+- Selectarea automată a limbii sistemului, suport RTL și localizare globală.
+- Îmbunătățiri de performanță și stabilitate.
+</ro>
+
+<rm>
+- More reliable 24/7 signal alerts with FCM and automatic recovery.
+- Confidence refreshes when the app opens and at most every 10 minutes while open.
+- Automatic system language selection, RTL support and global localization.
+- Performance and stability improvements.
+</rm>
+
+<ru-RU>
+- Более надежные оповещения о сигналах 24/7 с помощью FCM и автоматического восстановления.
+- Уверенность обновляется при открытии приложения и не чаще, чем каждые 10 минут во время его открытия.
+- Автоматический выбор языка системы, поддержка RTL и глобальная локализация.
+- Улучшения производительности и стабильности.
+</ru-RU>
+
+<sr>
+- Поузданија 24/7 сигнална упозорења са ФЦМ-ом и аутоматским опоравком.
+- Поуздање се освежава када се апликација отвори и највише сваких 10 минута док је отворена.
+- Аутоматски избор језика система, РТЛ подршка и глобална локализација.
+- Побољшања перформанси и стабилности.
+</sr>
+
+<si-LK>
+- FCM සහ ස්වයංක්‍රීය ප්‍රතිසාධනය සමඟ වඩාත් විශ්වාසදායක 24/7 සංඥා ඇඟවීම්.
+- යෙදුම විවෘත වන විට සහ විවෘතව ඇති සෑම විනාඩි 10කට වරක්ම විශ්වාසය ප්‍රබෝධමත් වේ.
+- ස්වයංක්‍රීය පද්ධති භාෂා තේරීම, RTL සහාය සහ ගෝලීය ප්‍රාදේශීයකරණය.
+- කාර්ය සාධනය සහ ස්ථාවරත්වය වැඩි දියුණු කිරීම.
+</si-LK>
+
+<sk>
+- Spoľahlivejšie upozornenia na signál 24/7 s FCM a automatickou obnovou.
+- Dôvera sa obnovuje pri otvorení aplikácie a maximálne každých 10 minút, keď je otvorená.
+- Automatický výber jazyka systému, podpora RTL a globálna lokalizácia.
+- Vylepšenia výkonu a stability.
+</sk>
+
+<sl>
+- Zanesljivejša 24/7 signalna opozorila s FCM in samodejno obnovitvijo.
+- Zaupanje se osveži, ko se aplikacija odpre in največ vsakih 10 minut, ko je odprta.
+- Samodejna izbira sistemskega jezika, podpora RTL in globalna lokalizacija.
+- Izboljšave zmogljivosti in stabilnosti.
+</sl>
+
+<es-419>
+- Alertas de señal más confiables las 24 horas del día, los 7 días de la semana con FCM y recuperación automática.
+- La confianza se actualiza cuando se abre la aplicación y como máximo cada 10 minutos mientras está abierta.
+- Selección automática de idioma del sistema, soporte RTL y localización global.
+- Mejoras de rendimiento y estabilidad.
+</es-419>
+
+<es-ES>
+- Alertas de señal más confiables las 24 horas del día, los 7 días de la semana con FCM y recuperación automática.
+- La confianza se actualiza cuando se abre la aplicación y como máximo cada 10 minutos mientras está abierta.
+- Selección automática de idioma del sistema, soporte RTL y localización global.
+- Mejoras de rendimiento y estabilidad.
+</es-ES>
+
+<es-US>
+- Alertas de señal más confiables las 24 horas del día, los 7 días de la semana con FCM y recuperación automática.
+- La confianza se actualiza cuando se abre la aplicación y como máximo cada 10 minutos mientras está abierta.
+- Selección automática de idioma del sistema, soporte RTL y localización global.
+- Mejoras de rendimiento y estabilidad.
+</es-US>
+
+<sw>
+- Arifa za kuaminika zaidi za 24/7 na FCM na urejeshaji kiotomatiki.
+- Kujiamini huonyeshwa upya programu inapofunguliwa na angalau kila baada ya dakika 10 inapofunguliwa.
+- Uteuzi otomatiki wa lugha ya mfumo, usaidizi wa RTL na ujanibishaji wa kimataifa.
+- Maboresho ya utendaji na uthabiti.
+</sw>
+
+<sv-SE>
+- Mer pålitliga 24/7-signalvarningar med FCM och automatisk återställning.
+- Förtroendet uppdateras när appen öppnas och högst var tionde minut när den är öppen.
+- Automatiskt val av systemspråk, RTL-stöd och global lokalisering.
+- Prestanda- och stabilitetsförbättringar.
+</sv-SE>
+
+<ta-IN>
+- FCM மற்றும் தானியங்கி மீட்டெடுப்புடன் மிகவும் நம்பகமான 24/7 சமிக்ஞை எச்சரிக்கைகள்.
+- ஆப்ஸ் திறக்கும் போது நம்பிக்கை புதுப்பிக்கப்படும் மற்றும் திறந்திருக்கும் போது ஒவ்வொரு 10 நிமிடங்களுக்கும்.
+- தானியங்கி கணினி மொழி தேர்வு, RTL ஆதரவு மற்றும் உலகளாவிய உள்ளூர்மயமாக்கல்.
+- செயல்திறன் மற்றும் நிலைத்தன்மை மேம்பாடுகள்.
+</ta-IN>
+
+<te-IN>
+- FCM మరియు ఆటోమేటిక్ రికవరీతో మరింత విశ్వసనీయమైన 24/7 సిగ్నల్ హెచ్చరికలు.
+- యాప్ తెరిచినప్పుడు మరియు తెరిచినప్పుడు గరిష్టంగా ప్రతి 10 నిమిషాలకు విశ్వాసం రిఫ్రెష్ అవుతుంది.
+- స్వయంచాలక సిస్టమ్ భాష ఎంపిక, RTL మద్దతు మరియు ప్రపంచ స్థానికీకరణ.
+- పనితీరు మరియు స్థిరత్వం మెరుగుదలలు.
+</te-IN>
+
+<th>
+- การแจ้งเตือนสัญญาณทุกวันตลอด 24 ชั่วโมงที่เชื่อถือได้มากขึ้นด้วย FCM และการกู้คืนอัตโนมัติ
+- ความเชื่อมั่นจะรีเฟรชเมื่อแอปเปิดและมากที่สุดทุกๆ 10 นาทีขณะเปิดอยู่
+- การเลือกภาษาของระบบอัตโนมัติ รองรับ RTL และการแปลทั่วโลก
+- การปรับปรุงประสิทธิภาพและความเสถียร
+</th>
+
+<tr-TR>
+- FCM ve otomatik kurtarma ile daha güvenilir 7/24 sinyal uyarıları.
+- Güven, uygulama açıldığında ve açıkken en fazla 10 dakikada bir yenilenir.
+- Otomatik sistem dili seçimi, RTL desteği ve global yerelleştirme.
+- Performans ve kararlılık iyileştirmeleri.
+</tr-TR>
+
+<uk>
+- Надійніші цілодобові сигнальні сповіщення з FCM і автоматичним відновленням.
+- Впевненість оновлюється, коли програма відкривається та щонайбільше кожні 10 хвилин, коли вона відкрита.
+- Автоматичний вибір мови системи, підтримка RTL і глобальна локалізація.
+- Покращення продуктивності та стабільності.
+</uk>
+
+<ur>
+- FCM اور خودکار ریکوری کے ساتھ زیادہ قابل اعتماد 24/7 سگنل الرٹس۔
+- جب ایپ کھلتی ہے اور زیادہ سے زیادہ ہر 10 منٹ میں کھلی ہوئی ہوتی ہے تو اعتماد تازہ ہوجاتا ہے۔
+- خودکار نظام زبان کا انتخاب، RTL سپورٹ اور عالمی لوکلائزیشن۔
+- کارکردگی اور استحکام میں بہتری۔
+</ur>
+
+<vi>
+- Cảnh báo tín hiệu 24/7 đáng tin cậy hơn với FCM và phục hồi tự động.
+- Độ tin cậy được làm mới khi ứng dụng mở và tối đa 10 phút một lần khi mở.
+- Lựa chọn ngôn ngữ hệ thống tự động, hỗ trợ RTL và bản địa hóa toàn cầu.
+- Cải thiện hiệu suất và độ ổn định.
+</vi>
+
+<zu>
+- Izaziso zesignali ezinokwethenjelwa kakhudlwana ezingu-24/7 nge-FCM nokuthola ngokuzenzakalelayo.
+- Ukuzethemba kuvuselela lapho uhlelo lokusebenza luvuleka futhi ngokuvamile njalo ngemizuzu eyi-10 ngenkathi luvuliwe.
+- Ukukhetha ulimi lwesistimu okuzenzakalelayo, ukusekelwa kwe-RTL nokwenza kwasendaweni emhlabeni jikelele.
+- Ukuthuthukiswa kokusebenza nokuzinza.
+</zu>

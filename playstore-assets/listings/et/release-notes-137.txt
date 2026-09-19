@@ -1,0 +1,4 @@
+- Usaldusväärsemad 24/7 signaalihoiatused koos FCM-i ja automaatse taastamisega.
+- Usaldus värskendab rakenduse avanemisel ja avatud olekus maksimaalselt iga 10 minuti järel.
+- Automaatne süsteemi keele valik, RTL tugi ja globaalne lokaliseerimine.
+- Jõudluse ja stabiilsuse täiustused.

@@ -1,81 +1,120 @@
-        
         // ============================================
-        // IN-APP BROWSER - Abrir sites dentro do app usando WebView
-        // Como a maioria dos sites bloqueia iframe (X-Frame-Options),
-        // usamos o Capacitor Browser para abrir dentro do app
+        // IN-APP BROWSER
         // ============================================
         let currentBrowserUrl = '';
         let browserReturnToNews = false;
-        let lastOpenedNewsIndex = null; // Para reabrir o modal ao voltar
-        let lastOpenedHotNewsUrl = null; // Para hot news
-        
-        async function openInAppBrowser(url, title, newsIndex = null, isHotNews = false, hotNewsUrl = null) {
-            if (!isValidURL(url)) {
+        let lastOpenedNewsIndex = null;
+        let lastOpenedHotNewsUrl = null;
+        let previousSectionBeforeExternalLink = null;
+        let _browserRestoreTimer = null;
+        let _browserRestoreInProgress = false;
+        let _lastBrowserRestoreAt = 0;
+        let _btcHeatmapOpening = false;
+
+        async function getCapacitorBrowserPlugin() {
+            try {
+                const cap = window.Capacitor;
+                if (!cap) return null;
+                if (cap.Plugins && cap.Plugins.Browser && typeof cap.Plugins.Browser.open === 'function') {
+                    return cap.Plugins.Browser;
+                }
+                if (typeof cap.registerPlugin === 'function') {
+                    const Browser = cap.registerPlugin('Browser');
+                    if (Browser && typeof Browser.open === 'function') return Browser;
+                }
+            } catch (_) {}
+            return null;
+        }
+
+        async function openUrlWithNativeBrowser(url) {
+            const Browser = await getCapacitorBrowserPlugin();
+            if (Browser) {
+                await Browser.open({
+                    url: url,
+                    presentationStyle: 'popover'
+                });
                 return;
             }
-            
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
+
+        async function openInAppBrowser(url, title, newsIndex = null, isHotNews = false, hotNewsUrl = null) {
+            if (!isValidURL(url)) return;
+
             currentBrowserUrl = url;
             browserReturnToNews = true;
             lastOpenedNewsIndex = newsIndex;
             lastOpenedHotNewsUrl = hotNewsUrl;
-            
-            // Salvar no sessionStorage para recuperar ao voltar
+
             sessionStorage.setItem('returnToNewsModal', JSON.stringify({
                 newsIndex: newsIndex,
                 isHotNews: isHotNews,
                 hotNewsUrl: hotNewsUrl,
                 timestamp: Date.now()
             }));
-            
-            // Usar Capacitor Browser para abrir dentro do app
+
             try {
-                if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.Browser) {
-                    const { Browser } = Capacitor.Plugins;
-                    await Browser.open({ 
-                        url: url,
-                        presentationStyle: 'popover' // Abre como overlay
-                    });
-                } else {
-                    // Fallback para web
-                    window.open(url, '_blank', 'noopener,noreferrer');
-                }
+                await openUrlWithNativeBrowser(url);
             } catch (e) {
                 window.open(url, '_blank', 'noopener,noreferrer');
             }
         }
-        
-        // Função para abrir links externos (Links Úteis) guardando a seção atual
-        let previousSectionBeforeExternalLink = null;
-        
-        async function openExternalLink(url, title) {
-            // Guardar a seção atual para retornar depois
-            previousSectionBeforeExternalLink = currentSection;
+
+        async function openExternalLink(url, title, returnSectionOverride = null) {
+            if (!isValidURL(url)) return;
+
+            const activeSection = (typeof currentSection !== 'undefined' && currentSection) ? currentSection : 'home';
+            const sectionToRestore = returnSectionOverride || activeSection;
+            previousSectionBeforeExternalLink = sectionToRestore;
+            currentBrowserUrl = url;
+
             const currentScrollY = Math.max(
                 window.scrollY || 0,
                 document.documentElement ? (document.documentElement.scrollTop || 0) : 0,
                 document.body ? (document.body.scrollTop || 0) : 0
             );
             sessionStorage.setItem('returnToSection', JSON.stringify({
-                section: currentSection,
+                section: sectionToRestore,
                 scrollY: currentScrollY,
                 ts: Date.now()
             }));
-            // Usar o browser do Capacitor
+
             try {
-                if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.Browser) {
-                    const { Browser } = Capacitor.Plugins;
-                    await Browser.open({ 
-                        url: url,
-                        presentationStyle: 'popover'
-                    });
-                } else {
-                    window.open(url, '_blank', 'noopener,noreferrer');
-                }
+                await openUrlWithNativeBrowser(url);
             } catch (e) {
                 window.open(url, '_blank', 'noopener,noreferrer');
             }
         }
-        
+
+        function _resetBtcHeatmapButton() {
+            const button = document.querySelector('.btc-heatmap-button');
+            if (button) {
+                button.classList.remove('is-opening');
+                button.disabled = false;
+            }
+            _btcHeatmapOpening = false;
+        }
+
+        function openBtcHeatmap() {
+            if (_btcHeatmapOpening) return;
+            _btcHeatmapOpening = true;
+
+            const button = document.querySelector('.btc-heatmap-button');
+            if (button) {
+                button.disabled = true;
+                button.classList.remove('is-opening');
+                void button.offsetWidth;
+                button.classList.add('is-opening');
+            }
+
+            const url = 'https://www.coinglass.com/pro/futures/LiquidationHeatMap?coin=BTC&type=symbol';
+            setTimeout(() => {
+                Promise.resolve(openExternalLink(url, 'Heatmap BTC', 'home'))
+                    .catch(() => {})
+                    .finally(() => setTimeout(_resetBtcHeatmapButton, 450));
+            }, 220);
+        }
+
         function closeInAppBrowser() {
             const browser = document.getElementById('in-app-browser');
             if (browser) {
@@ -85,139 +124,155 @@
             currentBrowserUrl = '';
             browserReturnToNews = false;
         }
-        
-        // Listener para quando o browser do Capacitor fecha
-        // E também para quando o app volta ao foco após sair do browser
+
+        function _scheduleBrowserRestore(delay = 90) {
+            if (_browserRestoreTimer) clearTimeout(_browserRestoreTimer);
+            _browserRestoreTimer = setTimeout(() => {
+                _browserRestoreTimer = null;
+                _restoreBrowserStateOnce();
+            }, delay);
+        }
+
+        function _restoreBrowserStateOnce() {
+            const hasSection = !!sessionStorage.getItem('returnToSection');
+            const hasNews = !!sessionStorage.getItem('returnToNewsModal');
+            if (!hasSection && !hasNews) return false;
+
+            const now = Date.now();
+            if (_browserRestoreInProgress || now - _lastBrowserRestoreAt < 250) return true;
+
+            _browserRestoreInProgress = true;
+            _lastBrowserRestoreAt = now;
+            try {
+                restoreSectionIfNeeded();
+                restoreNewsModalIfNeeded();
+            } finally {
+                setTimeout(() => { _browserRestoreInProgress = false; }, 300);
+            }
+            return true;
+        }
+
         async function initBrowserListener() {
             try {
-                if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.Browser) {
-                    const { Browser } = Capacitor.Plugins;
-                    // Quando o browser fecha, o app volta ao estado anterior
+                const Browser = await getCapacitorBrowserPlugin();
+                if (Browser && typeof Browser.addListener === 'function') {
                     Browser.addListener('browserFinished', () => {
-                        // Restaurar seção se veio de link externo
-                        restoreSectionIfNeeded();
-                        // Restaurar modal se necessário
-                        restoreNewsModalIfNeeded();
+                        _scheduleBrowserRestore(30);
                     });
                 }
-                
-                // Listener para App do Capacitor (quando app volta ao foco)
+
                 if (typeof Capacitor !== 'undefined' && Capacitor.Plugins && Capacitor.Plugins.App) {
                     const { App } = Capacitor.Plugins;
                     App.addListener('appStateChange', ({ isActive }) => {
-                        if (isActive) {
-                            // App voltou ao foco - verificar se deve restaurar seção ou modal
-                            setTimeout(() => {
-                                restoreSectionIfNeeded();
-                                restoreNewsModalIfNeeded();
-                            }, 100);
-                        }
+                        if (isActive) _scheduleBrowserRestore(100);
                     });
                 }
-            } catch (e) {
-            }
+            } catch (e) {}
         }
-        
-        // Função para restaurar a seção após fechar link externo
+
         function restoreSectionIfNeeded() {
             const saved = sessionStorage.getItem('returnToSection');
-            if (!saved) return;
+            if (!saved) return false;
 
             sessionStorage.removeItem('returnToSection');
 
             let savedSection = null;
             let savedScrollY = 0;
+            let ts = 0;
             try {
                 const parsed = JSON.parse(saved);
                 if (parsed && typeof parsed === 'object') {
                     savedSection = parsed.section || null;
                     savedScrollY = Number(parsed.scrollY || 0);
+                    ts = Number(parsed.ts || 0);
                 }
             } catch (_) {
-                // Backward compatibility with old format (plain section string)
                 savedSection = saved;
             }
 
-            if (!savedSection) return;
+            if (!savedSection) return false;
+            if (ts && Date.now() - ts > 15 * 60 * 1000) return false;
 
-            if (typeof currentSection === 'undefined' || currentSection !== savedSection) {
-                showSection(savedSection);
+            const targetScroll = Number.isFinite(savedScrollY) ? Math.max(0, savedScrollY) : 0;
+            if (typeof showSection === 'function') {
+                showSection(savedSection, {
+                    force: true,
+                    skipTransition: true,
+                    skipScroll: true,
+                    restoreScrollY: targetScroll,
+                    workDelay: 80
+                });
+            } else {
+                try { window.scrollTo(0, targetScroll); } catch (_) {}
             }
-
-            if (Number.isFinite(savedScrollY) && savedScrollY > 0) {
-                const restoreScroll = () => {
-                    try { window.scrollTo(0, savedScrollY); } catch (_) {}
-                };
-                requestAnimationFrame(restoreScroll);
-                setTimeout(restoreScroll, 120);
-                setTimeout(restoreScroll, 320);
-            }
+            return true;
         }
-        
-        // Função para restaurar modal da notícia se necessário
+
         function restoreNewsModalIfNeeded() {
             try {
                 const savedData = sessionStorage.getItem('returnToNewsModal');
-                if (!savedData) return;
-                
+                if (!savedData) return false;
+
+                sessionStorage.removeItem('returnToNewsModal');
                 const data = JSON.parse(savedData);
-                // Verificar se não passou muito tempo (5 minutos)
-                if (Date.now() - data.timestamp > 300000) {
-                    sessionStorage.removeItem('returnToNewsModal');
-                    return;
+
+                if (Date.now() - Number(data.timestamp || 0) > 300000) {
+                    currentBrowserUrl = '';
+                    browserReturnToNews = false;
+                    return false;
                 }
-                
-                // Verificar se modal já está aberto
+
                 const modal = document.getElementById('news-modal');
                 if (modal && modal.classList.contains('active')) {
-                    sessionStorage.removeItem('returnToNewsModal');
-                    return;
+                    currentBrowserUrl = '';
+                    browserReturnToNews = false;
+                    return true;
                 }
-                // Garantir que estamos na seção de notícias
-                showSection('news');
-                
-                // Reabrir o modal correto usando índice (mais confiável)
-                if (data.isHotNews && data.newsIndex !== null && data.newsIndex !== undefined) {
-                    openHotNewsModal(data.newsIndex);
-                } else if (data.isHotNews && data.hotNewsUrl) {
-                    // Fallback para URL se não tiver índice
+
+                if (typeof showSection === 'function') {
+                    showSection('news', { skipTransition: true, skipScroll: true, workDelay: 120 });
+                }
+
+                if (data.isHotNews && data.hotNewsUrl) {
                     openHotNewsModal(data.hotNewsUrl);
+                } else if (data.isHotNews && data.newsIndex !== null && data.newsIndex !== undefined) {
+                    openHotNewsModal(data.newsIndex);
                 } else if (data.newsIndex !== null && data.newsIndex !== undefined) {
                     openNewsModal(data.newsIndex);
                 }
-                
-                // Limpar dados salvos
-                sessionStorage.removeItem('returnToNewsModal');
+
                 currentBrowserUrl = '';
                 browserReturnToNews = false;
+                return true;
             } catch (e) {
+                return false;
             }
         }
-        
-        // Também usar visibilitychange como fallback (mais confiável que browserFinished)
+
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
-                // Restaurar seção primeiro, depois modal
-                setTimeout(() => {
-                    restoreSectionIfNeeded();
-                    restoreNewsModalIfNeeded();
-                }, 100);
+                _scheduleBrowserRestore(120);
             }
         });
-        
-        // Inicializar listener quando o DOM estiver pronto
+
         document.addEventListener('DOMContentLoaded', initBrowserListener);
-        
+
         function openCurrentUrlExternal() {
             if (currentBrowserUrl) {
                 openExternalLink(currentBrowserUrl);
             }
         }
-        
+
+        window.openInAppBrowser = openInAppBrowser;
+        window.openExternalLink = openExternalLink;
+        window.openBtcHeatmap = openBtcHeatmap;
+        window.closeInAppBrowser = closeInAppBrowser;
+        window.openCurrentUrlExternal = openCurrentUrlExternal;
+
         // Rate limiter para APIs
         const rateLimiter = {
             lastCall: {},
-            minInterval: 1000, // 1 segundo entre chamadas
+            minInterval: 1000,
             canCall: function(apiName) {
                 const now = Date.now();
                 if (!this.lastCall[apiName] || (now - this.lastCall[apiName]) > this.minInterval) {
@@ -227,4 +282,3 @@
                 return false;
             }
         };
-

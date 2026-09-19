@@ -1,0 +1,4 @@
+- Uzticamāki 24/7 signālu brīdinājumi ar FCM un automātisko atkopšanu.
+- Pārliecība tiek atsvaidzināta, kad lietotne tiek atvērta, un ne vairāk kā ik pēc 10 minūtēm, kad tā tiek atvērta.
+- Automātiska sistēmas valodas izvēle, RTL atbalsts un globālā lokalizācija.
+- Veiktspējas un stabilitātes uzlabojumi.

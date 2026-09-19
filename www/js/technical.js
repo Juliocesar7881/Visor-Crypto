@@ -5,9 +5,107 @@
         const TA_CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
         const TA_POINTS_HISTORY_KEY = 'ta_points_history_';
         const TA_POINTS_HISTORY_LIMIT = 36; // 3h de histórico em janelas de 5min
-        const TA_SHARED_CALLS_CACHE_KEY = 'vc_shared_call_history_v2';
+        const TA_SHARED_CALLS_CACHE_KEY = 'vc_shared_call_history_v4';
         const TA_SHARED_CALLS_CACHE_TTL = 60 * 1000;
         const TA_SHARED_CALLS_PERSIST_TTL = 5 * 60 * 1000;
+        const TA_CALLS_CLEAN_EPOCH_MS = Date.parse('2026-05-30T21:10:00Z');
+        const TA_CALL_STRATEGY_VERSION = 'S6_INV';
+        const TA_TRUSTED_SETTLEMENT_PREFIX = 'worker_settlement_v3_usdm';
+        const TA_CALLS_LOCAL_RESET_VERSION = '2026-06-15-inverse-long-short-v1';
+        const TA_CALLS_LOCAL_RESET_MARKER = 'vc_ta_calls_clean_version';
+        const VISOR_DIRECTION_POLICY_VERSION = 'inverse-long-short-v1';
+        window.VISOR_DIRECTION_POLICY_VERSION = VISOR_DIRECTION_POLICY_VERSION;
+        window.applyVisorDirectionPolicy = window.applyVisorDirectionPolicy || function applyVisorDirectionPolicy(rawDirection, options = {}) {
+            const normalized = String(rawDirection || '').toUpperCase().includes('LONG')
+                ? 'LONG'
+                : String(rawDirection || '').toUpperCase().includes('SHORT')
+                    ? 'SHORT'
+                    : 'NEUTRO';
+            if (options && options.alreadyFinal === true) return normalized;
+            if (normalized === 'LONG') return 'SHORT';
+            if (normalized === 'SHORT') return 'LONG';
+            return 'NEUTRO';
+        };
+        const TA_SIGNAL_MIN_CONFIDENCE = Number(window.VISOR_SIGNAL_MIN_CONFIDENCE || 60) || 60;
+        const TA_LAST_VALID_SECTIONS_KEY = 'vc_last_valid_ta_sections_v1';
+        const TA_SECTION_STALE_MS = 24 * 60 * 60 * 1000;
+        const TA_USDM_CONTRACT_ALIASES = {
+            SHIBUSDT: { contractSymbol: '1000SHIBUSDT', priceScale: 1000 },
+            PEPEUSDT: { contractSymbol: '1000PEPEUSDT', priceScale: 1000 }
+        };
+
+        function getTAFuturesContractSpec(rawSymbol) {
+            const symbol = normalizeCallSymbol(rawSymbol);
+            const alias = TA_USDM_CONTRACT_ALIASES[symbol] || {};
+            return {
+                symbol,
+                contractSymbol: alias.contractSymbol || symbol,
+                priceScale: Number(alias.priceScale || 1) || 1
+            };
+        }
+
+        function normalizeTAFuturesPrice(rawSymbol, value) {
+            const spec = getTAFuturesContractSpec(rawSymbol);
+            const price = Number(value);
+            if (!Number.isFinite(price) || price <= 0) return 0;
+            return price / spec.priceScale;
+        }
+
+        function normalizeTAFuturesKlines(rawSymbol, rows) {
+            const spec = getTAFuturesContractSpec(rawSymbol);
+            if (!Array.isArray(rows) || spec.priceScale === 1) return Array.isArray(rows) ? rows : [];
+            return rows.map((row) => {
+                if (!Array.isArray(row)) return row;
+                const copy = [...row];
+                [1, 2, 3, 4].forEach((idx) => {
+                    const value = Number(copy[idx]);
+                    if (Number.isFinite(value) && value > 0) copy[idx] = String(value / spec.priceScale);
+                });
+                return copy;
+            });
+        }
+
+        function normalizeTAFuturesTicker(rawSymbol, ticker) {
+            const spec = getTAFuturesContractSpec(rawSymbol);
+            if (!ticker || typeof ticker !== 'object') return {};
+            const out = { ...ticker, symbol: spec.symbol, contractSymbol: spec.contractSymbol, market: 'BINANCE_USDM' };
+            ['lastPrice', 'openPrice', 'highPrice', 'lowPrice', 'weightedAvgPrice', 'priceChange'].forEach((key) => {
+                const value = Number(out[key]);
+                if (Number.isFinite(value) && value !== 0) out[key] = String(value / spec.priceScale);
+            });
+            return out;
+        }
+
+        function normalizeTAFuturesOrderBook(rawSymbol, book) {
+            const spec = getTAFuturesContractSpec(rawSymbol);
+            if (!book || typeof book !== 'object' || spec.priceScale === 1) return book || { bids: [], asks: [] };
+            const scaleSide = (side) => Array.isArray(side)
+                ? side.map((level) => {
+                    if (!Array.isArray(level)) return level;
+                    const price = Number(level[0]);
+                    return Number.isFinite(price) && price > 0 ? [String(price / spec.priceScale), ...level.slice(1)] : level;
+                })
+                : [];
+            return { ...book, bids: scaleSide(book.bids), asks: scaleSide(book.asks) };
+        }
+
+        function normalizeTAFuturesTrades(rawSymbol, trades) {
+            const spec = getTAFuturesContractSpec(rawSymbol);
+            if (!Array.isArray(trades) || spec.priceScale === 1) return Array.isArray(trades) ? trades : [];
+            return trades.map((trade) => {
+                if (!trade || typeof trade !== 'object') return trade;
+                const price = Number(trade.price);
+                return Number.isFinite(price) && price > 0
+                    ? { ...trade, price: String(price / spec.priceScale) }
+                    : trade;
+            });
+        }
+
+        function clampTASignalConfidenceThreshold(value, fallback = TA_SIGNAL_MIN_CONFIDENCE) {
+            const n = Number(value);
+            const resolved = Number.isFinite(n) ? Math.round(n) : fallback;
+            return Math.max(TA_SIGNAL_MIN_CONFIDENCE, Math.min(100, resolved));
+        }
         let taCurrentSymbol = null;
         let taNavigationStack = [];
         const TA_POPSTATE_SKIP_FLAG = '__vcSkipNextLifecyclePopstate';
@@ -15,6 +113,42 @@
         let _taSharedCallsCacheTs = 0;
         let taModalCloseTimer = null;
         const TA_MODAL_CLOSE_MS = 320;
+
+        function resetTechnicalCallStateForCurrentStrategy() {
+            try {
+                if (localStorage.getItem(TA_CALLS_LOCAL_RESET_MARKER) === TA_CALLS_LOCAL_RESET_VERSION) return;
+
+                const fixedKeys = [
+                    'vc_call_history',
+                    'vc_shared_call_history_v2',
+                    'vc_shared_call_history_v3',
+                    'vc_shared_call_history_v4',
+                    'vc_shared_call_history_v5',
+                    'vc_dash_ta_results'
+                ];
+                fixedKeys.forEach((key) => {
+                    try { localStorage.removeItem(key); } catch (_) {}
+                });
+
+                for (let i = localStorage.length - 1; i >= 0; i--) {
+                    const key = localStorage.key(i);
+                    if (!key) continue;
+                    if (
+                        key.startsWith('vc_shared_call_history_') ||
+                        key.startsWith(TA_POINTS_HISTORY_KEY) ||
+                        key.startsWith(TA_CACHE_KEY + '_')
+                    ) {
+                        try { localStorage.removeItem(key); } catch (_) {}
+                    }
+                }
+
+                localStorage.setItem(TA_CALLS_LOCAL_RESET_MARKER, TA_CALLS_LOCAL_RESET_VERSION);
+            } catch (_) {}
+            _taSharedCallsCache = [];
+            _taSharedCallsCacheTs = 0;
+        }
+
+        resetTechnicalCallStateForCurrentStrategy();
 
         function cancelPendingTAModalClose() {
             if (taModalCloseTimer) {
@@ -62,6 +196,39 @@
             }
         }
 
+        function readTALastValidSections() {
+            try {
+                const cached = JSON.parse(localStorage.getItem(TA_LAST_VALID_SECTIONS_KEY) || 'null');
+                return cached && typeof cached === 'object' ? cached : {};
+            } catch (_) {
+                return {};
+            }
+        }
+
+        function writeTALastValidSection(symbol, sectionKey, value) {
+            const normalized = normalizeCallSymbol(symbol || taCurrentSymbol || currentChartSymbol || '');
+            if (!normalized || !sectionKey || !value) return;
+            try {
+                const cached = readTALastValidSections();
+                cached[normalized] = cached[normalized] || {};
+                cached[normalized][sectionKey] = {
+                    value,
+                    ts: Date.now()
+                };
+                localStorage.setItem(TA_LAST_VALID_SECTIONS_KEY, JSON.stringify(cached));
+            } catch (_) {}
+        }
+
+        function readTALastValidSection(symbol, sectionKey) {
+            const normalized = normalizeCallSymbol(symbol || taCurrentSymbol || currentChartSymbol || '');
+            const cached = readTALastValidSections();
+            const entry = cached?.[normalized]?.[sectionKey];
+            if (!entry || !entry.value) return null;
+            const ts = Number(entry.ts || 0);
+            if (ts > 0 && (Date.now() - ts) > TA_SECTION_STALE_MS) return null;
+            return { ...entry.value, _stale: true, _lastGoodAt: ts };
+        }
+
         function getTAWorkerUrl() {
             const cfg = (window.APP_CONFIG || {});
             return String(cfg.CALENDAR_WORKER_URL || '').trim().replace(/\/+$/, '');
@@ -71,6 +238,47 @@
             const clean = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
             if (!clean) return '';
             return clean.endsWith('USDT') ? clean : `${clean}USDT`;
+        }
+
+        function resolveKnownCryptoSymbolFromCall(rawCall) {
+            const db = (typeof CRYPTO_DATABASE !== 'undefined') ? CRYPTO_DATABASE : {};
+            if (!rawCall || typeof rawCall !== 'object') return '';
+
+            const directCandidates = [
+                rawCall.symbol,
+                rawCall.pair,
+                rawCall.ticker,
+                rawCall.market
+            ];
+
+            for (const candidate of directCandidates) {
+                const normalized = normalizeCallSymbol(candidate);
+                if (normalized && db[normalized]) return normalized;
+            }
+
+            const textCandidates = [
+                rawCall.short,
+                rawCall.base,
+                rawCall.baseAsset,
+                rawCall.asset,
+                rawCall.name
+            ]
+                .map(value => String(value || '').trim().toUpperCase())
+                .filter(Boolean);
+
+            for (const text of textCandidates) {
+                const direct = normalizeCallSymbol(text);
+                if (direct && db[direct]) return direct;
+
+                const matched = Object.entries(db).find(([, crypto]) => {
+                    const short = String(crypto?.short || '').toUpperCase();
+                    const name = String(crypto?.name || '').toUpperCase();
+                    return text === short || text === name;
+                });
+                if (matched) return matched[0];
+            }
+
+            return '';
         }
 
         const CALL_INTERVAL_KEYS = ['1h', '2h', '4h'];
@@ -93,27 +301,235 @@
             return map;
         }
 
+        function hasTrustedCallSettlement(call) {
+            return String(call?.settlementVersion || '').startsWith(TA_TRUSTED_SETTLEMENT_PREFIX);
+        }
+
+        function getCanonicalCallKey(call) {
+            const symbol = normalizeCallSymbol(call?.symbol);
+            const direction = String(call?.direction || '').toUpperCase();
+            const ts = getCallTimestamp(call);
+            if (!symbol || (direction !== 'LONG' && direction !== 'SHORT') || !ts) return '';
+            return `${symbol}:${direction}:${ts}`;
+        }
+
+        const TA_HIGH_BETA_CALL_SYMBOLS = new Set([
+            'DOGEUSDT', 'SHIBUSDT', 'PEPEUSDT', 'FETUSDT', 'RENDERUSDT',
+            'SUIUSDT', 'NEARUSDT', 'AVAXUSDT', 'SOLUSDT'
+        ]);
+
+        function getCallTimestamp(call) {
+            const raw = Number(call?.timestamp || call?.time || call?.id || 0);
+            return Number.isFinite(raw) && raw > 0 ? raw : 0;
+        }
+
+        function getCallMergeKey(call) {
+            return String(call?.callKey || getCanonicalCallKey(call) || '').trim();
+        }
+
+        function mergeIntervalMaps(primary, secondary, fillValue) {
+            const merged = normalizeCallIntervalMap(primary, fillValue);
+            const incoming = normalizeCallIntervalMap(secondary, fillValue);
+            CALL_INTERVAL_KEYS.forEach((key) => {
+                if (incoming[key] !== null && incoming[key] !== undefined && incoming[key] !== false) {
+                    merged[key] = incoming[key];
+                }
+            });
+            return merged;
+        }
+
+        function mergeCallRecords(primary, secondary) {
+            const base = primary || {};
+            const incoming = secondary || {};
+            const merged = { ...base, ...incoming };
+            const primaryTs = getCallTimestamp(base);
+            const secondaryTs = getCallTimestamp(incoming);
+            const ts = secondaryTs || primaryTs || Date.now();
+
+            merged.id = Number(incoming.id || base.id || ts) || ts;
+            merged.timestamp = ts;
+            merged.time = ts;
+            merged.entryPrice = Number(incoming.entryPrice ?? incoming.price ?? base.entryPrice ?? base.price ?? 0) || 0;
+            merged.price = incoming.price != null ? incoming.price : (base.price != null ? base.price : (merged.entryPrice > 0 ? merged.entryPrice : ''));
+            merged.prices = mergeIntervalMaps(base.prices, incoming.prices, null);
+            merged.pnl = mergeIntervalMaps(base.pnl, incoming.pnl, null);
+            merged.checked = normalizeCallIntervalMap(base.checked, false);
+            const incomingChecked = normalizeCallIntervalMap(incoming.checked, false);
+            CALL_INTERVAL_KEYS.forEach((key) => {
+                merged.checked[key] = merged.checked[key] === true || incomingChecked[key] === true;
+            });
+            if (hasTrustedCallSettlement(incoming)) {
+                merged.settlementVersion = incoming.settlementVersion;
+                merged.settledAt = incoming.settledAt;
+            } else if (hasTrustedCallSettlement(base)) {
+                merged.settlementVersion = base.settlementVersion;
+                merged.settledAt = base.settledAt;
+            } else {
+                delete merged.settlementVersion;
+                delete merged.settledAt;
+            }
+            merged.callKey = getCanonicalCallKey(merged);
+            return merged;
+        }
+
+        function mergeCallHistoriesForDisplay(...groups) {
+            const exact = new Map();
+            const loose = [];
+
+            groups.flat().filter(Boolean).forEach((rawCall) => {
+                const call = normalizeSharedCall(rawCall);
+                if (!call) return;
+                const exactKey = getCallMergeKey(call);
+                if (exact.has(exactKey)) {
+                    exact.set(exactKey, mergeCallRecords(exact.get(exactKey), call));
+                    return;
+                }
+
+                const ts = getCallTimestamp(call);
+                const looseMatch = loose.find((item) =>
+                    item.symbol === call.symbol &&
+                    item.direction === call.direction &&
+                    Math.abs(item.ts - ts) <= 5000
+                );
+                if (looseMatch) {
+                    const merged = mergeCallRecords(looseMatch.call, call);
+                    looseMatch.call = merged;
+                    exact.set(looseMatch.key, merged);
+                    return;
+                }
+
+                loose.push({ key: exactKey, symbol: call.symbol, direction: call.direction, ts, call });
+                exact.set(exactKey, call);
+            });
+
+            return [...exact.values()].sort((a, b) => getCallTimestamp(b) - getCallTimestamp(a));
+        }
+
+        function getCallMinMovePct(symbol, intervalKey = '4h') {
+            const normalized = normalizeCallSymbol(symbol);
+            const base4h = (normalized === 'BTCUSDT' || normalized === 'ETHUSDT')
+                ? 0.20
+                : TA_HIGH_BETA_CALL_SYMBOLS.has(normalized)
+                    ? 0.60
+                    : 0.35;
+            const ratio = intervalKey === '1h' ? 0.60 : intervalKey === '2h' ? 0.78 : 1;
+            const floor = intervalKey === '1h' ? 0.12 : intervalKey === '2h' ? 0.16 : 0.20;
+            return +Math.max(base4h * ratio, floor).toFixed(3);
+        }
+
+        function getCallDirectionalPnl(call, intervalKey) {
+            if (!hasTrustedCallSettlement(call)) return null;
+            const stored = Number(call?.pnl?.[intervalKey]);
+            if (Number.isFinite(stored)) return stored;
+            const price = Number(call?.prices?.[intervalKey]);
+            const entry = Number(call?.entryPrice || call?.price || 0);
+            if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(entry) || entry <= 0) return null;
+            const rawPct = ((price - entry) / entry) * 100;
+            return String(call?.direction || '').toUpperCase() === 'SHORT'
+                ? +(-rawPct).toFixed(3)
+                : +rawPct.toFixed(3);
+        }
+
+        function getCallOutcome(call, intervalKey, now = Date.now()) {
+            const interval = CALL_CHECK_INTERVALS.find((item) => item.key === intervalKey);
+            const ts = getCallTimestamp(call);
+            const elapsed = ts > 0 ? now - ts : 0;
+            const trusted = hasTrustedCallSettlement(call);
+            const checked = trusted && (call?.checked?.[intervalKey] === true || call?.prices?.[intervalKey] != null || call?.pnl?.[intervalKey] != null);
+            const pnl = getCallDirectionalPnl(call, intervalKey);
+
+            if ((!checked || pnl === null) && interval && elapsed < interval.ms) {
+                return { status: 'pending', label: 'Pendente', icon: '<i class="fas fa-hourglass-half"></i>', color: 'var(--text-muted)', bg: 'var(--bg-card)', pnl: null, minMovePct: getCallMinMovePct(call?.symbol, intervalKey) };
+            }
+
+            if (pnl === null) {
+                return { status: 'pending', label: 'Buscando', icon: '<i class="fas fa-sync-alt"></i>', color: 'var(--text-muted)', bg: 'var(--bg-card)', pnl: null, minMovePct: getCallMinMovePct(call?.symbol, intervalKey) };
+            }
+
+            const minMovePct = getCallMinMovePct(call?.symbol, intervalKey);
+            if (pnl >= minMovePct) {
+                return { status: 'win', label: 'Win', icon: '<i class="fas fa-check"></i>', color: '#22c55e', bg: 'rgba(34,197,94,0.12)', pnl, minMovePct };
+            }
+            if (pnl <= -minMovePct) {
+                return { status: 'loss', label: 'Loss', icon: '<i class="fas fa-times"></i>', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', pnl, minMovePct };
+            }
+            return { status: 'flat', label: 'Sem mov.', icon: '<i class="fas fa-minus"></i>', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', pnl, minMovePct };
+        }
+
+        function getExpectedMovePctFromAnalysis(fullAnalysis, direction, entryPrice) {
+            const entry = Number(entryPrice || fullAnalysis?.entry || fullAnalysis?.currentPrice || fullAnalysis?.indicators?.movingAverages?.currentPrice || 0);
+            if (!entry || entry <= 0) return 0;
+            const normalizedDirection = String(direction || '').toUpperCase();
+            const targetCandidates = [
+                fullAnalysis?.takeProfit2,
+                fullAnalysis?.takeProfit1,
+                fullAnalysis?.takeProfit,
+                fullAnalysis?.dynamicTargets?.tp2,
+                fullAnalysis?.dynamicTargets?.tp1,
+                fullAnalysis?.limitOrder?.takeProfit2,
+                fullAnalysis?.limitOrder?.takeProfit1,
+                fullAnalysis?.limitOrder?.tp2,
+                fullAnalysis?.limitOrder?.tp1
+            ].map(Number).filter((value) => Number.isFinite(value) && value > 0);
+
+            const directionalTargets = targetCandidates.filter((target) =>
+                normalizedDirection === 'SHORT' ? target < entry : target > entry
+            );
+            const target = directionalTargets[0] || targetCandidates[0];
+            if (target) return +(Math.abs((target - entry) / entry) * 100).toFixed(3);
+
+            const atrCandidates = [
+                fullAnalysis?.indicators?.atr14,
+                fullAnalysis?.atr14,
+                fullAnalysis?.atr,
+                fullAnalysis?.volatility?.atr
+            ].map(Number).filter((value) => Number.isFinite(value) && value > 0);
+            const atr = atrCandidates[0] || 0;
+            return atr > 0 ? +(((atr * 1.2) / entry) * 100).toFixed(3) : 0;
+        }
+
+        function hasMinimumExpectedCallMove(fullAnalysis, symbol, direction, entryPrice) {
+            const expected = getExpectedMovePctFromAnalysis(fullAnalysis, direction, entryPrice);
+            const required = getCallMinMovePct(symbol, '4h');
+            return expected >= required;
+        }
+
         function normalizeSharedCall(rawCall) {
             if (!rawCall || typeof rawCall !== 'object') return null;
-            const symbol = normalizeCallSymbol(rawCall.symbol || rawCall.short || rawCall.name || '');
+            const symbol = resolveKnownCryptoSymbolFromCall(rawCall);
             if (!symbol) return null;
+            const crypto = (typeof CRYPTO_DATABASE !== 'undefined' && CRYPTO_DATABASE[symbol]) || {};
 
-            const time = Number(rawCall.time || rawCall.timestamp || rawCall.id || Date.now());
+            const rawTime = Number(rawCall.time || rawCall.timestamp || rawCall.id || 0);
+            const time = Number.isFinite(rawTime) && rawTime > 0 ? rawTime : Date.now();
+            if (Number.isFinite(TA_CALLS_CLEAN_EPOCH_MS) && time < TA_CALLS_CLEAN_EPOCH_MS) return null;
+            const strategyText = String(rawCall.strategyVersion || rawCall.strategy || rawCall.reason || rawCall.source || rawCall.gates || '');
+            if (Number.isFinite(TA_CALLS_CLEAN_EPOCH_MS) && time >= TA_CALLS_CLEAN_EPOCH_MS && !strategyText.includes(TA_CALL_STRATEGY_VERSION)) return null;
+            const rawId = Number(rawCall.id);
+            const id = Number.isFinite(rawId) && rawId > 0 ? rawId : time;
             const entryPrice = Number(rawCall.entryPrice ?? rawCall.price ?? 0) || 0;
             const direction = String(rawCall.direction || '').toUpperCase();
+            const trustedSettlement = hasTrustedCallSettlement(rawCall);
+            const callKey = getCanonicalCallKey({ ...rawCall, symbol, direction, time, timestamp: time });
 
             return {
                 ...rawCall,
-                id: rawCall.id || time,
+                id,
+                callKey,
                 symbol,
+                name: crypto.name || rawCall.name || symbol,
+                short: crypto.short || rawCall.short || symbol.replace('USDT', ''),
+                img: crypto.img || rawCall.img || '',
                 direction,
                 timestamp: time,
                 time,
                 entryPrice,
                 price: rawCall.price != null ? rawCall.price : (entryPrice > 0 ? entryPrice : ''),
-                prices: normalizeCallIntervalMap(rawCall.prices, null),
-                pnl: normalizeCallIntervalMap(rawCall.pnl, null),
-                checked: normalizeCallIntervalMap(rawCall.checked, false)
+                prices: trustedSettlement ? normalizeCallIntervalMap(rawCall.prices, null) : buildDefaultCallIntervalMap(null),
+                pnl: trustedSettlement ? normalizeCallIntervalMap(rawCall.pnl, null) : buildDefaultCallIntervalMap(null),
+                checked: trustedSettlement ? normalizeCallIntervalMap(rawCall.checked, false) : buildDefaultCallIntervalMap(false),
+                settlementVersion: trustedSettlement ? rawCall.settlementVersion : undefined,
+                settledAt: trustedSettlement ? rawCall.settledAt : undefined
             };
         }
 
@@ -171,90 +587,12 @@
 
         function getCallHistoryForDisplay(currentSymbol) {
             const shared = getSharedCallsFromCache();
-            const source = shared.length > 0 ? shared : getCallHistory();
+            const local = getCallHistory().map(normalizeSharedCall).filter(Boolean);
+            const source = mergeCallHistoriesForDisplay(shared, local);
             if (!currentSymbol) return source;
 
             const normalized = normalizeCallSymbol(currentSymbol);
             return source.filter((call) => normalizeCallSymbol(call.symbol) === normalized);
-        }
-
-        function buildPointsHistoryFromCalls(calls, symbol, limit = 12) {
-            const targetSymbol = normalizeCallSymbol(symbol);
-            if (!targetSymbol || !Array.isArray(calls) || calls.length === 0) return [];
-
-            const bucketMs = 5 * 60 * 1000;
-            const bucketMap = new Map();
-
-            calls.forEach((call) => {
-                if (normalizeCallSymbol(call.symbol) !== targetSymbol) return;
-                const ts = Number(call.time || call.timestamp || call.id || 0);
-                if (!Number.isFinite(ts) || ts <= 0) return;
-                const confidence = Math.max(0, Math.min(100, Number(call.confidence || 0)));
-                const direction = String(call.direction || '').toUpperCase();
-                const bucketKey = Math.floor(ts / bucketMs);
-                const current = bucketMap.get(bucketKey);
-
-                if (!current || ts >= current.ts) {
-                    bucketMap.set(bucketKey, {
-                        ts,
-                        confidence,
-                        longPoints: direction === 'LONG' ? confidence : 0,
-                        shortPoints: direction === 'SHORT' ? confidence : 0,
-                        signalType: direction === 'LONG' ? 'long' : direction === 'SHORT' ? 'short' : 'aguardar'
-                    });
-                }
-            });
-
-            return Array.from(bucketMap.values())
-                .sort((a, b) => a.ts - b.ts)
-                .slice(-Math.max(1, limit));
-        }
-
-        function renderPointsHistoryBars(pointsHistory) {
-            const history = Array.isArray(pointsHistory) ? pointsHistory : [];
-            if (history.length === 0) {
-                return '<div style="padding: 12px; border-radius: 10px; background: var(--bg-primary); border: 1px dashed rgba(100,116,139,0.3); font-size: 11px; color: var(--text-muted); text-align: center;">Histórico 5m ainda vazio.</div>';
-            }
-
-            return history.map((item) => {
-                const value = Math.max(0, Math.min(100, Number(item?.confidence ?? item?.finalConfidence ?? 0)));
-                const displayValue = Number.isFinite(value) ? value : 0;
-                const bucketColor = displayValue >= 80 ? '#22c55e' : displayValue >= 60 ? '#f59e0b' : displayValue >= 40 ? '#60a5fa' : '#94a3b8';
-                const bucketHeight = Math.max(8, Math.round(displayValue));
-                const bucketTs = Number(item?.ts ?? item?.time ?? 0);
-                const bucketTime = bucketTs
-                    ? new Date(bucketTs).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-                    : '--:--';
-                return `
-                    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 30px;">
-                        <div style="width: 100%; max-width: 20px; height: ${bucketHeight}px; border-radius: 6px; background: ${bucketColor}; box-shadow: 0 0 0 1px rgba(0,0,0,0.15) inset;"></div>
-                        <span style="font-size: 9px; color: var(--text-primary); font-weight: 700; line-height: 1;">${displayValue.toFixed(0)}</span>
-                        <span style="font-size: 8px; color: var(--text-muted); line-height: 1;">${bucketTime}</span>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        async function refreshTechnicalHistoryFromDB(currentSymbol) {
-            if (!currentSymbol) return;
-            const dbCalls = await fetchSharedCallsFromDB(true);
-            if (!Array.isArray(dbCalls) || dbCalls.length === 0) return;
-
-            const currentModal = document.getElementById('ta-modal');
-            if (!currentModal || !currentModal.classList.contains('active')) return;
-
-            const callWrapper = document.getElementById('ta-call-history-wrapper');
-            if (callWrapper) {
-                callWrapper.innerHTML = renderCallHistorySection(currentSymbol);
-            }
-
-            const pointsBars = document.getElementById('ta-points-history-bars');
-            if (pointsBars) {
-                const historyFromDb = buildPointsHistoryFromCalls(getCallHistoryForDisplay(currentSymbol), currentSymbol, 12);
-                if (historyFromDb.length > 0) {
-                    pointsBars.innerHTML = renderPointsHistoryBars(historyFromDb);
-                }
-            }
         }
 
         function getTAPointsHistory(symbol) {
@@ -311,7 +649,16 @@
         ];
         
         function getCallHistory() {
-            try { return JSON.parse(localStorage.getItem(CALL_HISTORY_KEY) || '[]'); }
+            try {
+                const history = JSON.parse(localStorage.getItem(CALL_HISTORY_KEY) || '[]');
+                return Array.isArray(history)
+                    ? history.filter(call => {
+                        const ts = Number(call?.timestamp || call?.time || call?.id || 0);
+                        const strategyText = String(call?.strategyVersion || call?.strategy || call?.reason || call?.source || '');
+                        return ts >= TA_CALLS_CLEAN_EPOCH_MS && strategyText.includes(TA_CALL_STRATEGY_VERSION);
+                    })
+                    : [];
+            }
             catch { return []; }
         }
         
@@ -319,15 +666,90 @@
             // Keep last 200 calls max (reduced to prevent localStorage overflow)
             localStorage.setItem(CALL_HISTORY_KEY, JSON.stringify(history.slice(-200)));
         }
-        
-        function recordCall(symbol, signal, confidence, entryPrice, crypto, fullAnalysis) {
-            const normalizedSignal = String(signal || '').toUpperCase();
-            const normalizedConfidence = Number(confidence) || 0;
-            const normalizedEntry = Number(entryPrice) || 0;
-            if (normalizedEntry <= 0) return;
-            if (normalizedConfidence < 70) return;
 
-            let direction = normalizedSignal.includes('LONG')
+        function isTechnicalCallRecordable(fullAnalysis, direction, confidence, symbol, entryPrice) {
+            const normalizedDirection = String(direction || '').toUpperCase();
+            const normalizedConfidence = Number(confidence || 0) || 0;
+            if (normalizedDirection !== 'LONG' && normalizedDirection !== 'SHORT') return false;
+            if (normalizedConfidence < TA_SIGNAL_MIN_CONFIDENCE) return false;
+            if (!fullAnalysis) return normalizedConfidence >= 82;
+
+            const safeNumber = (value) => {
+                const n = Number(value);
+                return Number.isFinite(n) ? n : null;
+            };
+            const indicators = fullAnalysis.indicators || {};
+            const rsiValues = [
+                indicators?.sentiment?.rsi,
+                indicators?.multiTimeframe?.rsi15m,
+                indicators?.multiTimeframe?.rsi1h,
+                indicators?.multiTimeframe?.rsi4h,
+                fullAnalysis?.rsi,
+                fullAnalysis?.rsi1h,
+                fullAnalysis?.rsi4h
+            ].map(safeNumber).filter(value => value !== null && value > 0 && value <= 100);
+
+            if (normalizedDirection === 'LONG' && rsiValues.some(value => value >= 72)) return false;
+            if (normalizedDirection === 'SHORT' && rsiValues.some(value => value <= 28)) return false;
+            if (fullAnalysis?.rangePosition?.tradeable === false) return false;
+            if (fullAnalysis?.fundingFilter?.blocked === true) return false;
+            if (fullAnalysis?.sessionContext?.isWeekend && normalizedConfidence < 88) return false;
+            if (String(fullAnalysis?.sessionContext?.fakeBreakoutRisk || '').toUpperCase().includes('ALTO') && normalizedConfidence < 88) return false;
+
+            const points = fullAnalysis?.confidencePoints || {};
+            const longPoints = Number(points.longPoints || 0);
+            const shortPoints = Number(points.shortPoints || 0);
+            const hasPoints = Number.isFinite(longPoints) && Number.isFinite(shortPoints) && (longPoints > 0 || shortPoints > 0);
+            const dominantPoints = normalizedDirection === 'LONG' ? longPoints : shortPoints;
+            const oppositePoints = normalizedDirection === 'LONG' ? shortPoints : longPoints;
+            const spread = dominantPoints - oppositePoints;
+            const alignedCore = Number(points.alignedCore || 0) || 0;
+            const rawDisplacementDirection = fullAnalysis?.displacement?.direction || fullAnalysis?.displacement?.['1h']?.direction || '';
+            const displacementDirection = String(rawDisplacementDirection || '').toUpperCase().includes('LONG')
+                ? 'LONG'
+                : String(rawDisplacementDirection || '').toUpperCase().includes('SHORT')
+                    ? 'SHORT'
+                    : 'NEUTRO';
+            const displacementOk = fullAnalysis?.displacement?.detected === true && (displacementDirection === 'NEUTRO' || displacementDirection === normalizedDirection);
+            const volumeOk = fullAnalysis?.volumeExpansion?.expanding === true || fullAnalysis?.volumeExpansion1h?.expanding === true || fullAnalysis?.volumeExpansion === true;
+            const gates = fullAnalysis?.v4Gates || {};
+            const gateList = Array.isArray(gates) ? gates : Object.values(gates || {});
+            const bosOk = fullAnalysis?.bosValidation?.valid === true || gateList.some((gate) => {
+                const text = String(gate?.name || gate?.key || '').toUpperCase();
+                return gate?.passed === true && text.includes('BOS');
+            });
+            const flowOk = gateList.some((gate) => {
+                const text = String(gate?.name || gate?.key || gate?.description || '').toUpperCase();
+                return gate?.passed === true && (text.includes('CVD') || text.includes('OI') || text.includes('FLUXO') || text.includes('DELTA'));
+            }) || fullAnalysis?.oiAnalysis?.confirmsDirection === true || fullAnalysis?.realtimeCVD?.available === true;
+            const activeConfirmationOk = displacementOk || volumeOk || bosOk || flowOk;
+
+            if (hasPoints && spread < 14) return false;
+            if (hasPoints && normalizedConfidence < 82 && alignedCore < 4) return false;
+            if (normalizedConfidence < 88 && !activeConfirmationOk) return false;
+            if (!hasMinimumExpectedCallMove(fullAnalysis, symbol, normalizedDirection, entryPrice)) return false;
+            return true;
+        }
+
+        function recordCall(symbol, signal, confidence, entryPrice, crypto, fullAnalysis) {
+            const resolved = (fullAnalysis && window.resolveVisorFinalTASignal)
+                ? window.resolveVisorFinalTASignal(fullAnalysis)
+                : null;
+            const normalizedSignal = String(resolved?.signal || signal || '').toUpperCase();
+            const normalizedConfidence = Number(resolved?.confidence || confidence) || 0;
+            const normalizedEntry = Number(
+                fullAnalysis?.entry ||
+                entryPrice ||
+                fullAnalysis?.indicators?.movingAverages?.currentPrice ||
+                fullAnalysis?.currentPrice ||
+                0
+            ) || 0;
+            if (normalizedEntry <= 0) return;
+            if (normalizedConfidence < TA_SIGNAL_MIN_CONFIDENCE) return;
+
+            let direction = resolved?.direction && resolved.direction !== 'NEUTRO'
+                ? resolved.direction
+                : normalizedSignal.includes('LONG')
                 ? 'LONG'
                 : normalizedSignal.includes('SHORT')
                     ? 'SHORT'
@@ -335,6 +757,7 @@
             if (!direction && fullAnalysis?.signalType === 'long') direction = 'LONG';
             if (!direction && fullAnalysis?.signalType === 'short') direction = 'SHORT';
             if (!direction) return;
+            if (!isTechnicalCallRecordable(fullAnalysis, direction, normalizedConfidence, symbol, normalizedEntry)) return;
             
             const history = getCallHistory();
             
@@ -441,14 +864,22 @@
                 } catch (e) { /* console.warn('[CallHistory] Analytics capture error:', e); */ }
             }
             
+            const now = Date.now();
+            const callKey = `${normalizeCallSymbol(symbol)}:${direction}:${now}`;
             history.push({
-                id: Date.now(),
+                id: now,
+                callKey,
                 symbol: symbol,
                 name: crypto?.short || symbol,
                 direction: direction,
                 confidence: normalizedConfidence,
                 entryPrice: normalizedEntry,
-                timestamp: Date.now(),
+                price: normalizedEntry,
+                reason: `${TA_CALL_STRATEGY_VERSION} | Technical analysis`,
+                source: `${TA_CALL_STRATEGY_VERSION} | TECHNICAL_ANALYSIS`,
+                strategyVersion: TA_CALL_STRATEGY_VERSION,
+                timestamp: now,
+                time: now,
                 prices: buildDefaultCallIntervalMap(null),
                 pnl: buildDefaultCallIntervalMap(null),
                 checked: buildDefaultCallIntervalMap(false),
@@ -460,71 +891,71 @@
         
         async function fetchCurrentPrice(symbol) {
             try {
-                const clean = String(symbol || '').toUpperCase().replace(/[\/-]/g, '');
-                const pair = clean.endsWith('USDT') ? clean : `${clean}USDT`;
-                const resp = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`);
+                const spec = getTAFuturesContractSpec(symbol);
+                const resp = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${spec.contractSymbol}`);
                 const data = await resp.json();
-                return parseFloat(data.price);
+                return normalizeTAFuturesPrice(spec.symbol, data.price);
             } catch { return null; }
         }
-        
-        async function checkCallPrices() {
-            const history = getCallHistory();
-            let updated = false;
-            const now = Date.now();
-            
-            for (const call of history) {
-                // Ensure new fields exist for older records
-                call.prices = normalizeCallIntervalMap(call.prices, null);
-                call.pnl = normalizeCallIntervalMap(call.pnl, null);
-                call.checked = normalizeCallIntervalMap(call.checked, false);
 
-                const callTimestamp = Number(call.timestamp || call.time || 0);
-                const entry = Number(call.entryPrice || call.price || 0);
-                if (!callTimestamp || !entry || !call.symbol) continue;
-                
-                for (const interval of CALL_CHECK_INTERVALS) {
-                    if (call.checked[interval.key]) continue;
-                    const elapsed = now - callTimestamp;
-                    if (elapsed >= interval.ms) {
-                        const price = await fetchCurrentPrice(call.symbol);
-                        if (price) {
-                            call.prices[interval.key] = price;
-                            call.checked[interval.key] = true;
-                            // Calcular PnL %
-                            const pnlPct = ((price - entry) / entry) * 100;
-                            call.pnl[interval.key] = call.direction === 'LONG' ? +pnlPct.toFixed(3) : +(-pnlPct).toFixed(3);
-                            updated = true;
-                        }
-                    }
+        function findHistoricalCloseAtOrAfter(klines, targetTs) {
+            if (!Array.isArray(klines) || !targetTs) return null;
+            for (const row of klines) {
+                const openTs = Number(row?.[0] || 0);
+                const closeTs = Number(row?.[6] || 0);
+                if ((closeTs || openTs) >= targetTs) {
+                    const close = Number(row?.[4]);
+                    return Number.isFinite(close) && close > 0 ? close : null;
                 }
             }
-            
-            if (updated) saveCallHistory(history);
+            return null;
+        }
+
+        async function fetchHistoricalCloseAtOrAfter(symbol, targetTs) {
+            try {
+                const spec = getTAFuturesContractSpec(symbol);
+                const safeTargetTs = Number(targetTs || 0);
+                if (!spec.contractSymbol || !safeTargetTs) return null;
+
+                const startTime = Math.max(0, safeTargetTs - (2 * 60 * 1000));
+                const resp = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${spec.contractSymbol}&interval=1m&startTime=${startTime}&limit=12`);
+                const klines = await resp.json();
+                const close = findHistoricalCloseAtOrAfter(klines, safeTargetTs);
+                return normalizeTAFuturesPrice(spec.symbol, close);
+            } catch {
+                return null;
+            }
+        }
+
+        async function checkCallPrices() {
+            const shared = await fetchSharedCallsFromDB(true);
+            const merged = mergeCallHistoriesForDisplay(getCallHistory(), shared)
+                .sort((a, b) => getCallTimestamp(a) - getCallTimestamp(b));
+            saveCallHistory(merged);
         }
         
         function getCallStats(history) {
             const stats = { total: 0, byInterval: {} };
             for (const iv of CALL_CHECK_INTERVALS) {
-                stats.byInterval[iv.key] = { wins: 0, losses: 0, total: 0, pending: 0, avgPnl: 0, totalPnl: 0, winRate: 0 };
+                stats.byInterval[iv.key] = { wins: 0, losses: 0, flat: 0, total: 0, pending: 0, avgPnl: 0, totalPnl: 0, winRate: 0 };
             }
             
             for (const call of history) {
                 stats.total++;
-                const entry = Number(call.entryPrice || call.price || 0);
                 for (const iv of CALL_CHECK_INTERVALS) {
-                    const price = call.prices?.[iv.key];
-                    if (price !== null && price !== undefined && entry > 0) {
-                        stats.byInterval[iv.key].total++;
-                        const isWin = call.direction === 'LONG' ? price > entry : price < entry;
-                        if (isWin) stats.byInterval[iv.key].wins++;
-                        else stats.byInterval[iv.key].losses++;
-                        const pnl = call.pnl?.[iv.key];
-                        if (pnl !== null && pnl !== undefined) {
-                            stats.byInterval[iv.key].totalPnl += pnl;
-                        }
-                    } else {
+                    const outcome = getCallOutcome(call, iv.key);
+                    if (outcome.status === 'pending') {
                         stats.byInterval[iv.key].pending++;
+                        continue;
+                    }
+
+                    stats.byInterval[iv.key].total++;
+                    if (outcome.status === 'win') stats.byInterval[iv.key].wins++;
+                    else if (outcome.status === 'loss') stats.byInterval[iv.key].losses++;
+                    else stats.byInterval[iv.key].flat++;
+
+                    if (Number.isFinite(outcome.pnl)) {
+                        stats.byInterval[iv.key].totalPnl += outcome.pnl;
                     }
                 }
             }
@@ -765,8 +1196,24 @@ let _taRawDataCache = {};
             }
 
             const baseSymbol = symbol.replace('USDT', '');
+            const futuresSpec = getTAFuturesContractSpec(symbol);
+            const futuresSymbol = futuresSpec.contractSymbol;
             
             const workerUrl = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
+            const staleRawData = _taRawDataCache[symbol]?.data || {};
+            const fallbackFor = (key, fallback) => {
+                const cached = staleRawData?.[key];
+                return cached !== undefined && cached !== null ? cached : fallback;
+            };
+            const fetchTAJson = async (url, fallback, timeoutMs = 6500) => {
+                try {
+                    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return await response.json();
+                } catch (_) {
+                    return fallback;
+                }
+            };
             
             // V7: Otimizado — restaurado 5m para modelagem de scalp (Pine v7), mantidos 15m, 1h, 4h, 1d
             const [
@@ -786,47 +1233,33 @@ let _taRawDataCache = {};
                 workerLiqRaw
             ] = await Promise.all([
                 // Klines 5m (últimas 100 velas) - para modelo Scalp Pine V7
-                fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=5m&limit=100`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/klines?symbol=${futuresSymbol}&interval=5m&limit=100`, fallbackFor('klines5m', [])),
                 // Klines 15m (últimas 100 velas) - para RSI e indicadores de curto prazo
-                fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=15m&limit=100`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/klines?symbol=${futuresSymbol}&interval=15m&limit=100`, fallbackFor('klines15m', [])),
                 // Klines 1h (últimas 500 velas) - para SMA200 e médias de longo prazo
-                fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1h&limit=500`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/klines?symbol=${futuresSymbol}&interval=1h&limit=500`, fallbackFor('klines1h', []), 8000),
                 // Klines 4h (últimas 250 velas) - estrutura superior + EMA 200
-                fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=4h&limit=250`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/klines?symbol=${futuresSymbol}&interval=4h&limit=250`, fallbackFor('klines4h', []), 8000),
                 // Klines 1d (últimas 250 velas) - para EMA 200 diário
-                fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=250`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/klines?symbol=${futuresSymbol}&interval=1d&limit=250`, fallbackFor('klines1d', []), 8000),
                 // 24h Ticker
-                fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`)
-                    .then(r => r.json()).catch(() => ({})),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${futuresSymbol}`, fallbackFor('ticker24h', {})),
                 // Order Book (profundidade)
-                fetch(`https://api.binance.com/api/v3/depth?symbol=${symbol}&limit=100`)
-                    .then(r => r.json()).catch(() => ({ bids: [], asks: [] })),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/depth?symbol=${futuresSymbol}&limit=100`, fallbackFor('orderBook', { bids: [], asks: [] })),
                 // Funding Rate (Futures)
-                fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${futuresSymbol}&limit=1`, staleRawData.fundingRate ? [staleRawData.fundingRate] : []),
                 // Open Interest (Futures)
-                fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${symbol}`)
-                    .then(r => r.json()).catch(() => ({})),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${futuresSymbol}`, fallbackFor('openInterest', {})),
                 // Recent trades para CVD (500 últimos)
-                fetch(`https://api.binance.com/api/v3/trades?symbol=${symbol}&limit=500`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/trades?symbol=${futuresSymbol}&limit=500`, fallbackFor('trades', []), 8000),
                 // Taker Buy/Sell Volume
-                fetch(`https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=${symbol}&period=1h&limit=24`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/futures/data/takerlongshortRatio?symbol=${futuresSymbol}&period=1h&limit=24`, fallbackFor('takerBuySellVol', [])),
                 // LIQUIDAÇÍ•ES FORÇADAS REAIS (últimas 100) - DADOS REAIS DA BINANCE
-                fetch(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${symbol}&limit=100`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${futuresSymbol}&limit=100`, fallbackFor('forceOrders', [])),
                 // Open Interest Histórico (últimos 12 períodos de 5min) - para OI Delta
-                fetch(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${symbol}&period=5m&limit=12`)
-                    .then(r => r.json()).catch(() => []),
+                fetchTAJson(`https://fapi.binance.com/futures/data/openInterestHist?symbol=${futuresSymbol}&period=5m&limit=12`, fallbackFor('openInterestHist', [])),
                 // Liquidações 12h do worker (em paralelo, timeout 3s)
-                workerUrl ? fetch(`${workerUrl}/liquidations?symbol=${symbol}`, { signal: AbortSignal.timeout(3000) })
-                    .then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null)
+                workerUrl ? fetchTAJson(`${workerUrl}/liquidations?symbol=${futuresSymbol}`, fallbackFor('workerLiqData', null), 3000) : Promise.resolve(null)
             ]);
             
             let workerLiqData = null;
@@ -836,24 +1269,38 @@ let _taRawDataCache = {};
                 (Array.isArray(workerLiqRaw.pendingLevels) && workerLiqRaw.pendingLevels.length > 0)
             )) {
                 workerLiqData = workerLiqRaw;
+            } else if (workerLiqRaw && workerLiqRaw.hasData) {
+                workerLiqData = workerLiqRaw;
             }
 
+            const normalizedTicker24h = normalizeTAFuturesTicker(symbol, ticker24h);
+            const normalizedOrderBook = normalizeTAFuturesOrderBook(symbol, orderBook);
+            const normalizedTrades = normalizeTAFuturesTrades(symbol, trades);
+            const normalizedKlines5m = normalizeTAFuturesKlines(symbol, klines5m);
+            const normalizedKlines15m = normalizeTAFuturesKlines(symbol, klines15m);
+            const normalizedKlines1h = normalizeTAFuturesKlines(symbol, klines1h);
+            const normalizedKlines4h = normalizeTAFuturesKlines(symbol, klines4h);
+            const normalizedKlines1d = normalizeTAFuturesKlines(symbol, klines1d);
+
             const result = {
-                klines5m,
-                klines15m,
-                klines1h,
-                klines4h,
-                klines1d,
-                ticker24h,
-                orderBook,
+                klines5m: normalizedKlines5m,
+                klines15m: normalizedKlines15m,
+                klines1h: normalizedKlines1h,
+                klines4h: normalizedKlines4h,
+                klines1d: normalizedKlines1d,
+                ticker24h: normalizedTicker24h,
+                orderBook: normalizedOrderBook,
                 fundingRate: fundingRate[0] || {},
                 openInterest,
-                trades,
+                trades: normalizedTrades,
                 takerBuySellVol: takerBuySellVol || [],
                 forceOrders: forceOrders || [],  // LIQUIDAÇÍ•ES REAIS
                 openInterestHist: openInterestHist || [],  // OI Delta
                 workerLiqData,  // Liquidações 12h do worker (ou null)
-                currentPrice: prices[symbol] || parseFloat(ticker24h.lastPrice) || 0
+                currentPrice: parseFloat(normalizedTicker24h.lastPrice) || prices[symbol] || 0,
+                market: 'BINANCE_USDM',
+                contractSymbol: futuresSymbol,
+                priceScale: futuresSpec.priceScale
             };
 
             _taRawDataCache[symbol] = {
@@ -1070,7 +1517,7 @@ let _taRawDataCache = {};
                         type: l.side, price: l.price, volume: l.vol, distance: Math.abs((l.price - currentPrice) / currentPrice * 100),
                         side: l.price < currentPrice ? 'ABAIXO' : 'ACIMA', time: l.time, isRecent: true, intensity: Math.min(l.vol / 10000, 100)
                     })),
-                    lastUpdate: new Date().toLocaleTimeString('pt-BR'),
+                    lastUpdate: new Date().toLocaleTimeString(window.VisorI18n?.getLocale?.() || 'en-US'),
                     // Enhanced: Real OI-based pending liquidation data
                     openInterestUSD: workerLiqData.openInterestUSD || 0,
                     longOI: workerLiqData.longOI || 0,
@@ -1848,12 +2295,12 @@ let _taRawDataCache = {};
                 stopLoss = dynamicTargets.sl;
                 takeProfit = dynamicTargets.tp2; // Use TP2 as primary
                 riskReward = dynamicTargets.rr2 || '2.0';
-            } else if (signalType === 'long') {
+            } else if (signalType === 'long' && Number.isFinite(atr) && atr > 0) {
                 entry = currentPrice;
                 stopLoss = Math.max(val, currentPrice - (atr * 1.5));
                 takeProfit = currentPrice + (atr * 3);
                 riskReward = ((takeProfit - entry) / (entry - stopLoss)).toFixed(2);
-            } else if (signalType === 'short') {
+            } else if (signalType === 'short' && Number.isFinite(atr) && atr > 0) {
                 entry = currentPrice;
                 stopLoss = Math.min(vah, currentPrice + (atr * 1.5));
                 takeProfit = currentPrice - (atr * 3);
@@ -2542,7 +2989,7 @@ let _taRawDataCache = {};
                 liquidationLevels: [],
                 dominantRisk: 'NEUTRO',
                 riskRatio: 1,
-                lastUpdate: new Date().toLocaleTimeString('pt-BR'),
+                lastUpdate: new Date().toLocaleTimeString(window.VisorI18n?.getLocale?.() || 'en-US'),
                 dataSource: 'Sem dados'
             };
             
@@ -3588,7 +4035,200 @@ let _taRawDataCache = {};
             return { delta, ratio, buyVolume, sellVolume };
         }
 
+        function safeTANumber(value, fallback = null) {
+            const n = Number(value);
+            return Number.isFinite(n) ? n : fallback;
+        }
+
+        function safeTAPercent(value, fallback = 0) {
+            const n = safeTANumber(value, fallback);
+            return Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+        }
+
+        function safeTAText(value, fallback = 'indisponivel no momento') {
+            if (value === null || value === undefined) return fallback;
+            if (typeof value === 'number') return Number.isFinite(value) ? String(value) : fallback;
+            if (typeof value === 'boolean') return value ? 'sim' : 'nao';
+            if (Array.isArray(value)) {
+                const parts = value.map((item) => safeTAText(item, '')).filter(Boolean);
+                return parts.length ? parts.join(', ') : fallback;
+            }
+            if (typeof value === 'object') return fallback;
+            const text = String(value).trim();
+            if (!text || /^(undefined|null|nan|\[object object\])$/i.test(text)) return fallback;
+            return text;
+        }
+
+        function safeTAFormatPrice(value, fallback = 'indisponivel') {
+            const n = safeTANumber(value, null);
+            if (n === null || n <= 0) return fallback;
+            if (n >= 1000) return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+            if (n >= 1) return '$' + n.toFixed(4);
+            return '$' + n.toFixed(6);
+        }
+
+        function taHasUsefulCVD(cvd) {
+            if (!cvd || typeof cvd !== 'object') return false;
+            return safeTANumber(cvd.delta, null) !== null ||
+                safeTANumber(cvd.score, null) !== null ||
+                !!safeTAText(cvd.description, '');
+        }
+
+        function getRenderableCVDAdvanced(symbol, cvd) {
+            const current = taHasUsefulCVD(cvd) ? cvd : null;
+            if (current) {
+                writeTALastValidSection(symbol, 'cvdAdvanced', current);
+                return current;
+            }
+            return readTALastValidSection(symbol, 'cvdAdvanced') || {
+                delta: 0,
+                score: 0,
+                signal: 'NEUTRO',
+                description: 'Atualizando fluxo CVD com os ultimos dados disponiveis.',
+                divergence: null,
+                absorption: null,
+                breakout: null,
+                _stale: true
+            };
+        }
+
+        function getCVDDisplayState(cvd) {
+            const delta = safeTANumber(cvd?.delta, 0) || 0;
+            const score = safeTANumber(cvd?.score, 0) || 0;
+            const description = safeTAText(
+                cvd?.description,
+                score > 0 ? 'Fluxo comprador predominante nesta leitura.' : score < 0 ? 'Fluxo vendedor predominante nesta leitura.' : 'Fluxo equilibrado, sem pressao dominante.'
+            );
+            const divergenceType = safeTAText(cvd?.divergence?.type, '');
+            const absorptionType = safeTAText(cvd?.absorption?.type, '');
+            const breakoutType = safeTAText(cvd?.breakout?.type, '');
+            return {
+                delta,
+                score,
+                description,
+                isStale: cvd?._stale === true,
+                divergenceBg: divergenceType ? (divergenceType.includes('BULLISH') ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)') : 'var(--bg-card)',
+                divergenceColor: divergenceType ? (divergenceType.includes('BULLISH') ? '#22c55e' : '#ef4444') : 'var(--text-muted)',
+                divergenceLabel: divergenceType ? divergenceType.replace('_DIVERGENCE', '').replace('BULLISH', 'COMPRA').replace('BEARISH', 'VENDA') : 'Sem divergencia',
+                divergenceDetail: divergenceType ? 'Detectada' : 'Sem divergencia detectada',
+                absorptionBg: absorptionType ? 'rgba(139,92,246,0.15)' : 'var(--bg-card)',
+                absorptionColor: absorptionType ? '#8b5cf6' : 'var(--text-muted)',
+                absorptionLabel: absorptionType ? absorptionType.replace('_ABSORPTION', '').replace('BULLISH', 'COMPRA').replace('BEARISH', 'VENDA') : 'Sem absorcao',
+                absorptionDetail: absorptionType ? 'Detectada' : 'Sem absorcao detectada',
+                breakoutBg: breakoutType ? 'rgba(249,115,22,0.15)' : 'var(--bg-card)',
+                breakoutColor: breakoutType ? '#f97316' : 'var(--text-muted)',
+                breakoutLabel: breakoutType ? (breakoutType.includes('UP') ? 'COMPRA' : 'VENDA') : 'Sem breakout',
+                breakoutDetail: breakoutType ? 'Detectado' : 'Sem breakout detectado'
+            };
+        }
+
+        function taHasUsefulOnChain(onChain) {
+            return !!(onChain && typeof onChain === 'object' && Array.isArray(onChain.details) && onChain.details.length > 0);
+        }
+
+        function getRenderableOnChainData(symbol, onChain) {
+            if (taHasUsefulOnChain(onChain)) {
+                const cleanDetails = onChain.details.map((item) => ({
+                    name: safeTAText(item?.name, 'On-Chain'),
+                    value: safeTAText(item?.value, 'Atualizando leitura'),
+                    signal: safeTAText(item?.signal, 'NEUTRO'),
+                    color: safeTAText(item?.color, '#94a3b8')
+                }));
+                const clean = {
+                    ...onChain,
+                    available: true,
+                    details: cleanDetails,
+                    onChainScore: safeTANumber(onChain.onChainScore, 0) || 0
+                };
+                writeTALastValidSection(symbol, 'onChainData', clean);
+                return clean;
+            }
+            const cached = readTALastValidSection(symbol, 'onChainData');
+            if (cached) return cached;
+            return null;
+        }
+
+        function cleanAIDataPayload(value, depth = 0) {
+            if (depth > 5) return undefined;
+            if (value === null || value === undefined) return undefined;
+            if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+            if (typeof value === 'string') {
+                const text = value.trim();
+                return text && !/^(undefined|null|nan|\[object object\])$/i.test(text) ? text : undefined;
+            }
+            if (typeof value === 'boolean') return value;
+            if (Array.isArray(value)) {
+                const arr = value.map((item) => cleanAIDataPayload(item, depth + 1)).filter((item) => item !== undefined);
+                return arr.length ? arr : undefined;
+            }
+            if (typeof value === 'object') {
+                const out = {};
+                Object.entries(value).forEach(([key, item]) => {
+                    const cleaned = cleanAIDataPayload(item, depth + 1);
+                    if (cleaned !== undefined) out[key] = cleaned;
+                });
+                return Object.keys(out).length ? out : undefined;
+            }
+            return undefined;
+        }
+
+        function sanitizeAIText(text, fallback = 'Relatorio indisponivel no momento. A analise sera atualizada automaticamente no proximo ciclo.') {
+            const raw = safeTAText(text, '');
+            const cleaned = raw
+                .replace(/\[object Object\]/gi, '')
+                .replace(/\b(undefined|NaN|null)\b/gi, '')
+                .replace(/(?:^|[\n\r]).{0,80}\b(probabilidade|probability|chance)\b.{0,160}(?=$|[\n\r.!?])/gi, '')
+                .replace(/[ \t]{2,}/g, ' ')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+            return cleaned.length >= 40 ? cleaned : fallback;
+        }
+
+        function buildSafeLocalSummary(signalType, confidence, indicators, symbol) {
+            const db = (typeof CRYPTO_DATABASE !== 'undefined') ? CRYPTO_DATABASE : {};
+            const crypto = safeTAText(db[symbol]?.name || symbol, 'ativo selecionado');
+            const conf = safeTAPercent(confidence, 0);
+            const normalizedType = String(signalType || '').toLowerCase();
+            const isLong = normalizedType === 'long';
+            const isShort = normalizedType === 'short';
+            const direction = isLong ? 'LONG' : isShort ? 'SHORT' : 'NEUTRO';
+            const ma = indicators?.movingAverages || {};
+            const vp = indicators?.volumeProfile || {};
+            const price = safeTANumber(ma.currentPrice ?? indicators?.currentPrice, null);
+            const vah = safeTANumber(indicators?.vah ?? vp.vah, null);
+            const val = safeTANumber(indicators?.val ?? vp.val, null);
+            const vwap = safeTANumber(vp.vwap ?? indicators?.vwap, null);
+            const funding = safeTAText(indicators?.fundingSignal, 'neutro');
+            const cvd = safeTAText(indicators?.cvdSignal, 'fluxo equilibrado');
+            const book = safeTAText(indicators?.bookSignal, 'book equilibrado');
+            const rsi = safeTAText(indicators?.rsiSignal, 'RSI sem extremo relevante');
+
+            let location = 'Preco sem leitura suficiente de value area.';
+            if (price !== null && vah !== null && val !== null) {
+                if (price > vah) location = `Preco em ${safeTAFormatPrice(price)} acima da VAH (${safeTAFormatPrice(vah)}).`;
+                else if (price < val) location = `Preco em ${safeTAFormatPrice(price)} abaixo da VAL (${safeTAFormatPrice(val)}).`;
+                else location = `Preco em ${safeTAFormatPrice(price)} dentro da area de valor (${safeTAFormatPrice(val)} - ${safeTAFormatPrice(vah)}).`;
+            } else if (price !== null) {
+                location = `Preco atual em ${safeTAFormatPrice(price)}; value area ainda sem leitura completa.`;
+            }
+
+            const vwapText = vwap !== null ? `VWAP em ${safeTAFormatPrice(vwap)}.` : 'VWAP indisponivel nesta leitura.';
+            const action = isLong
+                ? 'Leitura favorece compra somente com confirmacao de entrada, stop e alvo.'
+                : isShort
+                    ? 'Leitura favorece venda somente com confirmacao de entrada, stop e alvo.'
+                    : 'Sem confluencia suficiente para operar agora; aguarde rompimento/reteste com volume.';
+
+            return sanitizeAIText([
+                `${direction} para ${crypto}. Confianca: ${conf}%.`,
+                location,
+                `${vwapText} Funding: ${funding}. CVD: ${cvd}. Order book: ${book}. ${rsi}.`,
+                action
+            ].join('\n'));
+        }
+
         function generateLocalSummary(signalType, confidence, indicators, symbol) {
+            return buildSafeLocalSummary(signalType, confidence, indicators || {}, symbol);
             const crypto = CRYPTO_DATABASE[symbol]?.name || symbol;
             
             // Análise de Médias Móveis
@@ -3796,11 +4436,19 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
 
         async function fetchAISummary(analysis, symbol) {
             if (!AI_WORKER_URL) return null;
+            analysis = analysis || {};
             _cleanAISummaryCache();
-            const cacheKey = `${symbol}_${Math.floor(Date.now() / 300000)}`;
+            const resolvedAI = resolveVisorFinalTASignal(analysis || {});
+            const finalConf = safeTAPercent(resolvedAI.confidence, 0);
+            const finalDirection = safeTAText(resolvedAI.direction, 'NEUTRO');
+            const finalSignalType = safeTAText(resolvedAI.signalType, 'aguardar');
+            const reportLocale = (window.VisorI18n && typeof window.VisorI18n.getLocale === 'function')
+                ? String(window.VisorI18n.getLocale() || 'en-US')
+                : 'en-US';
+            const cacheKey = `${symbol}_${finalDirection}_${finalConf}_${reportLocale}_${Math.floor(Date.now() / 300000)}`;
             if (_aiSummaryCache[cacheKey]) return _aiSummaryCache[cacheKey];
 
-            const crypto = CRYPTO_DATABASE[symbol]?.name || symbol;
+            const crypto = safeTAText(CRYPTO_DATABASE[symbol]?.name || symbol, 'ativo selecionado');
             const ind = analysis.indicators || {};
             const vp = ind.volumeProfile || {};
             const of_ = ind.orderFlow || {};
@@ -3816,33 +4464,61 @@ ${v2Block ? '--- Análise Detalhada ---\n' + v2Block + '\n\n' : ''}Indicadores a
             const v4 = analysis.v4Signal ? {
                 signal: analysis.v4Signal,
                 confidence: analysis.v4Confidence,
-                probability: analysis.v4Probability,
                 gatesPassed: analysis.v4GatesPassed,
                 gatesTotal: analysis.v4GatesTotal,
                 action: analysis.v4ActionMessage
             } : null;
 
-            const dataPayload = {
-                crypto, symbol,
-                signal: analysis.v4Signal || analysis.v3Signal || analysis.signal,
-                signalType: analysis._finalSignalType || analysis.signalType,
-                confidence: analysis._finalConfidence || analysis.v4Confidence || analysis.v3Confidence || analysis.confidence,
-                probability: analysis._finalProbability || analysis.v4Probability || analysis.v3Probability || analysis.probability || 50,
-                entry: analysis.entry, stopLoss: analysis.stopLoss,
-                targets: analysis.dynamicTargets,
-                volumeProfile: { poc: vp.poc, vah: vp.vah, val: vp.val, vwap: vp.vwap, priceLocation: vp.priceLocation },
+            const dataPayload = cleanAIDataPayload({
+                crypto,
+                symbol,
+                signal: finalDirection,
+                signalType: finalSignalType,
+                confidence: finalConf,
+                entry: safeTANumber(analysis.entry, undefined),
+                stopLoss: safeTANumber(analysis.stopLoss, undefined),
+                targets: {
+                    entry: safeTANumber(analysis.dynamicTargets?.entry, undefined),
+                    stop: safeTANumber(analysis.dynamicTargets?.sl, undefined),
+                    tp1: safeTANumber(analysis.dynamicTargets?.tp1, undefined),
+                    tp2: safeTANumber(analysis.dynamicTargets?.tp2, undefined),
+                    tp3: safeTANumber(analysis.dynamicTargets?.tp3, undefined)
+                },
+                volumeProfile: {
+                    poc: safeTANumber(vp.poc, undefined),
+                    vah: safeTANumber(vp.vah, undefined),
+                    val: safeTANumber(vp.val, undefined),
+                    vwap: safeTANumber(vp.vwap, undefined),
+                    priceLocation: safeTAText(vp.priceLocation, '')
+                },
                 orderFlow: of_,
-                microstructure: { bookImbalance: micro.bookImbalance, bookSignal: micro.bookSignal },
-                sentiment: sent, multiTimeframe: mtf, movingAverages: ma,
-                regime: { regime: mr.regime, regimeDescription: mr.regimeDescription, regimeStrength: mr.regimeStrength, squeezeDetected: mr.squeezeDetected },
-                structure: { structureDescription: ms.structureDescription },
-                cvd: { divergence: cvdA.divergence?.description, absorption: cvdA.absorption?.description },
-                volatility: { atr1h: vol.atrPercent1h, description: vol.volDescription },
-                bigTech: bt.bigTechSentiment ? { sentiment: bt.bigTechSentiment, fearGreed: bt.fearGreed } : null,
+                microstructure: {
+                    bookImbalance: safeTANumber(micro.bookImbalance, undefined),
+                    bookSignal: safeTAText(micro.bookSignal, '')
+                },
+                sentiment: sent,
+                multiTimeframe: mtf,
+                movingAverages: ma,
+                regime: {
+                    regime: safeTAText(mr.regime, ''),
+                    regimeDescription: safeTAText(mr.regimeDescription, ''),
+                    regimeStrength: safeTANumber(mr.regimeStrength, undefined),
+                    squeezeDetected: mr.squeezeDetected === true
+                },
+                structure: { structureDescription: safeTAText(ms.structureDescription, '') },
+                cvd: {
+                    divergence: safeTAText(cvdA.divergence?.description, ''),
+                    absorption: safeTAText(cvdA.absorption?.description, '')
+                },
+                volatility: {
+                    atr1h: safeTANumber(vol.atrPercent1h, undefined),
+                    description: safeTAText(vol.volDescription, '')
+                },
+                bigTech: bt.bigTechSentiment ? { sentiment: safeTAText(bt.bigTechSentiment, ''), fearGreed: bt.fearGreed } : undefined,
                 v4Engine: v4,
-                confluenceScore: analysis.confluenceSummary?.score,
-                contextualAdjustments: (analysis.contextualAdjustments || []).map(a => a.reason).slice(0, 5)
-            };
+                confluenceScore: safeTANumber(analysis.confluenceSummary?.score, undefined),
+                contextualAdjustments: (analysis.contextualAdjustments || []).map(a => safeTAText(a?.reason, '')).filter(Boolean).slice(0, 5)
+            }) || { crypto, symbol, signal: finalDirection, confidence: finalConf };
 
             const systemPrompt = `Você é um analista quantitativo sênior de criptomoedas. Gere um relatório técnico conciso em português brasileiro (PT-BR) com base nos dados fornecidos.
 
@@ -3865,16 +4541,15 @@ Regras:
                 let headers = { 'Content-Type': 'application/json' };
                 if (window.AuthClient && typeof window.AuthClient.getWriteAuthHeaders === 'function') {
                     try {
-                        Object.assign(headers, await window.AuthClient.getWriteAuthHeaders());
+                        Object.assign(headers, await window.AuthClient.getWriteAuthHeaders({ requireScope: 'ai-summary:write' }));
                     } catch (authErr) {
                         console.warn('[AI Auth]', authErr.message);
                     }
                 }
 
                 const requestBody = JSON.stringify({
-                    model: GROQ_MODEL,
-                    systemPrompt,
-                    userPrompt
+                    analysisPayload: dataPayload,
+                    locale: reportLocale
                 });
 
                 let proxyData = null;
@@ -3892,7 +4567,7 @@ Regras:
                             try {
                                 headers = {
                                     'Content-Type': 'application/json',
-                                    ...(await window.AuthClient.getWriteAuthHeaders({ forceRefresh: true }))
+                                    ...(await window.AuthClient.getWriteAuthHeaders({ forceRefresh: true, requireScope: 'ai-summary:write' }))
                                 };
                             } catch (refreshErr) {
                                 console.warn('[AI Auth Refresh]', refreshErr.message);
@@ -3948,18 +4623,7 @@ Regras:
                             }
                         );
                     }
-                    const realProb = dataPayload.probability;
-                    if (realProb != null) {
-                        // Replace patterns like "probabilidade: 68%" and "68% de probabilidade"
-                        aiText = aiText.replace(
-                            /((?:probabilidade|probability|chance)[:\s]+(?:de\s+)?)(\d{1,3})(%)/gi,
-                            `$1${realProb}$3`
-                        );
-                        aiText = aiText.replace(
-                            /(\d{1,3})(%\s*(?:de\s+)?(?:probabilidade|probability|chance))/gi,
-                            `${realProb}$2`
-                        );
-                    }
+                    aiText = sanitizeAIText(aiText);
                     _aiSummaryCache[cacheKey] = aiText;
                     return aiText;
                 }
@@ -3974,19 +4638,25 @@ Regras:
         async function updateAISummaryInModal(analysis, symbol) {
             const textEl = document.querySelector('.ta-ai-text');
             if (!textEl) return;
-            // Use final blended confidence for consistency with displayed bar/donut
-            const finalConf = analysis._finalConfidence || analysis.v4Confidence || analysis.v3Confidence || analysis.confidence;
-            const finalSigType = analysis._finalSignalType || analysis.signalType;
+            const finalSignal = resolveVisorFinalTASignal(analysis || {});
+            const finalConf = finalSignal.confidence;
+            const finalSigType = finalSignal.signalType;
             const aiResult = await fetchAISummary(analysis, symbol);
             const modal = document.getElementById('ta-modal');
             if (!modal || !modal.classList.contains('active')) return;
             const currentTextEl = document.querySelector('.ta-ai-text');
             if (!currentTextEl) return;
             if (aiResult) {
-                currentTextEl.textContent = aiResult;
+                currentTextEl.textContent = sanitizeAIText(aiResult);
             } else {
-                const localFallback = generateLocalSummary(finalSigType, finalConf, analysis.indicators || {}, symbol || taCurrentSymbol || 'BTCUSDT');
-                currentTextEl.textContent = localFallback || 'IA indisponível no momento. Tente novamente em alguns minutos.';
+                let localFallback = generateLocalSummary(finalSigType, finalConf, analysis?.indicators || {}, symbol || taCurrentSymbol || 'BTCUSDT');
+                const locale = (window.VisorI18n && typeof window.VisorI18n.getLocale === 'function')
+                    ? String(window.VisorI18n.getLocale() || 'en-US')
+                    : 'en-US';
+                if (!locale.toLowerCase().startsWith('pt') && typeof window.translateVisorText === 'function') {
+                    try { localFallback = await window.translateVisorText(localFallback, 'auto', locale) || localFallback; } catch (_) {}
+                }
+                currentTextEl.textContent = sanitizeAIText(localFallback, 'IA indisponivel no momento. Tente novamente em alguns minutos.');
             }
         }
 
@@ -4127,18 +4797,411 @@ Regras:
             `;
         }
 
+        /**
+         * sanitizeDynamicTargets — Single Source of Truth for TP validation.
+         * RULE: If signal is directional (long/short), TP1/TP2/TP3 MUST be finite numbers > 0.
+         * Called AFTER V3/V4 merge to catch any fields overwritten/lost by Object.assign.
+         */
+        function sanitizeDynamicTargets(dt, signalType, currentPrice, volatilityMetrics) {
+            // For neutral/aguardar, no targets needed
+            if (!signalType || signalType === 'neutral' || signalType === 'aguardar') {
+                return dt || null;
+            }
+
+            const price = Number(currentPrice) || 0;
+            if (price <= 0) return dt || null;
+
+            // ATR must come from real candles. Do not synthesize stop/target distance.
+            const atrRaw = volatilityMetrics?.atr1h || volatilityMetrics?.atr4h || 0;
+            const atr = (Number.isFinite(atrRaw) && atrRaw > 0) ? atrRaw : 0;
+            if (!Number.isFinite(atr) || atr <= 0) return null;
+
+            const _fin = (v) => Number.isFinite(v) && v > 0;
+            const isLong = signalType === 'long';
+
+            // If dynamicTargets is completely missing, build from scratch
+            if (!dt || typeof dt !== 'object') {
+                const risk = atr * 1.5;
+                if (isLong) {
+                    return {
+                        entry: price,
+                        sl: price - risk,
+                        tp1: price + atr * 1.5,
+                        tp2: price + atr * 2.5,
+                        tp3: price + atr * 4,
+                        rr1: '1.0', rr2: '1.7', rr3: '2.7',
+                        risk: risk,
+                        riskPercent: ((risk / price) * 100).toFixed(2)
+                    };
+                } else {
+                    return {
+                        entry: price,
+                        sl: price + risk,
+                        tp1: price - atr * 1.5,
+                        tp2: price - atr * 2.5,
+                        tp3: price - atr * 4,
+                        rr1: '1.0', rr2: '1.7', rr3: '2.7',
+                        risk: risk,
+                        riskPercent: ((risk / price) * 100).toFixed(2)
+                    };
+                }
+            }
+
+            // Patch individual fields if corrupted
+            const patched = { ...dt };
+            const entryP = _fin(patched.entry) ? patched.entry : price;
+            patched.entry = entryP;
+
+            if (isLong) {
+                if (!_fin(patched.sl))  patched.sl  = entryP - atr * 1.5;
+                if (!_fin(patched.tp1)) patched.tp1 = entryP + atr * 1.5;
+                if (!_fin(patched.tp2)) patched.tp2 = entryP + atr * 2.5;
+                if (!_fin(patched.tp3)) patched.tp3 = entryP + atr * 4;
+            } else {
+                if (!_fin(patched.sl))  patched.sl  = entryP + atr * 1.5;
+                if (!_fin(patched.tp1)) patched.tp1 = entryP - atr * 1.5;
+                if (!_fin(patched.tp2)) patched.tp2 = entryP - atr * 2.5;
+                if (!_fin(patched.tp3)) patched.tp3 = entryP - atr * 4;
+            }
+
+            // Ensure risk is positive
+            const risk = Math.abs(entryP - patched.sl);
+            patched.risk = Math.max(risk, atr * 0.5);
+            patched.riskPercent = patched.riskPercent || (entryP > 0 ? (patched.risk / entryP * 100).toFixed(2) : '0');
+
+            // Ensure R:R strings are never undefined
+            const safeRR = (reward, rsk) => (_fin(rsk) && rsk > 0 && _fin(reward)) ? (Math.abs(reward) / rsk).toFixed(1) : '0';
+            if (!patched.rr1 || patched.rr1 === 'undefined') patched.rr1 = safeRR(Math.abs(patched.tp1 - entryP), patched.risk);
+            if (!patched.rr2 || patched.rr2 === 'undefined') patched.rr2 = safeRR(Math.abs(patched.tp2 - entryP), patched.risk);
+            if (!patched.rr3 || patched.rr3 === 'undefined') patched.rr3 = safeRR(Math.abs(patched.tp3 - entryP), patched.risk);
+
+            // [TA-DEBUG] Log if any field was patched
+            if (dt.tp1 !== patched.tp1 || dt.tp2 !== patched.tp2 || dt.tp3 !== patched.tp3) {
+                console.warn('[TA-DEBUG] sanitizeDynamicTargets patched TPs:', { original: { tp1: dt.tp1, tp2: dt.tp2, tp3: dt.tp3 }, patched: { tp1: patched.tp1, tp2: patched.tp2, tp3: patched.tp3 } });
+            }
+
+            return patched;
+        }
+
+        function resolveVisorFinalTASignal(analysis, options = {}) {
+            const minDirectionalConfidence = Number(options.minDirectionalConfidence || 50);
+            const clampPercent = (value, fallback = 0) => {
+                const n = Number(value);
+                if (!Number.isFinite(n)) return Math.max(0, Math.min(100, Math.round(fallback || 0)));
+                return Math.max(0, Math.min(100, Math.round(n)));
+            };
+            const firstPositive = (...values) => {
+                for (const value of values) {
+                    const n = Number(value);
+                    if (Number.isFinite(n) && n > 0) return n;
+                }
+                return 0;
+            };
+            const normalizeDirection = (raw) => {
+                const s = String(raw || '').toUpperCase();
+                if (s.includes('AGUARDAR') || s.includes('AGUARDE') || s.includes('WAIT')) return 'NEUTRO';
+                if (s.includes('LONG') || s === 'BUY' || s === 'ALTA') return 'LONG';
+                if (s.includes('SHORT') || s === 'SELL' || s === 'BAIXA') return 'SHORT';
+                return 'NEUTRO';
+            };
+
+            const usePointsModel = analysis?.confidenceModel?.name === 'weighted-points-v1';
+            const isSnapshotFrozen = analysis?._snapshotFrozen === true;
+            const points = analysis?.confidencePoints || {};
+            const pointsDirection = Number(points.longPoints || 0) > Number(points.shortPoints || 0)
+                ? 'LONG'
+                : Number(points.shortPoints || 0) > Number(points.longPoints || 0)
+                    ? 'SHORT'
+                    : 'NEUTRO';
+            const frozenDirection = normalizeDirection(
+                analysis?._finalDirection ||
+                analysis?._finalSignal ||
+                analysis?.signal ||
+                analysis?.signalType
+            );
+
+            const rawDirection = isSnapshotFrozen
+                ? frozenDirection
+                : [
+                    analysis?.v4Signal,
+                    analysis?.v3Signal,
+                    analysis?.signal,
+                    analysis?.signalType,
+                    usePointsModel ? pointsDirection : ''
+                ].map(normalizeDirection).find((direction) => direction !== 'NEUTRO') || 'NEUTRO';
+
+            let confidence = firstPositive(
+                isSnapshotFrozen ? analysis?._finalConfidence : null,
+                points.finalConfidence,
+                points.confidence,
+                analysis?.v4Confidence,
+                analysis?.v3Confidence,
+                analysis?.confidence,
+                analysis?.probability
+            );
+
+            if (!isSnapshotFrozen && !usePointsModel && analysis?.marketRegime && analysis.marketRegime.regimeStrength != null) {
+                const regimeConf = Math.round((analysis.marketRegime.regimeStrength || 0) * 100);
+                confidence = Math.round(confidence * 0.7 + regimeConf * 0.3);
+            }
+
+            confidence = clampPercent(confidence, 0);
+            const isDirectional = rawDirection !== 'NEUTRO' && (isSnapshotFrozen || confidence >= minDirectionalConfidence);
+            const prePolicyDirection = isDirectional ? rawDirection : 'NEUTRO';
+            const direction = window.applyVisorDirectionPolicy
+                ? window.applyVisorDirectionPolicy(prePolicyDirection, { alreadyFinal: isSnapshotFrozen })
+                : prePolicyDirection;
+            const signalType = direction === 'LONG' ? 'long' : direction === 'SHORT' ? 'short' : 'aguardar';
+            const probability = clampPercent(
+                (isSnapshotFrozen ? analysis?._finalProbability : undefined) ??
+                    analysis?.v4Probability ??
+                    analysis?.v3Probability ??
+                    analysis?.probability ??
+                    (confidence || 50),
+                50
+            );
+
+            return {
+                signal: direction,
+                direction,
+                displaySignal: direction,
+                signalType,
+                confidence,
+                probability,
+                minDirectionalConfidence,
+                usePointsModel,
+                prePolicyDirection,
+                directionPolicy: VISOR_DIRECTION_POLICY_VERSION
+            };
+        }
+
+        window.resolveVisorFinalTASignal = resolveVisorFinalTASignal;
+
+        function resolveAndStampVisorFinalTAState(analysis, options = {}) {
+            const target = analysis && typeof analysis === 'object' ? analysis : {};
+            const resolved = resolveVisorFinalTASignal(target, options);
+            const finalDirection = resolved.direction || 'NEUTRO';
+            const finalSignalType = resolved.signalType || (finalDirection === 'LONG' ? 'long' : finalDirection === 'SHORT' ? 'short' : 'aguardar');
+            const finalUpdatedAt = Number(options.finalUpdatedAt || options.updatedAt || target._finalUpdatedAt || Date.now()) || Date.now();
+
+            target._finalDirection = finalDirection;
+            target._finalSignal = resolved.signal || finalDirection;
+            target._finalSignalType = finalSignalType;
+            target._finalConfidence = resolved.confidence;
+            target._finalProbability = resolved.probability;
+            target._finalUpdatedAt = finalUpdatedAt;
+            target._finalDirectionPolicy = resolved.directionPolicy || VISOR_DIRECTION_POLICY_VERSION;
+            target._prePolicyDirection = resolved.prePolicyDirection || finalDirection;
+            target.finalDirection = finalDirection;
+            target.finalSignal = resolved.signal || finalDirection;
+            target.finalSignalType = finalSignalType;
+            target.finalConfidence = resolved.confidence;
+            target.finalProbability = resolved.probability;
+            target.finalUpdatedAt = finalUpdatedAt;
+            target.finalDirectionPolicy = resolved.directionPolicy || VISOR_DIRECTION_POLICY_VERSION;
+            target.prePolicyDirection = resolved.prePolicyDirection || finalDirection;
+
+            if (target.confidencePoints && typeof target.confidencePoints === 'object') {
+                target.confidencePoints.finalConfidence = resolved.confidence;
+                target.confidencePoints.confidence = resolved.confidence;
+                target.confidencePoints.dominantDirection = finalDirection;
+            }
+
+            return {
+                ...resolved,
+                finalDirection,
+                finalSignal: resolved.signal || finalDirection,
+                finalSignalType,
+                finalConfidence: resolved.confidence,
+                finalProbability: resolved.probability,
+                finalUpdatedAt,
+                prePolicyDirection: resolved.prePolicyDirection || finalDirection,
+                directionPolicy: resolved.directionPolicy || VISOR_DIRECTION_POLICY_VERSION
+            };
+        }
+
+        window.resolveAndStampVisorFinalTAState = resolveAndStampVisorFinalTAState;
+
+        function applySharedFinalTAStateToAnalysis(analysis, symbol, options = {}) {
+            if (!analysis || !symbol || typeof window.getVisorFinalTAStateForSymbol !== 'function') return null;
+            try {
+                const shared = window.getVisorFinalTAStateForSymbol(symbol, {
+                    liveOnly: options.liveOnly === true,
+                    ignoreNotifiedSnapshots: options.ignoreNotifiedSnapshots === true,
+                    maxAgeMs: options.maxAgeMs
+                });
+                const confidence = Math.max(0, Math.min(100, Math.round(Number(shared?.finalConfidence || shared?.confidence || 0) || 0)));
+                const directionText = String(shared?.finalDirection || shared?.direction || shared?.signal || '').toUpperCase();
+                const direction = directionText.includes('LONG')
+                    ? 'LONG'
+                    : directionText.includes('SHORT')
+                        ? 'SHORT'
+                        : 'NEUTRO';
+                if (!shared || confidence <= 0) return null;
+
+                const shouldFreeze = options.freeze === true || (shared.frozen === true && options.freeze !== false);
+                if (shouldFreeze) {
+                    analysis._snapshotFrozen = true;
+                    analysis._snapshotSource = shared.source || 'shared_final_ta_state';
+                    analysis._snapshotNotifiedAt = Number(shared.notifiedAt || shared._eventTs || 0) || 0;
+                }
+                analysis._finalDirection = direction;
+                analysis._finalSignal = direction;
+                analysis._finalSignalType = direction === 'LONG' ? 'long' : direction === 'SHORT' ? 'short' : 'aguardar';
+                analysis._finalConfidence = confidence;
+                analysis._finalProbability = Math.max(5, Math.min(100, Math.round(Number(shared.finalProbability || shared.probability || confidence || 50) || 50)));
+                analysis._finalUpdatedAt = Number(shared.finalUpdatedAt || shared.lastScanAt || shared.updatedAt || shared._eventTs || Date.now()) || Date.now();
+                analysis.finalDirection = direction;
+                analysis.finalSignal = direction;
+                analysis.finalSignalType = analysis._finalSignalType;
+                analysis.finalConfidence = confidence;
+                analysis.finalProbability = analysis._finalProbability;
+                analysis.finalUpdatedAt = analysis._finalUpdatedAt;
+
+                if (analysis.confidencePoints && typeof analysis.confidencePoints === 'object') {
+                    analysis.confidencePoints.finalConfidence = confidence;
+                    analysis.confidencePoints.confidence = confidence;
+                    analysis.confidencePoints.dominantDirection = direction;
+                }
+
+                return shared;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function completeDirectionalTradeSetup(analysis, signalType, dynamicTargets) {
+            if (!analysis || (signalType !== 'long' && signalType !== 'short')) return null;
+
+            const finitePositive = (value) => {
+                const n = Number(value);
+                return Number.isFinite(n) && n > 0 ? n : null;
+            };
+            const currentPrice = finitePositive(analysis.entry) ||
+                finitePositive(dynamicTargets?.entry) ||
+                finitePositive(analysis.indicators?.movingAverages?.currentPrice) ||
+                finitePositive(analysis.currentPrice) ||
+                finitePositive(analysis.price) ||
+                finitePositive(analysis.entryPrice) ||
+                finitePositive(analysis.lastPrice) ||
+                finitePositive(analysis.close) ||
+                finitePositive(analysis.ticker?.lastPrice) ||
+                finitePositive(analysis.indicators?.volumeProfile?.vwap);
+            if (!currentPrice) return null;
+
+            const vol = analysis.volatilityMetrics || {};
+            const atr = finitePositive(vol.atr1h) ||
+                finitePositive(vol.atr4h) ||
+                finitePositive(vol.atr) ||
+                finitePositive(analysis.indicators?.atr14) ||
+                currentPrice * 0.015;
+            const minRisk = Math.max(currentPrice * 0.003, atr * 0.75);
+            const isLong = signalType === 'long';
+            const entry = finitePositive(dynamicTargets?.entry) || finitePositive(analysis.entry) || currentPrice;
+            let stopLoss = finitePositive(analysis.stopLoss) || finitePositive(dynamicTargets?.sl);
+            let tp1 = finitePositive(dynamicTargets?.tp1) || finitePositive(analysis.takeProfit1);
+            let tp2 = finitePositive(dynamicTargets?.tp2) || finitePositive(analysis.takeProfit) || finitePositive(analysis.takeProfit2);
+            let tp3 = finitePositive(dynamicTargets?.tp3) || finitePositive(analysis.takeProfit3);
+
+            const invalidLongStop = !stopLoss || stopLoss >= entry;
+            const invalidShortStop = !stopLoss || stopLoss <= entry;
+            if (isLong && invalidLongStop) stopLoss = Math.max(entry - minRisk, entry * 0.0001);
+            if (!isLong && invalidShortStop) stopLoss = entry + minRisk;
+
+            const risk = Math.max(Math.abs(entry - stopLoss), minRisk);
+            if (isLong) {
+                if (!tp1 || tp1 <= entry) tp1 = entry + risk;
+                if (!tp2 || tp2 <= entry) tp2 = entry + risk * 2;
+                if (!tp3 || tp3 <= entry) tp3 = entry + risk * 3;
+            } else {
+                if (!tp1 || tp1 >= entry) tp1 = Math.max(entry - risk, entry * 0.0001);
+                if (!tp2 || tp2 >= entry) tp2 = Math.max(entry - risk * 2, entry * 0.0001);
+                if (!tp3 || tp3 >= entry) tp3 = Math.max(entry - risk * 3, entry * 0.0001);
+            }
+
+            const rr = (target) => Math.max(0.1, Math.abs(target - entry) / risk);
+            const completedTargets = {
+                ...(dynamicTargets || {}),
+                entry,
+                sl: stopLoss,
+                tp1,
+                tp2,
+                tp3,
+                rr1: rr(tp1).toFixed(1),
+                rr2: rr(tp2).toFixed(1),
+                rr3: rr(tp3).toFixed(1),
+                risk,
+                riskPercent: ((risk / entry) * 100).toFixed(2)
+            };
+
+            analysis.entry = entry;
+            analysis.stopLoss = stopLoss;
+            analysis.takeProfit = tp2;
+            analysis.takeProfit1 = tp1;
+            analysis.takeProfit2 = tp2;
+            analysis.takeProfit3 = tp3;
+            analysis.riskReward = rr(tp2).toFixed(2);
+            analysis.dynamicTargets = completedTargets;
+
+            const lo = analysis.limitOrder && typeof analysis.limitOrder === 'object' ? analysis.limitOrder : {};
+            const limitType = lo.type && lo.type !== 'NONE' ? lo.type : 'MARKET_AFTER_RETEST';
+            const formatLimitRR = (raw, fallbackTarget) => {
+                const parsed = Number(String(raw ?? '').replace('1:', '').replace(',', '.'));
+                return `1:${(Number.isFinite(parsed) && parsed > 0 ? parsed : rr(fallbackTarget)).toFixed(1)}`;
+            };
+            analysis.limitOrder = {
+                ...lo,
+                type: limitType,
+                direction: isLong ? 'LONG' : 'SHORT',
+                entry: finitePositive(lo.entry) || entry,
+                stopLoss: finitePositive(lo.stopLoss) || stopLoss,
+                takeProfit1: finitePositive(lo.takeProfit1) || finitePositive(lo.tp1) || tp1,
+                takeProfit2: finitePositive(lo.takeProfit2) || finitePositive(lo.tp2) || tp2,
+                tp1: finitePositive(lo.tp1) || finitePositive(lo.takeProfit1) || tp1,
+                tp2: finitePositive(lo.tp2) || finitePositive(lo.takeProfit2) || tp2,
+                rr1: formatLimitRR(lo.riskReward1 || lo.rr1, tp1),
+                rr2: formatLimitRR(lo.riskReward2 || lo.rr2, tp2),
+                riskPercent: finitePositive(lo.riskPercent) || Number(completedTargets.riskPercent),
+                details: lo.details || lo.note || `Setup ${isLong ? 'LONG' : 'SHORT'} com entrada, stop e alvos preenchidos pela leitura tecnica.`
+            };
+
+            return {
+                entry,
+                stopLoss,
+                takeProfit: tp2,
+                riskReward: rr(tp2),
+                riskPercent: Number(completedTargets.riskPercent),
+                dynamicTargets: completedTargets
+            };
+        }
+
         function renderTechnicalAnalysis(analysis, crypto) {
             const body = document.getElementById('ta-modal-body');
             if (!body) return;
             try {
-                const { signal: origSignal, signalType: origSignalType, confidence: origConfidence, probability: origProbability, entry, stopLoss, takeProfit, riskReward, indicators, aiSummary, timestamp, dynamicTargets, marketRegime, marketStructure, cvdAdvanced, volatilityMetrics, macroNews, bigTechMacro, contextualAdjustments, v3Signal, v3SignalType, v3Confidence, v3Probability } = analysis;
+                const { signal: origSignal, signalType: origSignalType, confidence: origConfidence, probability: origProbability, entry, stopLoss, takeProfit, riskReward, indicators, aiSummary, timestamp, marketRegime, marketStructure, cvdAdvanced, volatilityMetrics, macroNews, bigTechMacro, contextualAdjustments, v3Signal, v3SignalType, v3Confidence, v3Probability } = analysis;
+                const isSnapshotFrozen = analysis?._snapshotFrozen === true;
+                const frozenDirectionText = String(isSnapshotFrozen ? (analysis?._finalDirection || analysis?._finalSignal || analysis?.signal || '') : '').toUpperCase();
+                const frozenTargetDirection = frozenDirectionText.includes('LONG')
+                    ? 'long'
+                    : frozenDirectionText.includes('SHORT')
+                        ? 'short'
+                        : '';
+
+                // Sanitize dynamicTargets AFTER V3/V4 Object.assign merges
+                let dynamicTargets = sanitizeDynamicTargets(
+                    analysis.dynamicTargets,
+                    frozenTargetDirection || (analysis.v4Signal?.includes('LONG') ? 'long' : analysis.v4Signal?.includes('SHORT') ? 'short' : (origSignalType || 'neutral')),
+                    entry || indicators?.movingAverages?.currentPrice || 0,
+                    volatilityMetrics
+                );
                 
                 // V4 Reactive override (highest priority) > V3 override > V1 original
                 const v4Signal = analysis.v4Signal;
                 const v4Confidence = analysis.v4Confidence;
                 const v4Probability = analysis.v4Probability;
             const usePointsModel = analysis.confidenceModel?.name === 'weighted-points-v1';
-            const minDirectionalConfidence = usePointsModel ? 40 : 50;
+            const minDirectionalConfidence = 50;
             const isV4Active = !!v4Signal && !usePointsModel;
             
             // Display signal: V4 shows the readable signal
@@ -4176,28 +5239,34 @@ Regras:
                 displaySignal = (signal === 'AGUARDE' || signal === 'NEUTRO') ? 'NEUTRO' : signal;
             }
             
-            // RULE: confidence below threshold = AGUARDAR/NEUTRO
-            if (confidence < minDirectionalConfidence && signalType !== 'long' && signalType !== 'short') {
-                displaySignal = 'NEUTRO';
-                signal = 'NEUTRO';
-                signalType = 'aguardar';
-            } else if (confidence < minDirectionalConfidence && (signalType === 'long' || signalType === 'short')) {
-                // Has directional bias but low confidence — show NEUTRO
-                displaySignal = 'NEUTRO';
-                signalType = 'aguardar';
+            const clampPercent = (value, fallback = 0) => Math.max(0, Math.min(100, Math.round(Number(value ?? fallback) || fallback)));
+            const enforceDirectionalThreshold = () => {
+                confidence = clampPercent(confidence, 0);
+                if (!isSnapshotFrozen && confidence < minDirectionalConfidence) {
+                    displaySignal = 'NEUTRO';
+                    signal = 'NEUTRO';
+                    signalType = 'aguardar';
+                }
+            };
+
+            if (isSnapshotFrozen) {
+                const frozenFinalSignal = resolveVisorFinalTASignal(analysis);
+                displaySignal = frozenFinalSignal.displaySignal;
+                signal = frozenFinalSignal.signal;
+                signalType = frozenFinalSignal.signalType;
+                confidence = frozenFinalSignal.confidence;
+                probability = frozenFinalSignal.probability;
             }
+
+            enforceDirectionalThreshold();
             
             // Sync opcional com regime para modelos legados
-            if (!usePointsModel && marketRegime && marketRegime.regimeStrength != null) {
+            if (!isSnapshotFrozen && !usePointsModel && marketRegime && marketRegime.regimeStrength != null) {
                 const regimeConf = Math.round((marketRegime.regimeStrength || 0) * 100);
                 // Weighted blend: 70% engine confidence + 30% regime strength
                 confidence = Math.round(confidence * 0.7 + regimeConf * 0.3);
                 confidence = Math.max(10, Math.min(100, confidence));
-                // Re-check NEUTRO rule after regime sync
-                if (confidence < minDirectionalConfidence && signalType === 'aguardar') {
-                    displaySignal = 'NEUTRO';
-                    signal = 'NEUTRO';
-                }
+                enforceDirectionalThreshold();
             }
             probability = Math.max(5, Math.min(100, Math.round(probability || 50)));
             
@@ -4208,15 +5277,88 @@ Regras:
             analysis._finalSignalType = signalType;
             analysis._finalSignal = signal;
             
-            // Regenerate local AI summary with blended confidence so it matches header bar
+            const renderFinalSymbol = normalizeCallSymbol(taCurrentSymbol || currentChartSymbol || analysis.symbol || crypto?.symbol || crypto?.short || '');
+            const sharedFinalState = isSnapshotFrozen ? null : applySharedFinalTAStateToAnalysis(analysis, renderFinalSymbol, {
+                liveOnly: true,
+                ignoreNotifiedSnapshots: true,
+                freeze: false,
+                maxAgeMs: 10 * 60 * 1000
+            });
+
+            // Unified call rule: below 50% is neutral; at/above 50% must stay directional
+            // and must have complete entry/stop/target values.
+            const unifiedFinalSignal = resolveAndStampVisorFinalTAState(analysis, {
+                symbol: renderFinalSymbol,
+                finalUpdatedAt: sharedFinalState?.finalUpdatedAt || sharedFinalState?.lastScanAt || sharedFinalState?._eventTs
+            });
+            displaySignal = unifiedFinalSignal.displaySignal;
+            signal = unifiedFinalSignal.signal;
+            signalType = unifiedFinalSignal.signalType;
+            confidence = unifiedFinalSignal.confidence;
+            probability = unifiedFinalSignal.probability;
+            if (renderFinalSymbol && typeof window.setVisorFinalTAStateForSymbol === 'function') {
+                try {
+                    window.setVisorFinalTAStateForSymbol(renderFinalSymbol, {
+                        ...unifiedFinalSignal,
+                        analysis,
+                        price: analysis.entry || indicators?.movingAverages?.currentPrice || 0,
+                        lastScanAt: unifiedFinalSignal.finalUpdatedAt,
+                        source: sharedFinalState ? (sharedFinalState.source || 'home_shared_final') : 'home_ta_final'
+                    });
+                } catch (_) {}
+            }
             analysis.aiSummary = generateLocalSummary(signalType, confidence, analysis.indicators || {}, taCurrentSymbol || 'BTCUSDT');
+
+            const completedSetup = completeDirectionalTradeSetup(analysis, signalType, dynamicTargets);
+            if (completedSetup && completedSetup.dynamicTargets) {
+                dynamicTargets = completedSetup.dynamicTargets;
+            }
+
+            const isFinitePositive = (v) => Number.isFinite(Number(v)) && Number(v) > 0;
+            const parsedRiskReward = (value) => {
+                const n = Number(String(value ?? '').replace('1:', '').replace(',', '.'));
+                return Number.isFinite(n) && n > 0 ? n : null;
+            };
+            const resolvedEntry = isFinitePositive(analysis.entry)
+                ? Number(analysis.entry)
+                : (isFinitePositive(dynamicTargets?.entry) ? Number(dynamicTargets.entry) : null);
+            const resolvedStopLoss = isFinitePositive(analysis.stopLoss)
+                ? Number(analysis.stopLoss)
+                : (isFinitePositive(dynamicTargets?.sl) ? Number(dynamicTargets.sl) : null);
+            const resolvedTakeProfit = isFinitePositive(analysis.takeProfit)
+                ? Number(analysis.takeProfit)
+                : (isFinitePositive(dynamicTargets?.tp2) ? Number(dynamicTargets.tp2) : null);
+            const resolvedRiskReward = parsedRiskReward(analysis.riskReward) || parsedRiskReward(dynamicTargets?.rr2);
+            const resolvedRiskPercent = (
+                isFinitePositive(dynamicTargets?.riskPercent)
+                    ? Number(dynamicTargets.riskPercent)
+                    : (isFinitePositive(resolvedEntry) && isFinitePositive(resolvedStopLoss)
+                        ? (Math.abs(resolvedStopLoss - resolvedEntry) / resolvedEntry) * 100
+                        : null)
+            );
+            const isDirectionalSignal = signalType === 'long' || signalType === 'short';
+            const hasCompleteDirectionalSetup = isDirectionalSignal &&
+                isFinitePositive(resolvedEntry) &&
+                isFinitePositive(resolvedStopLoss) &&
+                isFinitePositive(resolvedTakeProfit) &&
+                isFinitePositive(resolvedRiskReward) &&
+                isFinitePositive(resolvedRiskPercent);
+
+            if (isDirectionalSignal && !hasCompleteDirectionalSetup) {
+                analysis.v4ActionMessage = analysis.v4ActionMessage || 'Setup direcional aguardando nova leitura de preco/ATR para refinar os niveis.';
+            }
+
+            analysis._finalConfidence = confidence;
+            analysis._finalProbability = probability;
+            analysis._finalSignalType = signalType;
+            analysis._finalSignal = signal;
 
             // Keep position sizing synchronized with the final confidence shown in the signal card.
             let positionSize = analysis.positionSize;
             try {
                 if (window.TAEngineV3 && typeof window.TAEngineV3.calculatePositionSize === 'function') {
                     const sizingSignalType = signalType === 'long' ? 'long' : signalType === 'short' ? 'short' : 'neutral';
-                    const sizingPrice = Number(entry)
+                    const sizingPrice = Number(resolvedEntry)
                         || Number(analysis.indicators?.movingAverages?.currentPrice)
                         || Number(analysis.indicators?.volumeProfile?.vwap)
                         || 0;
@@ -4229,7 +5371,7 @@ Regras:
                         probability,
                         atr: sizingAtr,
                         currentPrice: sizingPrice > 0 ? sizingPrice : 1,
-                        stopLoss: Number(stopLoss) || null,
+                        stopLoss: Number(resolvedStopLoss) || null,
                         crashState: analysis.crashState,
                         edgeStats: analysis.edgeData?.stats || analysis.performanceStats
                     });
@@ -4247,14 +5389,20 @@ Regras:
                 ? (confidence >= 80 ? 'high' : confidence >= 60 ? 'medium' : 'low')
                 : (confidence >= 70 ? 'high' : confidence >= 50 ? 'medium' : 'low');
             const confidenceBandLabel = usePointsModel
-                ? (analysis.confidencePoints?.confidenceBandLabel || (confidence < 40 ? 'AGUARDAR' : confidence < 60 ? 'Sinal fraco' : confidence < 80 ? 'Sinal moderado' : 'Sinal forte'))
+                ? (analysis.confidencePoints?.confidenceBandLabel || (confidence < 50 ? 'AGUARDAR' : confidence < 60 ? 'Sinal fraco' : confidence < 80 ? 'Sinal moderado' : 'Sinal forte'))
                 : (confidence >= 70 ? 'Alta confiança' : confidence >= 50 ? 'Confiança média' : 'Baixa confiança');
             
             const formatPrice = (price) => {
-                if (price == null || isNaN(price)) return '—';
-                if (price >= 1000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                if (price >= 1) return price.toFixed(4);
-                return price.toFixed(6);
+                const numericPrice = Number(price);
+                if (!Number.isFinite(numericPrice) || numericPrice <= 0) return '—';
+                if (numericPrice >= 1000) return numericPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                if (numericPrice >= 1) return numericPrice.toFixed(4);
+                return numericPrice.toFixed(6);
+            };
+
+            const formatMoney = (price) => {
+                const formatted = formatPrice(price);
+                return formatted === '—' ? '—' : `$${formatted}`;
             };
             
             const formatBigNumber = (value) => {
@@ -4272,9 +5420,6 @@ Regras:
             const confidencePointsShort = Number(confidencePointsData?.shortPoints || 0);
             const confidencePointsAligned = Number(confidencePointsData?.alignedCore || 0);
             const pointsComponents = confidencePointsData?.components || [];
-            const pointsHistoryLocal = (confidencePointsData?.history || []).slice(-12);
-            const pointsHistoryFromDb = buildPointsHistoryFromCalls(getCallHistoryForDisplay(taCurrentSymbol || ''), taCurrentSymbol || '', 12);
-            const pointsHistory = pointsHistoryFromDb.length > 0 ? pointsHistoryFromDb : pointsHistoryLocal;
             const pointsRowsHtml = pointsComponents.length
                 ? pointsComponents.map((component) => {
                     const maxWeight = Number(component?.maxWeight ?? component?.maxPoints ?? component?.weight ?? 0);
@@ -4303,7 +5448,36 @@ Regras:
                     `;
                 }).join('')
                 : `<div style="padding: 12px; border-radius: 10px; background: var(--bg-primary); border: 1px dashed rgba(100,116,139,0.3); font-size: 11px; color: var(--text-muted); text-align: center;">Sem componentes para exibir.</div>`;
-            const pointsHistoryHtml = renderPointsHistoryBars(pointsHistory);
+            const tp1Value = isFinitePositive(dynamicTargets?.tp1) ? Number(dynamicTargets.tp1) : null;
+            const tp2Value = isFinitePositive(dynamicTargets?.tp2) ? Number(dynamicTargets.tp2) : null;
+            const tp3Value = isFinitePositive(dynamicTargets?.tp3) ? Number(dynamicTargets.tp3) : null;
+            const rr1Value = parsedRiskReward(dynamicTargets?.rr1);
+            const rr2Value = parsedRiskReward(dynamicTargets?.rr2);
+            const rr3Value = parsedRiskReward(dynamicTargets?.rr3);
+            const safeTp1Value = tp1Value != null ? tp1Value : resolvedTakeProfit;
+            const safeTp2Value = tp2Value != null ? tp2Value : resolvedTakeProfit;
+            const safeTp3Value = tp3Value != null ? tp3Value : resolvedTakeProfit;
+            const safeRr1Value = rr1Value != null ? rr1Value : resolvedRiskReward;
+            const safeRr2Value = rr2Value != null ? rr2Value : resolvedRiskReward;
+            const safeRr3Value = rr3Value != null ? rr3Value : resolvedRiskReward;
+            const hasDynamicTargets = !!dynamicTargets &&
+                isFinitePositive(safeTp1Value) &&
+                isFinitePositive(safeTp2Value) &&
+                isFinitePositive(safeTp3Value) &&
+                isFinitePositive(safeRr1Value) &&
+                isFinitePositive(safeRr2Value) &&
+                isFinitePositive(safeRr3Value);
+            const rr1Display = safeRr1Value != null ? safeRr1Value.toFixed(1) : '';
+            const rr2Display = safeRr2Value != null ? safeRr2Value.toFixed(1) : '';
+            const rr3Display = safeRr3Value != null ? safeRr3Value.toFixed(1) : '';
+            const limitOrderEntry = isFinitePositive(analysis.limitOrder?.entry) ? Number(analysis.limitOrder.entry) : resolvedEntry;
+            const limitOrderStop = isFinitePositive(analysis.limitOrder?.stopLoss) ? Number(analysis.limitOrder.stopLoss) : resolvedStopLoss;
+            const limitOrderTp1 = isFinitePositive(analysis.limitOrder?.takeProfit1) ? Number(analysis.limitOrder.takeProfit1) : safeTp1Value;
+            const limitOrderTp2 = isFinitePositive(analysis.limitOrder?.takeProfit2) ? Number(analysis.limitOrder.takeProfit2) : safeTp2Value;
+            const renderSymbol = normalizeCallSymbol(taCurrentSymbol || currentChartSymbol || crypto?.short || '');
+            const cvdForDisplay = getRenderableCVDAdvanced(renderSymbol, cvdAdvanced);
+            const cvdDisplay = getCVDDisplayState(cvdForDisplay);
+            const onChainForDisplay = getRenderableOnChainData(renderSymbol, analysis.onChainData);
             
             body.innerHTML = `
                 <!-- Crypto Header -->
@@ -4353,69 +5527,55 @@ Regras:
                     <div class="ta-levels">
                         <div class="ta-level-item">
                             <div class="ta-level-label">Entrada</div>
-                            <div class="ta-level-value entry">$${formatPrice(entry)}</div>
+                            <div class="ta-level-value entry">${formatMoney(resolvedEntry)}</div>
                         </div>
                         <div class="ta-level-item">
                             <div class="ta-level-label">Stop Loss</div>
-                            <div class="ta-level-value stop">$${formatPrice(stopLoss)}</div>
+                            <div class="ta-level-value stop">${formatMoney(resolvedStopLoss)}</div>
                         </div>
                         <div class="ta-level-item">
                             <div class="ta-level-label">Risco</div>
-                            <div class="ta-level-value stop">${dynamicTargets ? dynamicTargets.riskPercent + '%' : (entry ? (((Math.abs((stopLoss || entry) - entry)) / entry) * 100).toFixed(2) + '%' : '—')}</div>
+                            <div class="ta-level-value stop">${resolvedRiskPercent != null ? resolvedRiskPercent.toFixed(2) + '%' : ''}</div>
                         </div>
                     </div>
-                    ${dynamicTargets ? `
+                    ${hasDynamicTargets ? `
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px;">
                         <div style="background: rgba(34,197,94,0.1); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(34,197,94,0.2);">
                             <div style="font-size: 9px; color: #4ade80; text-transform: uppercase; font-weight: 700; white-space: nowrap;">TP1 (POC)</div>
-                            <div style="font-size: 13px; font-weight: 800; color: #22c55e; white-space: nowrap;">$${formatPrice(dynamicTargets.tp1)}</div>
-                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">R:R 1:${dynamicTargets.rr1}</div>
+                            <div style="font-size: 13px; font-weight: 800; color: #22c55e; white-space: nowrap;">${formatMoney(safeTp1Value)}</div>
+                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">R:R 1:${rr1Display}</div>
                         </div>
                         <div style="background: rgba(34,197,94,0.15); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(34,197,94,0.3);">
                             <div style="font-size: 9px; color: #22c55e; text-transform: uppercase; font-weight: 700; white-space: nowrap;">TP2 (VAH/VAL)</div>
-                            <div style="font-size: 13px; font-weight: 800; color: #22c55e; white-space: nowrap;">$${formatPrice(dynamicTargets.tp2)}</div>
-                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">R:R 1:${dynamicTargets.rr2}</div>
+                            <div style="font-size: 13px; font-weight: 800; color: #22c55e; white-space: nowrap;">${formatMoney(safeTp2Value)}</div>
+                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">R:R 1:${rr2Display}</div>
                         </div>
                         <div style="background: rgba(34,197,94,0.2); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(34,197,94,0.4);">
-                            <div style="font-size: 9px; color: #10b981; text-transform: uppercase; font-weight: 700; white-space: nowrap;">TP3 (ATRÍ—4)</div>
-                            <div style="font-size: 13px; font-weight: 800; color: #10b981; white-space: nowrap;">$${formatPrice(dynamicTargets.tp3)}</div>
-                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">R:R 1:${dynamicTargets.rr3}</div>
+                            <div style="font-size: 9px; color: #10b981; text-transform: uppercase; font-weight: 700; white-space: nowrap;">TP3 (ATR×4)</div>
+                            <div style="font-size: 13px; font-weight: 800; color: #10b981; white-space: nowrap;">${formatMoney(safeTp3Value)}</div>
+                            <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">R:R 1:${rr3Display}</div>
                         </div>
                     </div>
                     ` : `
                     <div class="ta-rr-card">
                         <div class="ta-rr-item">
                             <div class="ta-rr-label">Risk/Reward</div>
-                            <div class="ta-rr-value">1:${riskReward}</div>
+                            <div class="ta-rr-value">1:${resolvedRiskReward.toFixed(2)}</div>
                         </div>
                         <div class="ta-rr-item">
                             <div class="ta-rr-label">Lucro Potencial</div>
-                            <div class="ta-rr-value pnl-positive">${entry ? ((signalType === 'long' ? '+' : '') + ((((takeProfit || entry) - entry) / entry) * 100).toFixed(2) + '%') : '—'}</div>
+                            <div class="ta-rr-value pnl-positive">${(signalType === 'long' ? '+' : '') + ((((resolvedTakeProfit - resolvedEntry) / resolvedEntry) * 100).toFixed(2) + '%')}</div>
                         </div>
                         <div class="ta-rr-item">
                             <div class="ta-rr-label">Risco</div>
-                            <div class="ta-rr-value pnl-negative">${entry ? (((((stopLoss || entry) - entry) / entry) * 100).toFixed(2) + '%') : '—'}</div>
+                            <div class="ta-rr-value pnl-negative">${(((((resolvedStopLoss - resolvedEntry) / resolvedEntry) * 100).toFixed(2) + '%'))}</div>
                         </div>
                     </div>
                     `}
                     ` : `
                     <div style="padding: 20px; background: var(--bg-tertiary); border-radius: 12px; text-align: center;">
                         <div style="font-size: 16px; font-weight: 700; color: #f59e0b; margin-bottom: 8px;">⚠️ NÃO RECOMENDADO OPERAR</div>
-                        <div style="font-size: 12px; color: var(--text-muted);">Confluência insuficiente. Aguarde um sinal mais claro.</div>
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px;">
-                            <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
-                                <div style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">Entrada</div>
-                                <div style="font-size: 16px; font-weight: 700; color: var(--text-muted);">--</div>
-                            </div>
-                            <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
-                                <div style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">Take Profit</div>
-                                <div style="font-size: 16px; font-weight: 700; color: var(--text-muted);">--</div>
-                            </div>
-                            <div style="background: var(--bg-secondary); padding: 12px; border-radius: 8px;">
-                                <div style="font-size: 10px; color: var(--text-muted); white-space: nowrap;">Stop Loss</div>
-                                <div style="font-size: 16px; font-weight: 700; color: var(--text-muted);">--</div>
-                            </div>
-                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted); line-height: 1.45;">Confluência ou dados reais insuficientes para montar entrada, alvo e stop. Aguarde nova leitura.</div>
                     </div>
                     `}
                 </div>
@@ -4680,7 +5840,7 @@ Regras:
                 <div class="ta-section" style="border: 1px solid ${indicators.pineV7.active ? (indicators.pineV7.direction === 'LONG' ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)') : 'rgba(148,163,184,0.2)'}; ${indicators.pineV7.active ? 'box-shadow: 0 0 20px ' + (indicators.pineV7.direction === 'LONG' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)') + ';' : ''}">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, ${indicators.pineV7.active ? (indicators.pineV7.direction === 'LONG' ? '#22c55e' : '#ef4444') : '#94a3b8'} 0%, transparent 120%);">
-                            <span style="font-size: 18px;"></span>
+                            <i class="fas fa-bolt"></i>
                         </div>
                         <div>
                             <div class="ta-section-title">Motor de Scalping (5m/15m)</div>
@@ -4735,11 +5895,11 @@ Regras:
                         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
                             <div style="background: rgba(239,68,68,0.06); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(239,68,68,0.15);">
                                 <div style="font-size: 9px; color: #f87171; text-transform: uppercase; font-weight: 700;">Stop (${indicators.pineV7.melhorTipo})</div>
-                                <div style="font-size: 13px; font-weight: 800; color: #ef4444;">$${formatPrice(indicators.pineV7.stopAtual)}</div>
+                                <div style="font-size: 13px; font-weight: 800; color: #ef4444;">${formatMoney(indicators.pineV7.stopAtual)}</div>
                             </div>
                             <div style="background: rgba(34,197,94,0.06); padding: 10px; border-radius: 8px; text-align: center; border: 1px solid rgba(34,197,94,0.15);">
                                 <div style="font-size: 9px; color: #4ade80; text-transform: uppercase; font-weight: 700;">Alvo (ATR 4x)</div>
-                                <div style="font-size: 13px; font-weight: 800; color: #22c55e;">$${formatPrice(indicators.pineV7.alvoAtual)}</div>
+                                <div style="font-size: 13px; font-weight: 800; color: #22c55e;">${formatMoney(indicators.pineV7.alvoAtual)}</div>
                             </div>
                         </div>
                         ` : ''}
@@ -4765,7 +5925,7 @@ Regras:
                 <div class="ta-section">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, ${marketRegime.regimeColor} 0%, ${marketRegime.regimeColor}88 100%);">
-                            <span style="font-size: 18px;">${marketRegime.regimeIcon}</span>
+                            <i class="fas fa-chart-line"></i>
                         </div>
                         <div>
                             <div class="ta-section-title">Regime de Mercado</div>
@@ -4860,7 +6020,7 @@ Regras:
                 ` : ''}
                 
                 <!-- 3. CVD AVANÇADO -->
-                ${cvdAdvanced ? `
+                ${cvdForDisplay ? `
                 <div class="ta-section">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);">
@@ -4875,38 +6035,45 @@ Regras:
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                             <div style="min-width: 0; flex: 1; overflow: hidden;">
                                 <div style="font-size: 14px; color: var(--text-muted);">Delta Cumulativo</div>
-                                <div style="font-size: 20px; font-weight: 800; white-space: nowrap; color: ${(cvdAdvanced.delta || 0) > 0 ? '#22c55e' : '#ef4444'};">
-                                    ${(cvdAdvanced.delta || 0) > 0 ? '+' : ''}${(cvdAdvanced.delta || 0).toLocaleString()}
+                                <div style="font-size: 20px; font-weight: 800; white-space: nowrap; color: ${cvdDisplay.delta > 0 ? '#22c55e' : cvdDisplay.delta < 0 ? '#ef4444' : '#94a3b8'};">
+                                    ${cvdDisplay.delta > 0 ? '+' : ''}${cvdDisplay.delta.toLocaleString()}
                                 </div>
                             </div>
                             <div style="text-align: right;">
                                 <div style="font-size: 10px; color: var(--text-muted);">Score</div>
-                                <div style="font-size: 18px; font-weight: 800; white-space: nowrap; color: ${(cvdAdvanced.score || 0) > 0 ? '#22c55e' : (cvdAdvanced.score || 0) < 0 ? '#ef4444' : '#94a3b8'};">
-                                    ${(cvdAdvanced.score || 0) > 0 ? '+' : ''}${(cvdAdvanced.score || 0).toFixed(1)}
+                                <div style="font-size: 18px; font-weight: 800; white-space: nowrap; color: ${cvdDisplay.score > 0 ? '#22c55e' : cvdDisplay.score < 0 ? '#ef4444' : '#94a3b8'};">
+                                    ${cvdDisplay.score > 0 ? '+' : ''}${cvdDisplay.score.toFixed(1)}
                                 </div>
                             </div>
                         </div>
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">${cvdAdvanced.description || ''}</div>
+                        ${cvdDisplay.isStale ? `<div style="display:inline-flex;align-items:center;gap:5px;margin-bottom:8px;padding:4px 8px;border-radius:999px;background:rgba(99,102,241,0.12);color:#a5b4fc;font-size:9px;font-weight:700;"><i class="fas fa-circle-notch fa-spin" style="font-size:8px;"></i> Atualizando...</div>` : ''}
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">${cvdDisplay.description}</div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
-                            <div style="padding: 8px; background: ${cvdAdvanced.divergence ? (cvdAdvanced.divergence.type.includes('BULLISH') ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)') : 'var(--bg-card)'}; border-radius: 8px; text-align: center;">
+                            <div style="padding: 8px; background: ${cvdDisplay.divergenceBg}; border-radius: 8px; text-align: center;">
                                 <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Divergência</div>
-                                <div style="font-size: 14px;">${cvdAdvanced.divergence ? cvdAdvanced.divergence.icon : '—'}</div>
-                                <div style="font-size: 9px; white-space: nowrap; color: ${cvdAdvanced.divergence ? (cvdAdvanced.divergence.type.includes('BULLISH') ? '#22c55e' : '#ef4444') : 'var(--text-muted)'};">
-                                    ${cvdAdvanced.divergence ? cvdAdvanced.divergence.type.replace('_DIVERGENCE', '') : 'Nenhuma'}
+                                <div style="font-size: 10px; font-weight: 800; margin-top: 4px; color: ${cvdDisplay.divergenceColor};">
+                                    ${cvdDisplay.divergenceLabel}
+                                </div>
+                                <div style="font-size: 8px; margin-top: 3px; color: var(--text-muted);">
+                                    ${cvdDisplay.divergenceDetail}
                                 </div>
                             </div>
-                            <div style="padding: 8px; background: ${cvdAdvanced.absorption ? 'rgba(139,92,246,0.15)' : 'var(--bg-card)'}; border-radius: 8px; text-align: center;">
+                            <div style="padding: 8px; background: ${cvdDisplay.absorptionBg}; border-radius: 8px; text-align: center;">
                                 <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Absorção</div>
-                                <div style="font-size: 14px;">${cvdAdvanced.absorption ? '' : '—'}</div>
-                                <div style="font-size: 9px; white-space: nowrap; color: ${cvdAdvanced.absorption ? '#8b5cf6' : 'var(--text-muted)'};">
-                                    ${cvdAdvanced.absorption ? cvdAdvanced.absorption.type.replace('_ABSORPTION', '').replace('BULLISH', 'COMPRA').replace('BEARISH', 'VENDA') : 'Nenhuma'}
+                                <div style="font-size: 10px; font-weight: 800; margin-top: 4px; color: ${cvdDisplay.absorptionColor};">
+                                    ${cvdDisplay.absorptionLabel}
+                                </div>
+                                <div style="font-size: 8px; margin-top: 3px; color: var(--text-muted);">
+                                    ${cvdDisplay.absorptionDetail}
                                 </div>
                             </div>
-                            <div style="padding: 8px; background: ${cvdAdvanced.breakout ? 'rgba(249,115,22,0.15)' : 'var(--bg-card)'}; border-radius: 8px; text-align: center;">
+                            <div style="padding: 8px; background: ${cvdDisplay.breakoutBg}; border-radius: 8px; text-align: center;">
                                 <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">Breakout</div>
-                                <div style="font-size: 14px;">${cvdAdvanced.breakout ? '' : '—'}</div>
-                                <div style="font-size: 9px; white-space: nowrap; color: ${cvdAdvanced.breakout ? '#f97316' : 'var(--text-muted)'};">
-                                    ${cvdAdvanced.breakout ? (cvdAdvanced.breakout.type.includes('UP') ? 'COMPRA' : 'VENDA') : 'Nenhum'}
+                                <div style="font-size: 10px; font-weight: 800; margin-top: 4px; color: ${cvdDisplay.breakoutColor};">
+                                    ${cvdDisplay.breakoutLabel}
+                                </div>
+                                <div style="font-size: 8px; margin-top: 3px; color: var(--text-muted);">
+                                    ${cvdDisplay.breakoutDetail}
                                 </div>
                             </div>
                         </div>
@@ -4954,7 +6121,7 @@ Regras:
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--bg-card); border-radius: 6px; margin-bottom: 4px; border-left: 3px solid ${e.isCritical ? '#ef4444' : '#f59e0b'}; gap: 6px;">
                                 <div style="min-width: 0; flex: 1; overflow: hidden;">
                                     <div style="font-size: 11px; font-weight: 600; color: var(--text-primary); word-wrap: break-word;">${e.event?.substring(0, 40)}</div>
-                                    <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${e.country || ''} - ${new Date(e.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                                    <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${e.country || ''} - ${new Date(e.date).toLocaleDateString(window.VisorI18n?.getLocale?.() || 'en-US', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
                                 </div>
                                 <span style="font-size: 9px; padding: 2px 6px; background: ${e.isCritical ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}; color: ${e.isCritical ? '#ef4444' : '#f59e0b'}; border-radius: 4px; font-weight: 600; white-space: nowrap; flex-shrink: 0;">${e.isCritical ? 'CRÍTICO' : 'ALTO'}</span>
                             </div>
@@ -5089,7 +6256,7 @@ Regras:
                                     <span style="font-size: 16px; flex-shrink: 0;">${m.icon}</span>
                                     <div style="min-width: 0; overflow: hidden;">
                                         <div style="font-size: 12px; font-weight: 600; color: var(--text-primary); word-wrap: break-word;">${m.name}</div>
-                                        <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${m.note || (m.date ? new Date(m.date).toLocaleDateString('pt-BR') : '')}</div>
+                                        <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${m.note || (m.date ? new Date(m.date).toLocaleDateString(window.VisorI18n?.getLocale?.() || 'en-US') : '')}</div>
                                     </div>
                                 </div>
                                 <div style="font-size: 14px; font-weight: 800; color: var(--text-primary); white-space: nowrap;">${m.value != null ? m.value + (m.unit || '') : 'N/A'}</div>
@@ -5200,7 +6367,7 @@ Regras:
                                 <span class="ta-indicator-name">POC</span>
                                 <span class="ta-indicator-signal neutral">PIVOT</span>
                             </div>
-                            <div class="ta-indicator-value">$${formatPrice(indicators.volumeProfile.poc)}</div>
+                            <div class="ta-indicator-value">${formatMoney(indicators.volumeProfile.poc)}</div>
                             <div class="ta-indicator-change">Point of Control</div>
                         </div>
                         <div class="ta-indicator-item">
@@ -5208,7 +6375,7 @@ Regras:
                                 <span class="ta-indicator-name">VWAP</span>
                                 <span class="ta-indicator-signal neutral">REF</span>
                             </div>
-                            <div class="ta-indicator-value">$${formatPrice(indicators.volumeProfile.vwap)}</div>
+                            <div class="ta-indicator-value">${formatMoney(indicators.volumeProfile.vwap)}</div>
                             <div class="ta-indicator-change">Média institucional</div>
                         </div>
                         <div class="ta-indicator-item">
@@ -5216,7 +6383,7 @@ Regras:
                                 <span class="ta-indicator-name">VAH</span>
                                 <span class="ta-indicator-signal bearish">RES</span>
                             </div>
-                            <div class="ta-indicator-value">$${formatPrice(indicators.volumeProfile.vah)}</div>
+                            <div class="ta-indicator-value">${formatMoney(indicators.volumeProfile.vah)}</div>
                             <div class="ta-indicator-change">Área de valor alta</div>
                         </div>
                         <div class="ta-indicator-item">
@@ -5224,7 +6391,7 @@ Regras:
                                 <span class="ta-indicator-name">VAL</span>
                                 <span class="ta-indicator-signal bullish">SUP</span>
                             </div>
-                            <div class="ta-indicator-value">$${formatPrice(indicators.volumeProfile.val)}</div>
+                            <div class="ta-indicator-value">${formatMoney(indicators.volumeProfile.val)}</div>
                             <div class="ta-indicator-change">Área de valor baixa</div>
                         </div>
                     </div>
@@ -5281,42 +6448,42 @@ Regras:
                     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px;">
                         <div style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, transparent 100%); padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(59, 130, 246, 0.3); text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: #3b82f6; font-weight: 700;">EMA 9 <span style="font-size:8px;color:var(--text-muted);">(15m)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.ema9 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">${formatMoney(indicators.movingAverages?.ema9)}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema9 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema9 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, transparent 100%); padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(34, 197, 94, 0.3); text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: #22c55e; font-weight: 700;">EMA 21 <span style="font-size:8px;color:var(--text-muted);">(1h)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.ema21 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">${formatMoney(indicators.movingAverages?.ema21)}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema21 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema21 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: linear-gradient(135deg, rgba(249, 115, 22, 0.15) 0%, transparent 100%); padding: 10px 8px; border-radius: 10px; border: 1px solid rgba(249, 115, 22, 0.3); text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: #f97316; font-weight: 700;">EMA 50 <span style="font-size:8px;color:var(--text-muted);">(1h)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.ema50 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">${formatMoney(indicators.movingAverages?.ema50)}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema50 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.ema50 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: var(--bg-tertiary); padding: 10px 8px; border-radius: 10px; text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 50 <span style="font-size:8px;">(4h)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.sma50 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">${formatMoney(indicators.movingAverages?.sma50)}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma50 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma50 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: var(--bg-tertiary); padding: 10px 8px; border-radius: 10px; text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 99 <span style="font-size:8px;">(4h)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.sma99 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">${formatMoney(indicators.movingAverages?.sma99)}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma99 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma99 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
                         </div>
                         <div style="background: var(--bg-tertiary); padding: 10px 8px; border-radius: 10px; text-align: center; min-width: 0; overflow: hidden;">
                             <div style="font-size: 10px; color: var(--text-muted); font-weight: 600;">SMA 200 <span style="font-size:8px;">(1d)</span></div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">$${formatPrice(parseFloat(indicators.movingAverages?.sma200 || 0))}</div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); margin-top: 2px; word-break: break-all;">${formatMoney(indicators.movingAverages?.sma200)}</div>
                             <div style="font-size: 9px; color: ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma200 || 0) ? '#22c55e' : '#ef4444'}; margin-top: 2px;">
                                 ${parseFloat(indicators.movingAverages?.currentPrice || 0) > parseFloat(indicators.movingAverages?.sma200 || 0) ? '▲ Acima' : '▼ Abaixo'}
                             </div>
@@ -5330,11 +6497,11 @@ Regras:
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                             <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #22c55e;">
                                 <div style="font-size: 10px; color: var(--text-muted);">SUPORTE</div>
-                                <div style="font-size: 14px; font-weight: 700; color: #22c55e; white-space: nowrap;">$${formatPrice(parseFloat(indicators.movingAverages?.support || 0))}</div>
+                                <div style="font-size: 14px; font-weight: 700; color: #22c55e; white-space: nowrap;">${formatMoney(indicators.movingAverages?.support)}</div>
                             </div>
                             <div style="background: var(--bg-card); padding: 10px; border-radius: 8px; border-left: 3px solid #ef4444;">
                                 <div style="font-size: 10px; color: var(--text-muted);">RESISTÊNCIA</div>
-                                <div style="font-size: 14px; font-weight: 700; color: #ef4444; white-space: nowrap;">$${formatPrice(parseFloat(indicators.movingAverages?.resistance || 0))}</div>
+                                <div style="font-size: 14px; font-weight: 700; color: #ef4444; white-space: nowrap;">${formatMoney(indicators.movingAverages?.resistance)}</div>
                             </div>
                         </div>
                     </div>
@@ -5418,7 +6585,7 @@ Regras:
                 <div class="ta-section">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);">
-                            <span style="font-size: 18px;"></span>
+                            <i class="fas fa-shield-alt"></i>
                         </div>
                         <div>
                             <div class="ta-section-title">Gestão de Risco & Posição</div>
@@ -5472,11 +6639,11 @@ Regras:
                 
                 
                 <!-- V3: ON-CHAIN DATA -->
-                ${analysis.onChainData && analysis.onChainData.available ? `
+                ${onChainForDisplay && onChainForDisplay.available ? `
                 <div class="ta-section">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
-                            <span style="font-size: 18px;"></span>
+                            <i class="fas fa-link"></i>
                         </div>
                         <div>
                             <div class="ta-section-title">Análise On-Chain</div>
@@ -5484,7 +6651,8 @@ Regras:
                         </div>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 6px;">
-                        ${(analysis.onChainData.details || []).map(d => `
+                        ${onChainForDisplay._stale ? `<div style="display:inline-flex;align-items:center;gap:5px;align-self:flex-start;margin-bottom:4px;padding:4px 8px;border-radius:999px;background:rgba(99,102,241,0.12);color:#a5b4fc;font-size:9px;font-weight:700;"><i class="fas fa-circle-notch fa-spin" style="font-size:8px;"></i> Atualizando...</div>` : ''}
+                        ${(onChainForDisplay.details || []).map(d => `
                             <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--bg-tertiary); border-radius: 8px; border-left: 3px solid ${d.color || '#94a3b8'};">
                                 <span style="font-size: 11px; color: var(--text-secondary);">${d.name}</span>
                                 <div style="display: flex; align-items: center; gap: 6px;">
@@ -5494,7 +6662,7 @@ Regras:
                             </div>
                         `).join('')}
                         <div style="text-align: center; padding: 6px; font-size: 10px; color: var(--text-muted);">
-                            Score On-Chain: <span style="font-weight: 700; color: ${analysis.onChainData.onChainScore >= 0 ? '#22c55e' : '#ef4444'};">${analysis.onChainData.onChainScore > 0 ? '+' : ''}${analysis.onChainData.onChainScore}</span>
+                            Score On-Chain: <span style="font-weight: 700; color: ${onChainForDisplay.onChainScore >= 0 ? '#22c55e' : '#ef4444'};">${onChainForDisplay.onChainScore > 0 ? '+' : ''}${onChainForDisplay.onChainScore}</span>
                         </div>
                     </div>
                 </div>
@@ -5649,7 +6817,7 @@ Regras:
                 <div class="ta-section" style="border: 1px solid rgba(168,85,247,0.3); background: linear-gradient(135deg, rgba(168,85,247,0.05) 0%, transparent 100%);">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);">
-                            <span style="font-size: 18px;"></span>
+                            <i class="fas fa-route"></i>
                         </div>
                         <div>
                             <div class="ta-section-title">Plano de Execução</div>
@@ -5659,22 +6827,22 @@ Regras:
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
                         <div style="padding: 10px; background: rgba(168,85,247,0.08); border-radius: 8px;">
                             <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; white-space: nowrap;">Entrada</div>
-                            <div style="font-size: 14px; font-weight: 800; color: #a855f7;">${analysis.limitOrder.entry != null ? analysis.limitOrder.entry.toLocaleString('en-US', {maximumFractionDigits: 6}) : '—'}</div>
+                            <div style="font-size: 14px; font-weight: 800; color: #a855f7;">${formatMoney(limitOrderEntry)}</div>
                             <div style="font-size: 9px; color: var(--text-muted); white-space: nowrap;">${analysis.limitOrder.direction || ''}</div>
                         </div>
                         <div style="padding: 10px; background: rgba(239,68,68,0.08); border-radius: 8px;">
                             <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; white-space: nowrap;">Stop Loss</div>
-                            <div style="font-size: 14px; font-weight: 800; color: #ef4444;">${analysis.limitOrder.stopLoss != null ? analysis.limitOrder.stopLoss.toLocaleString('en-US', {maximumFractionDigits: 6}) : '—'}</div>
+                            <div style="font-size: 14px; font-weight: 800; color: #ef4444;">${formatMoney(limitOrderStop)}</div>
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                         <div style="padding: 10px; background: rgba(34,197,94,0.08); border-radius: 8px;">
                             <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; white-space: nowrap;">TP1 (R:R ${analysis.limitOrder.rr1 || '1:2'})</div>
-                            <div style="font-size: 14px; font-weight: 800; color: #22c55e;">${analysis.limitOrder.takeProfit1 != null ? analysis.limitOrder.takeProfit1.toLocaleString('en-US', {maximumFractionDigits: 6}) : '—'}</div>
+                            <div style="font-size: 14px; font-weight: 800; color: #22c55e;">${formatMoney(limitOrderTp1)}</div>
                         </div>
                         <div style="padding: 10px; background: rgba(34,197,94,0.08); border-radius: 8px;">
                             <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; white-space: nowrap;">TP2 (R:R ${analysis.limitOrder.rr2 || '1:3'})</div>
-                            <div style="font-size: 14px; font-weight: 800; color: #16a34a;">${analysis.limitOrder.takeProfit2 != null ? analysis.limitOrder.takeProfit2.toLocaleString('en-US', {maximumFractionDigits: 6}) : '—'}</div>
+                            <div style="font-size: 14px; font-weight: 800; color: #16a34a;">${formatMoney(limitOrderTp2)}</div>
                         </div>
                     </div>
                     ${analysis.limitOrder.details ? `
@@ -5694,7 +6862,7 @@ Regras:
                 <div class="ta-section" style="border: 1px solid ${analysis.riskEngine.killSwitchActive ? 'rgba(239,68,68,0.4)' : 'rgba(245,158,11,0.2)'}; background: ${analysis.riskEngine.killSwitchActive ? 'linear-gradient(135deg, rgba(239,68,68,0.08) 0%, transparent 100%)' : 'none'};">
                     <div class="ta-section-header">
                         <div class="ta-section-icon" style="background: linear-gradient(135deg, ${analysis.riskEngine.killSwitchActive ? '#ef4444, #dc2626' : '#f59e0b, #d97706'});">
-                            <span style="font-size: 18px;">${analysis.riskEngine.killSwitchActive ? '' : ''}</span>
+                            <i class="fas ${analysis.riskEngine.killSwitchActive ? 'fa-exclamation-triangle' : 'fa-shield-alt'}"></i>
                         </div>
                         <div>
                             <div class="ta-section-title">Gestão de Risco</div>
@@ -5780,46 +6948,12 @@ Regras:
                 </div>
                 ` : ''}
                 
-                <!-- CALL HISTORY SECTION -->
-                <div id="ta-call-history-wrapper">${renderCallHistorySection(taCurrentSymbol || '')}</div>
-                
                 <!--  -->
                 <!-- Bot Webhook: hidden from UI, logic still runs -->
                 ${''}
                 
                 <!--  -->
-                <!-- DADOS DE MERCADO ADICIONAIS                          -->
                 <!--  -->
-
-                <!-- Market Data Grid -->
-                <div class="ta-section" style="border: 1px solid rgba(100,116,139,0.15);">
-                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
-                        ${analysis.oiAnalysis?.available ? `
-                        <div style="padding: 10px; background: rgba(100,116,139,0.06); border-radius: 8px;">
-                            <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; white-space: nowrap;">Open Interest</div>
-                            <div style="font-size: 14px; font-weight: 700; color: var(--text-primary);">${analysis.oiAnalysis.currentOI ? (() => { const oiUsd = analysis.oiAnalysis.currentOI * (analysis.currentPrice || 1); if (oiUsd >= 1e9) return '$' + (oiUsd / 1e9).toFixed(2) + 'B'; if (oiUsd >= 1e6) return '$' + (oiUsd / 1e6).toFixed(1) + 'M'; return '$' + (oiUsd / 1e3).toFixed(0) + 'K'; })() : 'N/A'}</div>
-                        </div>` : ''}
-                        ${indicators?.fundingRate !== undefined ? `
-                        <div style="padding: 10px; background: rgba(100,116,139,0.06); border-radius: 8px;">
-                            <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; white-space: nowrap;">Funding Rate</div>
-                            <div style="font-size: 14px; font-weight: 700; color: ${parseFloat(indicators.fundingRate) > 0.01 ? '#ef4444' : parseFloat(indicators.fundingRate) < -0.01 ? '#22c55e' : 'var(--text-primary)'};">${indicators.fundingRate || 'N/A'}%</div>
-                        </div>` : ''}
-                        ${indicators?.longShortRatio ? `
-                        <div style="padding: 10px; background: rgba(100,116,139,0.06); border-radius: 8px;">
-                            <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; white-space: nowrap;">Long/Short Ratio</div>
-                            <div style="font-size: 14px; font-weight: 700; color: var(--text-primary);">${indicators.longShortRatio}</div>
-                        </div>` : ''}
-                        ${analysis.antiSpoof ? `
-                        <div style="padding: 10px; background: rgba(100,116,139,0.06); border-radius: 8px;">
-                            <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; white-space: nowrap;">Order Book Bias</div>
-                            <div style="font-size: 14px; font-weight: 700; color: ${analysis.antiSpoof.obBias === 'BULLISH' ? '#22c55e' : analysis.antiSpoof.obBias === 'BEARISH' ? '#ef4444' : 'var(--text-primary)'};">${analysis.antiSpoof.obBias === 'BULLISH' ? 'Alta' : analysis.antiSpoof.obBias === 'BEARISH' ? 'Baixa' : 'Neutro'} (${analysis.antiSpoof.bidAskRatio})</div>
-                        </div>` : ''}
-                    </div>
-                    ${analysis.oiAnalysis?.liquidations?.totalUSD > 0 ? `
-                    <div style="margin-top: 8px; padding: 8px 10px; background: rgba(239,68,68,0.06); border-radius: 8px; font-size: 11px; color: var(--text-secondary);">
-                         Liquidações (1h): <strong>${analysis.oiAnalysis.liquidations.longs} longs</strong> / <strong>${analysis.oiAnalysis.liquidations.shorts} shorts</strong> — Total: <strong>$${(analysis.oiAnalysis.liquidations.totalUSD / 1000).toFixed(0)}K</strong>
-                    </div>` : ''}
-                </div>
 
                 <!-- Modelo de Confiança em Pontos -->
                 ${usePointsModel && confidencePointsData ? `
@@ -5830,14 +6964,14 @@ Regras:
                         </div>
                         <div>
                             <div class="ta-section-title">Confiança por Pontos (0-100)</div>
-                            <div class="ta-section-subtitle">Composição real da confiança e evolução a cada 5 minutos</div>
+                            <div class="ta-section-subtitle">Composição real da confiança por indicador</div>
                         </div>
                     </div>
 
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 10px;">
                         <div style="padding: 10px; background: var(--bg-primary); border-radius: 10px; border: 1px solid rgba(100,116,139,0.18); text-align: center;">
                             <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase;">Confiança Final</div>
-                            <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${Number(confidencePointsData.finalConfidence ?? confidencePointsData.confidence ?? confidence).toFixed(1)}</div>
+                            <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">${Number(confidence).toFixed(1)}</div>
                         </div>
                         <div style="padding: 10px; background: var(--bg-primary); border-radius: 10px; border: 1px solid rgba(100,116,139,0.18); text-align: center;">
                             <div style="font-size: 9px; color: var(--text-muted); text-transform: uppercase;">Long Points</div>
@@ -5862,13 +6996,6 @@ Regras:
 
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin-bottom: 10px;">
                         ${pointsRowsHtml}
-                    </div>
-
-                    <div style="padding: 10px; border-radius: 10px; background: var(--bg-primary); border: 1px solid rgba(100,116,139,0.18);">
-                        <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px; font-weight: 700;">Evolução da confiança (janelas de 5 minutos)</div>
-                        <div id="ta-points-history-bars" style="display: flex; align-items: flex-end; gap: 6px; min-height: 120px; overflow-x: auto; padding-bottom: 4px;">
-                            ${pointsHistoryHtml}
-                        </div>
                     </div>
                 </div>
                 ` : ''}
@@ -5895,7 +7022,7 @@ Regras:
                 <!-- Last Update -->
                 <div class="ta-last-update">
                     <i class="fas fa-sync-alt"></i>
-                    <span>Última atualização: ${new Date(timestamp).toLocaleTimeString('pt-BR')}</span>
+                    <span>Última atualização: ${new Date(timestamp).toLocaleTimeString(window.VisorI18n?.getLocale?.() || 'en-US')}</span>
                     <span style="margin-left: 8px; color: var(--accent-blue);">- Atualiza a cada 5 min</span>
                     ${analysis.v3ProcessingTime ? `<span style="margin-left: 8px; font-size: 10px; color: var(--text-muted);">Processado em ${analysis.v3ProcessingTime}ms</span>` : ''}
                 </div>
@@ -5904,11 +7031,6 @@ Regras:
             // v7.1: Initialize collapsible panels after render
             setTimeout(() => initCollapsiblePanels(body), 50);
 
-            // Refresh histories from shared DB without blocking first paint.
-            setTimeout(() => {
-                refreshTechnicalHistoryFromDB(taCurrentSymbol || '');
-            }, 140);
-            
             // Trigger real AI summary (Groq Llama 3.3 70B) asynchronously
             setTimeout(() => updateAISummaryInModal(analysis, taCurrentSymbol), 100);
             } catch (renderErr) {
@@ -5916,8 +7038,8 @@ Regras:
                 if (body) {
                     body.innerHTML = `
                         <div style="padding: 40px 20px; text-align: center;">
-                            <div style="font-size: 48px; margin-bottom: 16px;">�</div>
-                            <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Erro ao renderizar an�lise</div>
+                            <div style="font-size: 48px; margin-bottom: 16px;">&#9888;</div>
+                            <div style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px;">Erro ao renderizar análise</div>
                             <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">Tente novamente em alguns segundos.</div>
                             <div style="font-size: 10px; color: var(--text-muted); background: var(--bg-secondary); padding: 8px; border-radius: 8px; word-break: break-all;">${renderErr?.message || 'Erro desconhecido'}</div>
                             <button onclick="closeTechnicalAnalysis()" style="margin-top:20px; padding:12px 24px; border-radius:12px; background:var(--bg-secondary); color:var(--text-primary); border:none; font-weight:600; cursor:pointer;">Voltar</button>

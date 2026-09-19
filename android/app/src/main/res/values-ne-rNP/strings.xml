@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">व्यापार संकेत</string>
+    <string name="signal_channel_description">LONG र SHORT संकेत अलर्टहरू पुष्टि गरियो</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">आत्मविश्वास: %1$d%%</string>
+</resources>

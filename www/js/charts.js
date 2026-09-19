@@ -37,10 +37,8 @@
                 }
                 modalEl.classList.remove('closing');
                 if (!wasOpen) {
-                    modalEl.classList.remove('active');
-                    requestAnimationFrame(() => {
-                        modalEl.classList.add('active');
-                    });
+                    // Keep modal state synchronous so Android back can close it on the first press.
+                    modalEl.classList.add('active');
                 } else {
                     modalEl.classList.add('active');
                 }
@@ -235,7 +233,7 @@
             // Restaurar modo normal no Android (mostrar status bar e TRAVAR em portrait)
             try {
                 // PRIMEIRO: Travar em portrait usando nossa função helper
-                await lockPortrait();
+                if (window.unlockOrientation) await window.unlockOrientation();
                 
                 // Usar Capacitor plugins para outros recursos
                 if (window.Capacitor && window.Capacitor.Plugins) {
@@ -615,15 +613,15 @@
                 
                 // Format based on the selected period
                 if (fullscreenPeriod === '1m' || fullscreenPeriod === '5m' || fullscreenPeriod === '15m' || fullscreenPeriod === '1h') {
-                    label = time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                    label = time.toLocaleTimeString(window.VisorI18n?.getLocale?.() || 'en-US', { hour: '2-digit', minute: '2-digit' });
                 } else if (fullscreenPeriod === '4h' || fullscreenPeriod === '1d' || fullscreenPeriod === '24h') {
-                    label = time.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                    label = time.toLocaleDateString(window.VisorI18n?.getLocale?.() || 'en-US', { day: '2-digit', month: '2-digit' });
                 } else if (fullscreenPeriod === '7d' || fullscreenPeriod === '30d' || fullscreenPeriod === '1mo') {
-                    label = time.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                    label = time.toLocaleDateString(window.VisorI18n?.getLocale?.() || 'en-US', { day: '2-digit', month: '2-digit' });
                 } else if (fullscreenPeriod === '6mo' || fullscreenPeriod === '1y' || fullscreenPeriod === 'max') {
-                    label = time.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+                    label = time.toLocaleDateString(window.VisorI18n?.getLocale?.() || 'en-US', { month: 'short', year: '2-digit' });
                 } else {
-                    label = time.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                    label = time.toLocaleDateString(window.VisorI18n?.getLocale?.() || 'en-US', { day: '2-digit', month: '2-digit' });
                 }
                 
                 ctx.fillText(label, x, chartHeight - 20);

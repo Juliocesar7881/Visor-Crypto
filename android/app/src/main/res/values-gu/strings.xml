@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">ટ્રેડિંગ સંકેતો</string>
+    <string name="signal_channel_description">પુષ્ટિ કરેલ LONG અને SHORT સિગ્નલ ચેતવણીઓ</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">આત્મવિશ્વાસ: %1$d%%</string>
+</resources>

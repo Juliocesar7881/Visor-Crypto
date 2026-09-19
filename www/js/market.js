@@ -1,17 +1,105 @@
         // ============================================
         // AI RECOMMENDATION
         // ============================================
+        const MARKET_LAST_VALID_CACHE_KEY = 'vc_last_valid_market_v1';
+
+        function readLastValidMarketCache() {
+            try {
+                const cached = JSON.parse(localStorage.getItem(MARKET_LAST_VALID_CACHE_KEY) || 'null');
+                return cached && typeof cached === 'object' ? cached : {};
+            } catch (_) {
+                return {};
+            }
+        }
+
+        function writeLastValidMarketCache(patch) {
+            try {
+                const current = readLastValidMarketCache();
+                localStorage.setItem(MARKET_LAST_VALID_CACHE_KEY, JSON.stringify({
+                    ...current,
+                    ...patch,
+                    updatedAt: Date.now()
+                }));
+            } catch (_) {}
+        }
+
+        function formatMarketCacheAge(ts) {
+            const ageMs = Date.now() - Number(ts || 0);
+            if (!Number.isFinite(ageMs) || ageMs < 0) return 'recentemente';
+            const mins = Math.floor(ageMs / 60000);
+            if (mins < 1) return 'agora';
+            if (mins < 60) return `${mins}min atras`;
+            const hours = Math.floor(mins / 60);
+            return `${hours}h atras`;
+        }
+
+        function renderMarketUpdatingBadge(ts) {
+            return `
+                <div style="display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;padding:5px 9px;border-radius:999px;background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.22);color:#a5b4fc;font-size:10px;font-weight:700;">
+                    <i class="fas fa-circle-notch fa-spin" style="font-size:9px;"></i>
+                    Atualizando... ultimo dado ${formatMarketCacheAge(ts)}
+                </div>
+            `;
+        }
+
+        function setMarketTrendUI(trend) {
+            const trendArrow = document.getElementById('trend-arrow');
+            if (trendArrow) {
+                trendArrow.innerHTML = trend.iconHtml || '<i class="fas fa-circle-notch fa-spin" style="font-size:18px;color:var(--text-muted);"></i>';
+                trendArrow.className = 'trend-arrow' + (trend.className ? ` ${trend.className}` : '');
+                trendArrow.title = trend.title || '';
+            }
+            const trendLabel = document.getElementById('market-trend');
+            if (trendLabel) {
+                trendLabel.textContent = trend.text || 'Atualizando';
+                trendLabel.style.color = trend.color || 'var(--text-secondary)';
+                trendLabel.title = trend.title || '';
+            }
+        }
+
         function updateAIRecommendation() {
             const container = document.getElementById('ai-recommendation');
+            if (!container || typeof selectedCryptos === 'undefined') return;
+
+            const cryptosWithData = selectedCryptos
+                .filter(symbol => CRYPTO_DATABASE[symbol] && Number.isFinite(Number(prices[symbol])) && Number(prices[symbol]) > 0 && Number.isFinite(Number(priceChanges[symbol])))
+                .sort((a, b) => Math.abs(priceChanges[b]) - Math.abs(priceChanges[a]));
+
+            if (cryptosWithData.length === 0) {
+                const cached = readLastValidMarketCache();
+                if (cached.advisorHtml) {
+                    container.innerHTML = `${renderMarketUpdatingBadge(cached.advisorTs || cached.updatedAt)}${cached.advisorHtml}`;
+                    if (cached.trend) {
+                        setMarketTrendUI({
+                            ...cached.trend,
+                            title: `Atualizando... ultimo dado ${formatMarketCacheAge(cached.advisorTs || cached.updatedAt)}`
+                        });
+                    }
+                } else {
+                    container.innerHTML = `
+                        <div style="padding:16px;border-radius:14px;background:var(--bg-tertiary);color:var(--text-secondary);font-size:12px;line-height:1.45;">
+                            <div style="font-weight:800;color:var(--text-primary);margin-bottom:4px;">Atualizando mercado...</div>
+                            Assim que os precos 24h carregarem, o advisor mostra a leitura completa.
+                        </div>
+                    `;
+                    setMarketTrendUI({
+                        text: 'Atualizando',
+                        color: 'var(--text-secondary)',
+                        iconHtml: '<i class="fas fa-circle-notch fa-spin" style="font-size:18px;color:var(--text-muted);"></i>'
+                    });
+                }
+                return;
+            }
+
             let bullishCount = 0, totalChange = 0;
-            
-            selectedCryptos.forEach(symbol => {
-                const change = priceChanges[symbol] || 0;
+
+            cryptosWithData.forEach(symbol => {
+                const change = Number(priceChanges[symbol]);
                 totalChange += change;
                 if (change > 1) bullishCount++;
             });
-            
-            const avgChange = totalChange / selectedCryptos.length;
+
+            const avgChange = totalChange / cryptosWithData.length;
             let sentiment, sentimentClass, sentimentIconClass, recommendation;
             
             if (avgChange > 2) {
@@ -35,27 +123,19 @@
             const trendText = avgChange > 0.5 ? 'Alta' : avgChange < -0.5 ? 'Baixa' : 'Lateral';
             const trendColor = avgChange > 0.5 ? '#22c55e' : avgChange < -0.5 ? '#ef4444' : 'var(--text-secondary)';
             
-            // Update trend arrow visual
-            const trendArrow = document.getElementById('trend-arrow');
-            if (trendArrow) {
-                trendArrow.innerHTML = trendIcon;
-                trendArrow.className = 'trend-arrow' + (avgChange > 0.5 ? ' up' : avgChange < -0.5 ? ' down' : '');
-            }
-            const trendLabel = document.getElementById('market-trend');
-            if (trendLabel) {
-                trendLabel.textContent = trendText;
-                trendLabel.style.color = trendColor;
-            }
+            const trendState = {
+                text: trendText,
+                color: trendColor,
+                iconHtml: trendIcon,
+                className: avgChange > 0.5 ? 'up' : avgChange < -0.5 ? 'down' : ''
+            };
+            setMarketTrendUI(trendState);
             
             // Filtrar apenas criptos com dados de preço carregados e ordenar por mudança
-            const cryptosWithData = selectedCryptos
-                .filter(symbol => prices[symbol] && priceChanges[symbol] !== undefined)
-                .sort((a, b) => Math.abs(priceChanges[b]) - Math.abs(priceChanges[a]));
-            
             const picks = cryptosWithData.slice(0, 4).map(symbol => {
                 const info = CRYPTO_DATABASE[symbol];
-                const price = prices[symbol] || 0;
-                const change = priceChanges[symbol] || 0;
+                const price = Number(prices[symbol] || 0);
+                const change = Number(priceChanges[symbol] || 0);
                 let action, actionClass, allocation;
                 
                 if (change > 3) { 
@@ -79,7 +159,7 @@
                 return { symbol, info, price, change, action, actionClass, allocation };
             }).sort((a, b) => b.allocation - a.allocation);
             
-            container.innerHTML = `
+            const advisorHtml = `
                 <div class="ai-sentiment">
                     <div class="ai-sentiment-icon ${sentimentClass}">
                         <i class="fas ${sentimentClass === 'bullish' ? 'fa-arrow-trend-up' : sentimentClass === 'bearish' ? 'fa-arrow-trend-down' : 'fa-minus'}"></i>
@@ -101,7 +181,7 @@
                                 <img src="${pick.info.img}" style="width: 24px; height: 24px; border-radius: 7px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); flex-shrink: 0;" onerror="this.style.background='${pick.info.color}'; this.style.padding='4px';">
                                 <div class="ai-pick-info">
                                     <div class="ai-pick-symbol">${pick.info.name}</div>
-                                    <div class="ai-pick-price">$${pick.price.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                                    <div class="ai-pick-price">$${pick.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: pick.price >= 1 ? 2 : 6})}</div>
                                 </div>
                                 <div class="ai-pick-allocation">
                                     <div class="ai-pick-change ${pick.change >= 0 ? 'pnl-positive' : 'pnl-negative'}" style="font-size: 13px; font-weight: 700;">
@@ -113,12 +193,117 @@
                     </div>
                 </div>
             `;
+            container.innerHTML = advisorHtml;
+            writeLastValidMarketCache({
+                advisorHtml,
+                advisorTs: Date.now(),
+                trend: trendState,
+                avgChange,
+                symbolsWithData: cryptosWithData.length
+            });
         }
 
 
         // BTC Dominância - APENAS CoinGecko com ajuste +2.1
         const BTC_DOM_CACHE_KEY = 'btc_dom_cache';
         const BTC_DOM_CACHE_TTL = 30 * 60 * 1000; // 30 min
+        const BTC_DOM_DISPLAY_CACHE_TTL = 6 * 60 * 60 * 1000;
+
+        function updateBtcDominanceUI(value) {
+            const btcDominance = Number(value || 0);
+            if (!Number.isFinite(btcDominance) || btcDominance <= 0) return false;
+            const domEl = document.getElementById('btc-dominance');
+            if (domEl) domEl.textContent = `${btcDominance.toFixed(2)}%`;
+            const arc = document.getElementById('btc-dom-arc');
+            if (arc) {
+                const circumference = 213.6;
+                const offset = circumference * (1 - btcDominance / 100);
+                arc.setAttribute('stroke-dashoffset', Math.max(0, offset));
+            }
+            return true;
+        }
+
+        function getWorkerMarketUrl(path) {
+            const urls = getWorkerMarketUrls(path);
+            return urls[0] || '';
+        }
+
+        function getWorkerMarketUrls(path) {
+            const cfg = window.APP_CONFIG || {};
+            const configured = typeof window.getVisorWorkerUrls === 'function'
+                ? window.getVisorWorkerUrls()
+                : [
+                    cfg.CALENDAR_WORKER_URL,
+                    ...(Array.isArray(cfg.CALENDAR_WORKER_URLS) ? cfg.CALENDAR_WORKER_URLS : []),
+                    cfg.CALENDAR_WORKER_FALLBACK_URL
+                ];
+            return [...new Set(
+                configured
+                    .map(url => String(url || '').trim().replace(/\/+$/, ''))
+                    .filter(Boolean)
+                    .map(url => `${url}${path}`)
+            )];
+        }
+
+        async function fetchMarketWorkerJson(path, timeoutMs = 3500) {
+            const urls = getWorkerMarketUrls(path);
+            for (const url of urls) {
+                try {
+                    const response = await fetchWithTimeout(url, {
+                        cache: 'no-store',
+                        headers: { 'Accept': 'application/json' }
+                    }, timeoutMs);
+                    if (!response.ok) continue;
+                    const data = await response.json();
+                    if (data && typeof data === 'object' && data.success !== false) {
+                        return { data, url };
+                    }
+                } catch (_) {}
+            }
+            return null;
+        }
+
+        function getSnapshotBtcDominance(data) {
+            const block = data?.btcDominance;
+            const value = Number((block && typeof block === 'object') ? block.value : block);
+            if (!Number.isFinite(value) || value <= 0) return null;
+            return {
+                value,
+                raw: Number((block && typeof block === 'object') ? block.raw : data?.btcDominanceRaw) || null,
+                updatedAt: Number((block && typeof block === 'object') ? block.updatedAt : data?.updatedAt) || Date.now(),
+                stale: !!((block && typeof block === 'object') ? block.stale : data?.stale),
+                source: String((block && typeof block === 'object') ? block.source : data?.source || 'worker')
+            };
+        }
+
+        function applyMarketSnapshot(data) {
+            const btc = getSnapshotBtcDominance(data);
+            if (btc && updateBtcDominanceUI(btc.value)) {
+                writeLastValidMarketCache({
+                    btcDominance: btc.value,
+                    btcDominanceTs: btc.updatedAt || Date.now(),
+                    btcDominanceRaw: btc.raw,
+                    btcDominanceSource: btc.source,
+                    btcDominanceStale: btc.stale,
+                    marketSnapshotTs: Number(data?.updatedAt || Date.now()) || Date.now()
+                });
+                try {
+                    localStorage.setItem(BTC_DOM_CACHE_KEY, JSON.stringify({
+                        val: btc.value,
+                        raw: btc.raw,
+                        ts: btc.updatedAt || Date.now(),
+                        stale: btc.stale,
+                        source: btc.source
+                    }));
+                } catch(e) {}
+            }
+
+            if (data?.altseasonIndex && typeof window.applyAltseasonSnapshot === 'function') {
+                try { window.applyAltseasonSnapshot(data.altseasonIndex, btc?.value || 0); } catch (_) {}
+            }
+
+            return btc ? btc.value : null;
+        }
         
         async function fetchGlobalData() {
             // Restaurar cache imediatamente
@@ -126,21 +311,28 @@
                 const raw = localStorage.getItem(BTC_DOM_CACHE_KEY);
                 if (raw) {
                     const c = JSON.parse(raw);
-                    if (c.val && c.ts && (Date.now() - c.ts) < BTC_DOM_CACHE_TTL) {
-                        const domEl = document.getElementById('btc-dominance');
-                        if (domEl) domEl.textContent = `${c.val.toFixed(2)}%`;
-                        const arc = document.getElementById('btc-dom-arc');
-                        if (arc) {
-                            const circumference = 213.6;
-                            const offset = circumference * (1 - c.val / 100);
-                            arc.setAttribute('stroke-dashoffset', Math.max(0, offset));
-                        }
+                    if (c.val && c.ts && (Date.now() - c.ts) < BTC_DOM_DISPLAY_CACHE_TTL) {
+                        updateBtcDominanceUI(c.val);
                     }
                 }
             } catch(e) {}
+
+            try {
+                const snapshot = await fetchMarketWorkerJson('/market/global-snapshot', 4500);
+                if (snapshot?.data) {
+                    const btcFromSnapshot = applyMarketSnapshot(snapshot.data);
+                    if (btcFromSnapshot) return btcFromSnapshot;
+                }
+            } catch (e) {}
             
             try {
-                const response = await fetchWithTimeout('https://api.coingecko.com/api/v3/global', {}, 10000);
+                const legacy = await fetchMarketWorkerJson('/market/global', 3500);
+                const btcFromLegacy = legacy?.data ? applyMarketSnapshot(legacy.data) : null;
+                if (btcFromLegacy) return btcFromLegacy;
+            } catch (e) {}
+
+            try {
+                const response = { ok: false };
                 if (response.ok) {
                     const globalData = await response.json();
                     let btcDominance = globalData.data?.market_cap_percentage?.btc;
@@ -158,6 +350,7 @@
                             arc.setAttribute('stroke-dashoffset', Math.max(0, offset));
                         }
                         // Salvar no cache
+                        writeLastValidMarketCache({ btcDominance, btcDominanceTs: Date.now() });
                         try { localStorage.setItem(BTC_DOM_CACHE_KEY, JSON.stringify({ val: btcDominance, ts: Date.now() })); } catch(e) {}
                         return btcDominance;
                     }
@@ -166,6 +359,12 @@
             }
             
             // Se falhar, manter cache anterior ou "--" até próxima tentativa
+            const cachedMarket = readLastValidMarketCache();
+            if (cachedMarket.btcDominance && updateBtcDominanceUI(cachedMarket.btcDominance)) {
+                const domEl = document.getElementById('btc-dominance');
+                if (domEl) domEl.title = `Atualizando... ultimo dado ${formatMarketCacheAge(cachedMarket.btcDominanceTs || cachedMarket.updatedAt)}`;
+            }
+
             return null;
         }
 

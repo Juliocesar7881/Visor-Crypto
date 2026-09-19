@@ -50,6 +50,16 @@
         }
     }
 
+    async function fetchJsonWithTimeout(url, timeoutMs = 4500, fallback = null) {
+        try {
+            const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+            if (!response.ok) return fallback;
+            return await response.json();
+        } catch (_) {
+            return fallback;
+        }
+    }
+
     function pruneStorage() {
         const keys = [];
         for (let i = 0; i < localStorage.length; i++) {
@@ -781,25 +791,21 @@
             if (baseSymbol === 'BTC') {
                 // Mempool size (unconfirmed transactions)
                 fetches.push(
-                    fetch('https://api.blockchain.info/charts/mempool-size?timespan=2days&format=json&cors=true')
-                        .then(r => r.json()).catch(() => null)
+                    fetchJsonWithTimeout('https://api.blockchain.info/charts/mempool-size?timespan=2days&format=json&cors=true', 4500, null)
                 );
                 // Hash rate (30 days)
                 fetches.push(
-                    fetch('https://api.blockchain.info/charts/hash-rate?timespan=30days&format=json&cors=true')
-                        .then(r => r.json()).catch(() => null)
+                    fetchJsonWithTimeout('https://api.blockchain.info/charts/hash-rate?timespan=30days&format=json&cors=true', 4500, null)
                 );
                 // Exchange volume estimation
                 fetches.push(
-                    fetch('https://api.blockchain.info/charts/estimated-transaction-volume-usd?timespan=7days&format=json&cors=true')
-                        .then(r => r.json()).catch(() => null)
+                    fetchJsonWithTimeout('https://api.blockchain.info/charts/estimated-transaction-volume-usd?timespan=7days&format=json&cors=true', 4500, null)
                 );
             }
 
             // Stablecoin supply (USDT market cap as proxy)
             fetches.push(
-                fetch('https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=usd&include_market_cap=true')
-                    .then(r => r.json()).catch(() => null)
+                fetchJsonWithTimeout('https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=usd&include_market_cap=true', 4500, null)
             );
 
             const results = await Promise.all(fetches);
@@ -883,6 +889,9 @@
                         result.stablecoinSignal = 'STABLE';
                         result.details.push({ name: 'Stablecoin Supply', value: 'Estável', signal: 'NEUTRO', color: '#94a3b8' });
                     }
+                } else {
+                    result.stablecoinSignal = 'BASELINE';
+                    result.details.push({ name: 'Stablecoin Supply', value: 'Baseline atualizado', signal: 'NEUTRO', color: '#94a3b8' });
                 }
                 storageSet('usdt_mcap', { value: usdtMcap, ts: Date.now() });
             }

@@ -1,0 +1,3 @@
+# Create android/monetization.properties locally with the App Key shown in the
+# Appodeal dashboard. This file is ignored by Git.
+appodealAppKey=

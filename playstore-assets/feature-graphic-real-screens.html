@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visor Crypto Real Feature Graphics</title>
+  <style>
+    :root {
+      --bg: #07070d;
+      --panel: #171720;
+      --panel-soft: #1e1e2a;
+      --blue: #5f63ff;
+      --blue-2: #7268ff;
+      --cyan: #00b7ff;
+      --green: #20d57b;
+      --red: #ff4d5c;
+      --yellow: #ffba19;
+      --text: #f8fafc;
+      --muted: #9a9aa7;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 1024px;
+      height: 500px;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+    }
+
+    .artboard {
+      position: relative;
+      width: 1024px;
+      height: 500px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 18% 22%, rgba(95, 99, 255, 0.2), transparent 30%),
+        radial-gradient(circle at 72% 10%, rgba(0, 183, 255, 0.14), transparent 28%),
+        linear-gradient(135deg, #050509 0%, #11111a 48%, #08080f 100%);
+    }
+
+    .artboard::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px);
+      background-size: 42px 42px;
+      opacity: 0.38;
+    }
+
+    .glow {
+      position: absolute;
+      width: 360px;
+      height: 360px;
+      border-radius: 50%;
+      filter: blur(70px);
+      opacity: 0.3;
+    }
+
+    .glow.one { background: var(--blue); left: -120px; bottom: -160px; }
+    .glow.two { background: var(--cyan); right: -160px; top: -120px; }
+
+    .copy {
+      position: absolute;
+      z-index: 10;
+      width: 430px;
+    }
+
+    .copy.left { left: 56px; top: 64px; }
+    .copy.right { right: 54px; top: 60px; }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 30px;
+    }
+
+    .brand img {
+      width: 62px;
+      height: 62px;
+      border-radius: 18px;
+      background: #0e0e16;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4), 0 0 34px rgba(95, 99, 255, 0.28);
+    }
+
+    .brand-title {
+      font-weight: 950;
+      font-size: 21px;
+      letter-spacing: 0;
+    }
+
+    .brand-sub {
+      margin-top: 3px;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0;
+      color: var(--cyan);
+      text-transform: uppercase;
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      margin-bottom: 18px;
+      border-radius: 999px;
+      background: rgba(95, 99, 255, 0.14);
+      border: 1px solid rgba(114, 104, 255, 0.32);
+      color: #d9d7ff;
+      font-weight: 900;
+      font-size: 13px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 430px;
+      font-weight: 950;
+      font-size: 52px;
+      line-height: 1.02;
+      letter-spacing: 0;
+      text-shadow: 0 16px 36px rgba(0, 0, 0, 0.46);
+    }
+
+    h1 .blue {
+      color: var(--blue-2);
+      text-shadow: 0 0 24px rgba(114, 104, 255, 0.55);
+    }
+
+    h1 .cyan {
+      color: var(--cyan);
+      text-shadow: 0 0 24px rgba(0, 183, 255, 0.45);
+    }
+
+    .lead {
+      margin-top: 18px;
+      color: #e1e1ea;
+      font-size: 20px;
+      font-weight: 650;
+      line-height: 1.38;
+      max-width: 430px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    .chip {
+      padding: 11px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(114, 104, 255, 0.36);
+      background: rgba(23, 23, 32, 0.78);
+      color: #f2f2ff;
+      font-size: 13px;
+      font-weight: 900;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .phone {
+      position: absolute;
+      z-index: 5;
+      width: 236px;
+      height: 524px;
+      border-radius: 35px;
+      padding: 7px;
+      background: linear-gradient(145deg, #2b2b38, #0b0b11);
+      box-shadow:
+        0 40px 80px rgba(0, 0, 0, 0.58),
+        0 0 0 1px rgba(255,255,255,0.1),
+        0 0 42px rgba(95, 99, 255, 0.18);
+      overflow: hidden;
+    }
+
+    .phone.large {
+      width: 254px;
+      height: 564px;
+      border-radius: 40px;
+    }
+
+    .phone.small {
+      width: 218px;
+      height: 484px;
+      border-radius: 32px;
+      opacity: 0.92;
+    }
+
+    .phone img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      border-radius: 28px;
+    }
+
+    .phone.large img { border-radius: 32px; }
+    .phone.small img { border-radius: 25px; }
+
+    .screen-fade {
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      pointer-events: none;
+    }
+
+    .fade-left {
+      background: linear-gradient(90deg, rgba(7,7,13,0.95) 0%, rgba(7,7,13,0.68) 35%, transparent 62%);
+    }
+
+    .fade-right {
+      background: linear-gradient(270deg, rgba(7,7,13,0.95) 0%, rgba(7,7,13,0.68) 35%, transparent 62%);
+    }
+
+    .phone-stack-left .p1 { left: 70px; top: 0; transform: rotate(-3deg); }
+    .phone-stack-left .p2 { left: 278px; top: 42px; transform: rotate(4deg); }
+
+    .phone-stack-right .p1 { right: 76px; top: -20px; transform: rotate(3deg); }
+    .phone-stack-right .p2 { right: 286px; top: 48px; transform: rotate(-4deg); }
+
+    .phone-stack-center .p1 { left: 385px; top: -28px; transform: rotate(0deg); }
+    .phone-stack-center .p2 { left: 624px; top: 36px; transform: rotate(3deg); }
+
+    .caption-strip {
+      position: absolute;
+      left: 56px;
+      right: 56px;
+      bottom: 28px;
+      height: 74px;
+      z-index: 9;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .mini-card {
+      border-radius: 22px;
+      padding: 15px 17px;
+      background: rgba(23, 23, 32, 0.8);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 14px 36px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+
+    .mini-label {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .mini-value {
+      margin-top: 5px;
+      font-size: 20px;
+      font-weight: 950;
+    }
+
+    .v-home .p1 { right: 84px; top: -26px; }
+    .v-home .p2 { right: 292px; top: 44px; }
+    .v-news .p1 { left: 82px; top: -18px; }
+    .v-news .p2 { left: 292px; top: 42px; }
+    .v-analysis .p1 { right: 78px; top: -30px; }
+    .v-analysis .p2 { right: 296px; top: 42px; }
+
+    .hide { display: none; }
+  </style>
+</head>
+<body>
+  <main id="home" class="artboard v-home">
+    <div class="glow one"></div>
+    <div class="glow two"></div>
+    <div class="phone phone-stack-right p2 small"><img src="refs/screen-signals.jpeg" alt=""></div>
+    <div class="phone phone-stack-right p1 large"><img src="refs/screen-home.jpeg" alt=""></div>
+    <div class="screen-fade fade-left"></div>
+    <section class="copy left">
+      <div class="brand">
+        <img src="../www/Icone.png" alt="">
+        <div>
+          <div class="brand-title">Visor Crypto</div>
+          <div class="brand-sub">Bitcoin e altcoins</div>
+        </div>
+      </div>
+      <div class="kicker">Painel cripto em tempo real</div>
+      <h1>Bitcoin, sinais e <span class="blue">alertas</span></h1>
+      <p class="lead">Acompanhe preços, tendência 24h, IA Market Advisor e sinais ativos em uma leitura rápida.</p>
+      <div class="chips">
+        <span class="chip">Preços ao vivo</span>
+        <span class="chip">Sinais cripto</span>
+        <span class="chip">Alertas</span>
+      </div>
+    </section>
+  </main>
+
+  <main id="news" class="artboard v-news hide">
+    <div class="glow one"></div>
+    <div class="glow two"></div>
+    <div class="phone phone-stack-left p2 small"><img src="refs/screen-fed.jpeg" alt=""></div>
+    <div class="phone phone-stack-left p1 large"><img src="refs/screen-news.jpeg" alt=""></div>
+    <div class="screen-fade fade-right"></div>
+    <section class="copy right">
+      <div class="brand">
+        <img src="../www/Icone.png" alt="">
+        <div>
+          <div class="brand-title">Visor Crypto</div>
+          <div class="brand-sub">Notícias + macro</div>
+        </div>
+      </div>
+      <div class="kicker">Contexto para o mercado</div>
+      <h1>Notícias cripto e <span class="cyan">Fed Watch</span></h1>
+      <p class="lead">Filtre notícias por relevância e acompanhe juros, calendário EUA e indicadores macro.</p>
+      <div class="chips">
+        <span class="chip">Notícias filtradas</span>
+        <span class="chip">Macro</span>
+        <span class="chip">Fed Watch</span>
+      </div>
+    </section>
+  </main>
+
+  <main id="analysis" class="artboard v-analysis hide">
+    <div class="glow one"></div>
+    <div class="glow two"></div>
+    <div class="phone phone-stack-right p2 small"><img src="refs/screen-analysis-index.jpeg" alt=""></div>
+    <div class="phone phone-stack-right p1 large"><img src="refs/screen-technical.jpeg" alt=""></div>
+    <div class="screen-fade fade-left"></div>
+    <section class="copy left">
+      <div class="brand">
+        <img src="../www/Icone.png" alt="">
+        <div>
+          <div class="brand-title">Visor Crypto</div>
+          <div class="brand-sub">Análise técnica</div>
+        </div>
+      </div>
+      <div class="kicker">Leitura técnica organizada</div>
+      <h1>Análise técnica com <span class="blue">confiança</span></h1>
+      <p class="lead">Veja direção, confiança, pontos técnicos, risco e indicadores em cards visuais.</p>
+      <div class="chips">
+        <span class="chip">BTC/USDT</span>
+        <span class="chip">Indicadores</span>
+        <span class="chip">Multi-timeframe</span>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const variant = new URLSearchParams(location.search).get("variant") || "home";
+    for (const id of ["home", "news", "analysis"]) {
+      document.getElementById(id).classList.toggle("hide", id !== variant);
+    }
+  </script>
+</body>
+</html>

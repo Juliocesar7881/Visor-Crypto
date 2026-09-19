@@ -1,0 +1,3 @@
+- Dyskretne reklamy w naturalnych przerwach pomagają zachować Visor Crypto wolność.
+- Cleaner Bitcoin Skrót mapy cieplnej na ekranie głównym.
+- Ulepszenia bezpieczeństwa, wydajności, wydajności animacji i stabilności.

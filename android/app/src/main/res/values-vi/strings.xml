@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Tín hiệu giao dịch</string>
+    <string name="signal_channel_description">Đã xác nhận cảnh báo tín hiệu LONG và SHORT</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Độ tin cậy: %1$d%%</string>
+</resources>

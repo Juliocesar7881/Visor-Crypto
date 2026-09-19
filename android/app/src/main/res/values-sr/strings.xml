@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Трговински сигнали</string>
+    <string name="signal_channel_description">Потврђена упозорења о сигналима &lt;спан цласс="нотранслате"&gt;ВЦКС1КСЦВ&lt;/спан&gt; и &lt;спан цласс="нотранслате"&gt;ВЦКС0КСЦВ&lt;/спан&gt;</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Confidence: %1$d%%</string>
+</resources>

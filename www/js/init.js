@@ -39,7 +39,7 @@
                 const startupTasks = [
                     { delay: 0, fn: () => fetchFearGreed() },
                     { delay: 0, fn: () => { if (window.loadMacroData) window.loadMacroData(); } },
-                    { delay: 500, fn: () => fetchAltseasonIndex() },
+                    { delay: 0, fn: () => fetchAltseasonIndex() },
                     { delay: 900, fn: () => fetchGlobalData() },
                     { delay: 1300, fn: () => fetchVolume() },
                     { delay: 1700, fn: () => fetchCryptoStats() },
@@ -156,15 +156,46 @@
                     if (window.RealtimeCVD && window.RealtimeCVD.disconnectAll) {
                         try { window.RealtimeCVD.disconnectAll(); } catch(e) {}
                     }
-                } else if (!window._autoRefreshPaused) {
-                    // Debounce resume — prevent rapid minimize/restore from stacking
-                    _visibilityDebounce = setTimeout(() => {
-                        _visibilityDebounce = null;
-                        if (!document.hidden && !window._autoRefreshPaused) {
-                            _startAllAutoRefresh();
+                } else {
+                    // ═══════════════════════════════════════
+                    // FOREGROUND RECOVERY — elimina freeze visual após unlock
+                    // ═══════════════════════════════════════
+                    try {
+                        // 1. Clear overflow locks that may be stranded from modals
+                        document.body.style.overflow = '';
+                        document.documentElement.style.overflow = '';
+
+                        // 2. Ensure active section is visible (prevents blank screen)
+                        const activeSection = document.querySelector('.section.active');
+                        if (!activeSection) {
+                            const home = document.getElementById('home');
+                            if (home) home.classList.add('active');
                         }
-                    }, 1500);
+
+                        // 3. Force WebView repaint (fixes Android WebView rendering bug)
+                        document.body.style.display = 'none';
+                        void document.body.offsetHeight;
+                        document.body.style.display = '';
+                    } catch(e) {}
+
+                    if (!window._autoRefreshPaused) {
+                        // Debounce resume — prevent rapid minimize/restore from stacking
+                        _visibilityDebounce = setTimeout(() => {
+                            _visibilityDebounce = null;
+                            if (!document.hidden && !window._autoRefreshPaused) {
+                                _startAllAutoRefresh();
+                            }
+                        }, 1500);
+                    }
                 }
+            });
+
+            // Listen for the custom native resume event from MainActivity.java
+            document.addEventListener('visor-foreground-resume', () => {
+                try {
+                    document.body.style.overflow = '';
+                    document.documentElement.style.overflow = '';
+                } catch(e) {}
             });
         });
         // v7.1: Auto-Refresh Toggle

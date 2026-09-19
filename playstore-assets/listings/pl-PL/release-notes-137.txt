@@ -1,0 +1,4 @@
+- Bardziej niezawodne alerty sygnałowe dostępne 24 godziny na dobę, 7 dni w tygodniu dzięki FCM i automatycznemu przywracaniu.
+- Zaufanie odświeża się po otwarciu aplikacji i maksymalnie co 10 minut, gdy jest otwarta.
+- Automatyczny wybór języka systemu, obsługa RTL i globalna lokalizacja.
+- Poprawa wydajności i stabilności.

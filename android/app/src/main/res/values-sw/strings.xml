@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Ishara za biashara</string>
+    <string name="signal_channel_description">Arifa za mawimbi za LONG na SHORT zimethibitishwa</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Kujiamini: %1$d%%</string>
+</resources>

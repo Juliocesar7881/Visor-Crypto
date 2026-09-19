@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor Crypto: Bitcoin, sinais e noticias cripto</title>
+    <meta name="description" content="Visor Crypto acompanha Bitcoin, altcoins, sinais cripto, noticias filtradas, analise tecnica e indicadores macro em tempo real.">
+    <meta name="keywords" content="bitcoin, cripto, criptomoedas, altcoins, sinais cripto, noticias cripto, analise tecnica, mercado financeiro, Fed Watch, Altseason Index">
+    <meta name="author" content="Visor Crypto">
+    <link rel="canonical" href="https://visorcrypto.loan/landing.html">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Visor Crypto">
+    <meta property="og:title" content="Visor Crypto: Bitcoin, sinais e noticias cripto">
+    <meta property="og:description" content="Precos, sinais, noticias cripto, macro e Fed Watch em um painel feito para acompanhar o mercado.">
+    <meta property="og:image" content="https://visorcrypto.loan/Icone.png">
+    <meta property="og:url" content="https://visorcrypto.loan/landing.html">
+    <meta name="twitter:card" content="summary_large_image">
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #070b12;
+            --panel: #101827;
+            --line: rgba(148, 163, 184, 0.24);
+            --text: #f8fafc;
+            --muted: #b6c2d2;
+            --blue: #38bdf8;
+            --green: #22c55e;
+            --orange: #f59e0b;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.55;
+        }
+        main {
+            min-height: 100vh;
+            display: grid;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        .wrap {
+            width: min(1040px, 100%);
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1.08fr 0.92fr;
+            gap: 36px;
+            align-items: center;
+        }
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 26px;
+            color: var(--muted);
+            font-weight: 700;
+        }
+        .brand img {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+        }
+        h1 {
+            margin: 0;
+            font-size: clamp(40px, 7vw, 78px);
+            line-height: 0.95;
+            letter-spacing: 0;
+        }
+        .lead {
+            max-width: 640px;
+            margin: 22px 0 0;
+            color: var(--muted);
+            font-size: 18px;
+        }
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 30px;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 48px;
+            padding: 0 18px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 800;
+        }
+        .btn.primary {
+            background: var(--blue);
+            color: #04111f;
+            border-color: transparent;
+        }
+        .panel {
+            border: 1px solid var(--line);
+            background: var(--panel);
+            border-radius: 8px;
+            padding: 22px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--line);
+        }
+        .metric:last-child { border-bottom: 0; }
+        .metric span { color: var(--muted); }
+        .metric strong { text-align: right; }
+        .green { color: var(--green); }
+        .orange { color: var(--orange); }
+        .foot {
+            margin-top: 24px;
+            color: #7f8ea3;
+            font-size: 13px;
+        }
+        .foot a { color: var(--blue); }
+        @media (max-width: 760px) {
+            .wrap { grid-template-columns: 1fr; }
+            main { align-items: start; }
+            .panel { order: -1; }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="wrap">
+            <section>
+                <div class="brand">
+                    <img src="Icone.png" alt="">
+                    <span>Visor Crypto</span>
+                </div>
+                <h1>Bitcoin, sinais e noticias cripto em tempo real.</h1>
+                <p class="lead">Acompanhe precos, altcoins, analise tecnica, noticias cripto filtradas, indicadores macro, VIX, S&amp;P 500, energia e Fed Watch em um painel rapido para leitura de mercado.</p>
+                <div class="actions">
+                    <a class="btn primary" href="https://play.google.com/store/apps/details?id=com.visorcrypto.app">Baixar na Google Play</a>
+                    <a class="btn" href="privacy-policy.html">Politica de privacidade</a>
+                </div>
+                <p class="foot">Conteudo informativo e educacional. Nao constitui recomendacao de investimento.</p>
+            </section>
+            <aside class="panel" aria-label="Recursos do Visor Crypto">
+                <div class="metric"><span>Mercado</span><strong>Bitcoin, Ethereum e altcoins</strong></div>
+                <div class="metric"><span>Sinais</span><strong class="green">Analise tecnica e alertas</strong></div>
+                <div class="metric"><span>Noticias</span><strong>Cripto filtrada por relevancia</strong></div>
+                <div class="metric"><span>Macro</span><strong class="orange">Fed Watch, VIX, S&amp;P 500 e energia</strong></div>
+                <div class="metric"><span>Uso</span><strong>Sem login obrigatorio</strong></div>
+            </aside>
+        </div>
+    </main>
+</body>
+</html>

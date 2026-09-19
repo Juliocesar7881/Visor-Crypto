@@ -1,0 +1,4 @@
+- Mer pålitliga 24/7-signalvarningar med FCM och automatisk återställning.
+- Förtroendet uppdateras när appen öppnas och högst var tionde minut när den är öppen.
+- Automatiskt språkval, manuell väljare, RTL-stöd och global lokalisering.
+- Prestanda- och stabilitetsförbättringar.

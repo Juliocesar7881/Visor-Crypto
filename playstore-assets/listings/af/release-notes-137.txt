@@ -1,0 +1,4 @@
+- Meer betroubare 24/7 seinwaarskuwings met FCM en outomatiese herstel.
+- Vertroue verfris wanneer die toepassing oopmaak en hoogstens elke 10 minute terwyl dit oop is.
+- Outomatiese stelseltaalkeuse, RTL-ondersteuning en globale lokalisering.
+- Prestasie- en stabiliteitverbeterings.

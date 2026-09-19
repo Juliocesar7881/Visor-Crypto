@@ -1,0 +1,4 @@
+- Luotettavammat 24/7 signaalihälytykset FCM:llä ja automaattisella palautuksella.
+- Luottamus päivittyy sovelluksen avautuessa ja enintään 10 minuutin välein, kun se on auki.
+- Automaattinen järjestelmän kielen valinta, RTL-tuki ja globaali lokalisointi.
+- Suorituskyvyn ja vakauden parannuksia.

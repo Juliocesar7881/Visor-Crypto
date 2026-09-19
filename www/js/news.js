@@ -14,10 +14,166 @@
             return source;
         }
 
+        const NEWS_SOURCE_DOMAIN_MAP = Object.freeze({
+            'cointelegraph': 'cointelegraph.com',
+            'coindesk': 'coindesk.com',
+            'decrypt': 'decrypt.co',
+            'cryptoslate': 'cryptoslate.com',
+            'bitcoin magazine': 'bitcoinmagazine.com',
+            'the block': 'theblock.co',
+            'the defiant': 'thedefiant.io',
+            'beincrypto': 'beincrypto.com',
+            'cryptonews': 'cryptonews.com',
+            'cryptocompare': 'cryptocompare.com',
+            'cryptopanic': 'cryptopanic.com',
+            'reuters': 'reuters.com',
+            'bbc': 'bbc.com'
+        });
+
+        const NEWS_SOURCE_DIRECT_LOGO_MAP = Object.freeze({
+            'cointelegraph.com': 'https://cointelegraph.com/favicon.svg'
+        });
+
+        function _extractDomainFromUrl(rawUrl) {
+            const url = String(rawUrl || '').trim();
+            if (!url) return '';
+            try {
+                const withScheme = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+                const parsed = new URL(withScheme);
+                return parsed.hostname.replace(/^www\./i, '').toLowerCase();
+            } catch (_) {
+                return '';
+            }
+        }
+
+        function _resolveDomainFromSource(sourceText) {
+            const source = String(sourceText || '').trim().toLowerCase();
+            if (!source) return '';
+
+            for (const [key, domain] of Object.entries(NEWS_SOURCE_DOMAIN_MAP)) {
+                if (source.includes(key)) return domain;
+            }
+
+            const domainLike = source.match(/([a-z0-9.-]+\.(?:com|io|co|org|net|news|xyz))/i);
+            return domainLike ? domainLike[1].toLowerCase() : '';
+        }
+
+        function _isUsableNewsImageUrl(rawUrl) {
+            const url = String(rawUrl || '').trim();
+            if (!url) return false;
+            if (typeof isValidURL === 'function') return isValidURL(url);
+            return /^https?:\/\//i.test(url);
+        }
+
+        function _normalizeNewsUrl(rawUrl) {
+            const url = String(rawUrl || '').trim();
+            if (!url) return '';
+            try {
+                const parsed = new URL(url);
+                parsed.hash = '';
+                Array.from(parsed.searchParams.keys()).forEach((key) => {
+                    const lowerKey = key.toLowerCase();
+                    if (
+                        lowerKey.startsWith('utm_') ||
+                        ['fbclid', 'gclid', 'mc_cid', 'mc_eid', 'ref', 'ref_src'].includes(lowerKey)
+                    ) {
+                        parsed.searchParams.delete(key);
+                    }
+                });
+                parsed.searchParams.sort();
+                return parsed.toString().replace(/\/$/, '').toLowerCase();
+            } catch (_) {
+                return url.split('#')[0].replace(/\/$/, '').toLowerCase();
+            }
+        }
+
+        function _copyBestNewsImage(target, source) {
+            if (!target || !source) return false;
+            const candidateImage = String(source.image || '').trim().replace(/&amp;/g, '&');
+            if (!_isUsableNewsImageUrl(candidateImage)) return false;
+            if (_isUsableNewsImageUrl(target.image)) return false;
+            target.image = candidateImage;
+            return true;
+        }
+
+        function getSourceLogoUrl(news) {
+            const fromUrl = _extractDomainFromUrl(news?.url || '');
+            const fromSource = _resolveDomainFromSource(news?.source || '');
+            const domain = fromUrl || fromSource;
+            if (!domain) return '';
+
+            const directLogo = NEWS_SOURCE_DIRECT_LOGO_MAP[domain] || NEWS_SOURCE_DIRECT_LOGO_MAP[fromSource];
+            if (directLogo) return directLogo;
+
+            return `https://www.google.com/s2/favicons?sz=256&domain_url=${encodeURIComponent(`https://${domain}`)}`;
+        }
+
+        function _isCointelegraphNews(news) {
+            const sourceText = `${news?.source || ''} ${news?.url || ''}`.toLowerCase();
+            return sourceText.includes('cointelegraph');
+        }
+
+        function getNewsSourceFallbackHtml(news, options = {}) {
+            const {
+                display = 'flex',
+                compact = true,
+                iconClass = 'fa-newspaper'
+            } = options;
+            const sourceLogoUrl = getSourceLogoUrl(news);
+            const isCointelegraph = _isCointelegraphNews(news);
+            const sourceLabel = sanitizeHTML(shortenSource(news?.source || (isCointelegraph ? 'Cointelegraph' : 'Fonte')));
+            const badgeText = isCointelegraph ? 'CT' : 'NEWS';
+            const gap = compact ? '4px' : '12px';
+            const logoSize = compact ? '56px' : '96px';
+            const badgeSize = compact ? '52px' : '82px';
+            const badgeFont = compact ? '17px' : '28px';
+            const badgeBg = isCointelegraph
+                ? 'linear-gradient(135deg, #facc15, #f59e0b)'
+                : 'linear-gradient(135deg, #2563eb, #7c3aed)';
+            const logoWidth = isCointelegraph && compact ? '100%' : logoSize;
+            const logoHeight = isCointelegraph && compact ? '100%' : logoSize;
+            const logoMax = isCointelegraph && compact ? '100%' : '72%';
+            const logoFit = isCointelegraph && compact ? 'cover' : 'contain';
+            const logoRadius = isCointelegraph && compact ? '0' : '12px';
+
+            if (sourceLogoUrl) {
+                return `
+                    <div style="display:${display}; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; gap: ${gap}; background: linear-gradient(135deg, rgba(15,23,42,0.94), rgba(30,41,59,0.96));">
+                        <img src="${sanitizeHTML(sourceLogoUrl)}" alt="" loading="lazy" decoding="async" style="width: ${logoWidth}; height: ${logoHeight}; max-width: ${logoMax}; max-height: ${logoMax}; object-fit: ${logoFit}; border-radius: ${logoRadius}; background: transparent; padding: 0;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div style="display:none; align-items:center; justify-content:center; width:${badgeSize}; height:${badgeSize}; max-width:72%; max-height:72%; border-radius: 14px; background:${badgeBg}; color: #111827; font-weight: 900; font-size: ${badgeFont}; letter-spacing: 0;">${badgeText}</div>
+                        ${compact ? '' : `<span style="font-size: 13px; font-weight: 700; color: #dbeafe;">${sourceLabel}</span>`}
+                    </div>
+                `;
+            }
+
+            return `
+                <div style="display:${display}; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(15,23,42,0.94), rgba(30,41,59,0.96));">
+                    <i class="fas ${iconClass}" style="font-size: ${compact ? '20px' : '54px'}; color: var(--accent-blue); opacity: 0.75;"></i>
+                    ${compact ? '' : `<span style="margin-top: 12px; font-size: 13px; font-weight: 700; color: #dbeafe;">${sourceLabel}</span>`}
+                </div>
+            `;
+        }
+
+        function getNewsThumbHtml(news, thumbLoading = 'lazy', thumbPriority = 'low', iconClass = 'fa-newspaper') {
+            const safeImageUrl = String(news?.image || '').trim().replace(/&amp;/g, '&');
+            if (_isUsableNewsImageUrl(safeImageUrl)) {
+                return `<div class="news-item-thumb"><img src="${sanitizeHTML(safeImageUrl)}" alt="" loading="${thumbLoading}" fetchpriority="${thumbPriority}" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">${getNewsSourceFallbackHtml(news, { display: 'none', compact: true, iconClass })}</div>`;
+            }
+            return `<div class="news-item-thumb">${getNewsSourceFallbackHtml(news, { compact: true, iconClass })}</div>`;
+        }
+
+        function getNewsModalImageHtml(news, iconClass = 'fa-newspaper') {
+            const safeImageUrl = String(news?.image || '').trim().replace(/&amp;/g, '&');
+            if (_isUsableNewsImageUrl(safeImageUrl)) {
+                return `<img src="${sanitizeHTML(safeImageUrl)}" alt="Imagem da notícia" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">${getNewsSourceFallbackHtml(news, { display: 'none', compact: false, iconClass })}`;
+            }
+            return getNewsSourceFallbackHtml(news, { compact: false, iconClass });
+        }
+
         // fetchSingleNewsImage — generate a fallback image based on title keywords
         async function fetchSingleNewsImage(news) {
             if (!news || news.image) return;
-            // Use getNewsImageFallback to create an icon-based thumbnail
+            // Keep marker for deferred fallback rendering on hot modal flow
             // We store a marker so renderHotNewsList can use it
             news._fallbackImage = true;
         }
@@ -90,13 +246,11 @@
 
         function getNewsImage(news) {
             // Se tem imagem real da notícia, usar ela - VALIDAR URL
-            if (news.image && isValidURL(news.image)) {
-                const safeImageUrl = sanitizeHTML(news.image);
-                return `<img src="${safeImageUrl}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                        <div style="display: none; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; position: absolute; top: 0; left: 0; background: linear-gradient(135deg, var(--bg-card), var(--bg-elevated));">
-                            <i class="fas fa-newspaper" style="font-size: 60px; color: var(--accent-blue); margin-bottom: 12px;"></i>
-                            <span style="font-size: 14px; font-weight: 600; color: var(--text-secondary);">Crypto News</span>
-                        </div>`;
+            if (news.image && _isUsableNewsImageUrl(news.image)) {
+                return getNewsModalImageHtml(news, 'fa-newspaper');
+            }
+            if (getSourceLogoUrl(news)) {
+                return getNewsModalImageHtml(news, 'fa-newspaper');
             }
             
             return getNewsImageFallback(news.title);
@@ -183,8 +337,13 @@
         function getNewsTitleForDisplay(news) {
             const translated = String(news?.translatedTitle || '').trim();
             if (translated) return translated;
-            if (news?.translationFailed) return 'Titulo indisponivel em portugues';
+            if (news?.translationFailed && !shouldRetryNewsTranslation(news)) return 'Titulo indisponivel em portugues';
             return '';
+        }
+
+        function shouldRetryNewsTranslation(news) {
+            const failedAt = Number(news?.translationFailedAt || 0);
+            return !failedAt || (Date.now() - failedAt) > 120000;
         }
 
         async function openNewsModal(newsUrl) {
@@ -198,6 +357,7 @@
                 news = allNews.find(n => n.url?.split('?')[0].split('#')[0].toLowerCase() === baseUrl);
             }
             if (!news) return;
+            window.VisorMonetization?.recordAction('news_open').catch(() => {});
             
             // Guardar URL da notícia atual para reabrir após voltar do browser
             window.currentNewsUrl = newsUrl;
@@ -208,13 +368,15 @@
             const sentimentText = news.sentiment === 'positive' ? 'Positiva' : 'Negativa';
             
             // Traduzir título se ainda não foi traduzido
-            if (!news.translatedTitle && !news.translationFailed) {
+            if (!news.translatedTitle && shouldRetryNewsTranslation(news)) {
                 const translatedTitle = await translateText(news.title);
                 if (translatedTitle) {
                     news.translatedTitle = translatedTitle;
                     news.translationFailed = false;
+                    news.translationFailedAt = 0;
                 } else {
-                    news.translationFailed = true;
+                    news.translationFailed = false;
+                    news.translationFailedAt = Date.now();
                 }
             }
             const translatedTitle = getNewsTitleForDisplay(news) || 'Titulo indisponivel em portugues';
@@ -333,13 +495,153 @@
         const MAX_NEWS_RETRIES = 5;
         let newsFetchInProgress = false;
         let newsFetchState = 'idle'; // idle | fetching | ready | error
+        const NEWS_INITIAL_TRANSLATE_COUNT = 48;
+        const NEWS_INITIAL_RENDER_LIMIT = 80;
+        const NEWS_FULL_RENDER_LIMIT = 200;
+        let newsFullRenderTimer = null;
+
+        function runNewsWhenIdle(fn, timeout = 2500) {
+            if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(() => fn(), { timeout });
+                return;
+            }
+            setTimeout(fn, 300);
+        }
+
+        function scheduleNewsFullRender() {
+            if (newsFullRenderTimer || newsFilter === 'hot') return;
+            newsFullRenderTimer = setTimeout(() => {
+                newsFullRenderTimer = null;
+                try { renderNews({ full: true, skipBackgroundTranslation: true }); } catch (_) {}
+            }, 350);
+        }
+
+        function scheduleNewsBackgroundTranslation() {
+            if (window._newsTranslationScheduled || newsFilter === 'hot') return;
+            const hasPending = allNews.some(n => !n.translatedTitle && shouldRetryNewsTranslation(n));
+            if (!hasPending) return;
+
+            window._newsTranslationScheduled = true;
+            runNewsWhenIdle(() => {
+                preTranslateNews()
+                    .then(() => {
+                        window._newsTranslationScheduled = false;
+                        if (newsFilter !== 'hot') renderNews({ full: true, skipBackgroundTranslation: true });
+                    })
+                    .catch(() => { window._newsTranslationScheduled = false; });
+            }, 5000);
+        }
+
+        const COINTELEGRAPH_MAX_GENERAL_ITEMS = 16;
+        const COINTELEGRAPH_IMPORTANT_KEYWORDS = [
+            'sec', 'cftc', 'doj', 'court', 'lawsuit', 'sues', 'charges', 'charged',
+            'sentence', 'sentenced', 'prison', 'fraud', 'scam', 'hack', 'exploit',
+            'freeze', 'frozen', 'seize', 'sanction', 'sanctions', 'regulation',
+            'regulator', 'ban', 'banned', 'approval', 'approved', 'etf', 'inflow',
+            'outflow', 'blackrock', 'fidelity', 'grayscale', 'microstrategy',
+            'fed', 'fomc', 'rate cut', 'rate hike', 'stablecoin', 'tether', 'circle',
+            'treasury', 'senate', 'congress', 'bill', 'lawmakers', 'authorities',
+            'government', 'bankruptcy', 'prediction market', 'prediction markets',
+            'polymarket', 'kalshi', 'brazil', 'iran', 'china', 'russia'
+        ];
+        const COINTELEGRAPH_NOISE_PATTERNS = [
+            /\b(trader|traders|analyst|analysts)\b.{0,40}\b(eye|eyes|target|predict|forecast|seek|watch)\b/i,
+            /\bmay\s+(rise|fall|drop|gain|rally|surge|jump)\b/i,
+            /\bcould\s+(rise|fall|drop|gain|rally|surge|jump|hit|reach)\b/i,
+            /\bprice\s+(prediction|analysis|target|forecast)\b/i,
+            /\bnext\s+\$?\d/i,
+            /\b\$\d[\d,.]*\s*(next|target|price)\b/i,
+            /\bholds?\s+price\s+hostage\b/i,
+            /\bwhat happened in crypto today\b/i,
+            /\bhere'?s what happened\b/i
+        ];
+
+        function _isImportantCointelegraphNews(news) {
+            if (!_isCointelegraphNews(news)) return true;
+            const title = String(news?.title || news?.translatedTitle || '');
+            if (!title.trim()) return false;
+            if (COINTELEGRAPH_NOISE_PATTERNS.some((pattern) => pattern.test(title))) return false;
+            return true;
+        }
+
+        function _applyCointelegraphVolumeLimit(items) {
+            let cointelegraphCount = 0;
+            return items.filter((news) => {
+                if (!_isCointelegraphNews(news)) return true;
+                if (!_isImportantCointelegraphNews(news)) return false;
+                const alwaysKeep = news?.isHotNews === true || Number(news?.aiScore || 0) >= 70;
+                if (alwaysKeep) return true;
+                if (cointelegraphCount >= COINTELEGRAPH_MAX_GENERAL_ITEMS) return false;
+                cointelegraphCount++;
+                return true;
+            });
+        }
+
+        function _newsTitleWords(title) {
+            return String(title || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9\s]/g, ' ')
+                .split(/\s+/)
+                .filter(word => word.length > 3)
+                .slice(0, 10);
+        }
+
+        function _newsTitleBucketKeys(title) {
+            const words = _newsTitleWords(title);
+            if (!words.length) return [];
+            const keys = new Set();
+            keys.add(words.slice(0, 2).join('|'));
+            keys.add(words[0]);
+            if (words[1]) keys.add(words[1]);
+            return Array.from(keys).filter(Boolean);
+        }
+
+        function _addNewsTitleBucket(buckets, title, entry) {
+            _newsTitleBucketKeys(title).forEach(key => {
+                if (!buckets.has(key)) buckets.set(key, []);
+                buckets.get(key).push(entry);
+            });
+        }
+
+        function _findSimilarNewsInBuckets(buckets, title, threshold = 0.5) {
+            const seen = new Set();
+            for (const key of _newsTitleBucketKeys(title)) {
+                const candidates = buckets.get(key) || [];
+                for (const candidate of candidates) {
+                    if (!candidate || seen.has(candidate)) continue;
+                    seen.add(candidate);
+                    if (titleSimilarity(title, candidate.title) > threshold) return candidate;
+                }
+            }
+            return null;
+        }
         
         function mergeNews(newItems) {
+            const incomingItems = Array.isArray(newItems) ? newItems.filter(Boolean) : [];
+            const existingUrlMap = new Map();
+            allNews.forEach(news => {
+                const key = _normalizeNewsUrl(news.url) || news.url;
+                if (key) existingUrlMap.set(key, news);
+            });
+
+            // Antes de descartar duplicatas, aproveitar imagens reais que chegam depois via RSS/backend.
+            incomingItems.forEach(item => {
+                const itemUrlKey = _normalizeNewsUrl(item.url);
+                if (!itemUrlKey) return;
+                const existing = existingUrlMap.get(itemUrlKey);
+                if (existing) _copyBestNewsImage(existing, item);
+            });
+
             // Criar um Set de URLs existentes para evitar duplicatas
-            const existingUrls = new Set(allNews.map(n => n.url));
+            const existingUrls = new Set(existingUrlMap.keys());
             
             // Filtrar apenas notícias novas
-            const uniqueNew = newItems.filter(item => !existingUrls.has(item.url));
+            const uniqueNew = incomingItems.filter(item => {
+                const itemUrl = _normalizeNewsUrl(item.url) || item.url;
+                return !existingUrls.has(itemUrl);
+            });
 
             // Filtrar propagandas de corretoras e plataformas de investimento
             const _adPatterns = [
@@ -409,18 +711,30 @@
                 if (!title) return false;
                 return _adPatterns.some(p => p.test(title));
             }
-            const cleanNew = uniqueNew.filter(item => !_isAdNews(item.title) && !_isAdNews(item.translatedTitle));
+            const cleanNew = uniqueNew.filter(item => (
+                !_isAdNews(item.title) &&
+                !_isAdNews(item.translatedTitle) &&
+                _isImportantCointelegraphNews(item)
+            ));
+
+            const existingTitleBuckets = new Map();
+            allNews.forEach(news => {
+                const title = news.translatedTitle || news.title || '';
+                if (title) _addNewsTitleBucket(existingTitleBuckets, title, { news, title });
+            });
             
             // DEDUPLICAR POR SIMILARIDADE DE TÍTULO — mesma notícia de fontes diferentes
             // Mantém a que foi publicada primeiro (mais antiga)
             const dedupedNew = cleanNew.filter(item => {
                 const itemTitle = item.translatedTitle || item.title || '';
                 // Checar contra notícias já existentes em allNews
-                const hasSimilarExisting = allNews.some(existing => {
-                    const existingTitle = existing.translatedTitle || existing.title || '';
-                    return titleSimilarity(itemTitle, existingTitle) > 0.5;
-                });
-                return !hasSimilarExisting;
+                const similarExisting = _findSimilarNewsInBuckets(existingTitleBuckets, itemTitle, 0.5);
+                if (similarExisting) {
+                    _copyBestNewsImage(similarExisting.news, item);
+                    return false;
+                }
+                if (itemTitle) _addNewsTitleBucket(existingTitleBuckets, itemTitle, { news: item, title: itemTitle });
+                return true;
             });
             
             // MARCAR NOTÍCIAS IMPORTANTES IMEDIATAMENTE ao adicionar
@@ -480,44 +794,56 @@
             });
             
             // Limitar a 150 notícias mais recentes
-            allNews = allNews.sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 150);
+            allNews = allNews.sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 250);
             
             // DEDUP FINAL: remover duplicatas por similaridade de título
             // Manter a publicada primeiro (mais antiga) removendo as mais recentes que são parecidas
             // allNews já está newest-first, então ao iterar, o mais recente é visto antes
             // Precisamos inverter a lógica: marcar duplicatas para remoção
             const _keepIndices = new Set();
-            const _titleIndex = []; // {title, pubTime, idx}
+            const _titleIndex = new Map(); // bucket -> {title, pubTime, idx}
             allNews.forEach((news, idx) => {
                 const title = news.translatedTitle || news.title || '';
                 const pubTime = new Date(news.published).getTime();
                 // Checar se já existe similar no _titleIndex
-                const similar = _titleIndex.find(t => titleSimilarity(title, t.title) > 0.5);
+                const similar = _findSimilarNewsInBuckets(_titleIndex, title, 0.5);
                 if (!similar) {
                     // Primeira vez vendo este tema
-                    _titleIndex.push({ title, pubTime, idx });
+                    _addNewsTitleBucket(_titleIndex, title, { title, pubTime, idx });
                     _keepIndices.add(idx);
                 } else if (pubTime < similar.pubTime) {
                     // Este artigo é MAIS ANTIGO que o similar já registrado — trocar
+                    _copyBestNewsImage(news, allNews[similar.idx]);
                     _keepIndices.delete(similar.idx);
                     _keepIndices.add(idx);
                     similar.pubTime = pubTime;
                     similar.idx = idx;
                     similar.title = title;
+                    _addNewsTitleBucket(_titleIndex, title, similar);
+                } else {
+                    _copyBestNewsImage(allNews[similar.idx], news);
                 }
                 // Se pubTime >= similar.pubTime, é mais recente = duplicata, descartamos
             });
             allNews = allNews.filter((_, idx) => _keepIndices.has(idx));
+            allNews = _applyCointelegraphVolumeLimit(allNews);
         }
 
         // ──────────────────────────────────────────────
         // V7: Try backend AI-filtered news first
         // ──────────────────────────────────────────────
         async function fetchAINews(category, minScore) {
+            const workerItems = await fetchWorkerNewsItems(160, { merge: true });
+            if (workerItems.length > 0) {
+                aiClassifiedNews = workerItems;
+                aiNewsLoaded = true;
+                return true;
+            }
+
             try {
-                let url = `${NEWS_BACKEND_URL}/news/filtered?limit=100&min_score=${minScore || 0}`;
-                if (category) url += `&category=${category}`;
-                const resp = await fetchWithTimeout(url, {}, 12000);
+                let url = `${NEWS_BACKEND_URL}/news?limit=160`;
+                if (category) url += `&category=${encodeURIComponent(category)}`;
+                const resp = await fetchWithTimeout(url, {}, 3500);
                 if (!resp.ok) throw new Error('Backend returned ' + resp.status);
                 const data = await resp.json();
                 if (data.articles && data.articles.length > 0) {
@@ -533,7 +859,7 @@
                         relevance: a.score >= 70 ? 'high' : a.score >= 40 ? 'medium' : 'low',
                         image: a.image || null,
                         body: a.summary_pt || a.body || '',
-                        aiCategory: a.category || 'RUIDO',
+                        aiCategory: a.category || '',
                         aiScore: a.score || 0,
                         aiSummary: a.summary_pt || '',
                         isHotNews: false
@@ -573,12 +899,39 @@
                 });
         }
 
+        function mapWorkerNewsArticle(article) {
+            return {
+                title: article?.title || '',
+                url: article?.url || article?.link || '',
+                source: article?.source || article?.sourceName || 'Worker',
+                published: article?.published || article?.publishedAt || article?.pubDate || new Date().toISOString(),
+                image: article?.image || article?.imageUrl || null,
+                body: article?.body || article?.summary || article?.description || null
+            };
+        }
+
+        async function fetchWorkerNewsItems(limit = 160, options = {}) {
+            const { merge = false } = options;
+            try {
+                const data = await fetchMarketWorkerJson('/news?limit=' + encodeURIComponent(String(limit)), 5500);
+                const articles = Array.isArray(data?.articles)
+                    ? data.articles
+                    : (Array.isArray(data?.data?.articles) ? data.data.articles : []);
+                const mapped = _decorateGeneralNewsItems(articles.map(mapWorkerNewsArticle)).slice(0, limit);
+                if (merge && mapped.length > 0) mergeNews(mapped);
+                return mapped;
+            } catch (_) {
+                return [];
+            }
+        }
+
         async function fetchGeneralNewsFromRSS(limit = 120) {
+            const workerItems = await fetchWorkerNewsItems(limit, { merge: true });
+            if (workerItems.length > 0) return workerItems.length;
+
             const rssPromises = GENERAL_RSS_FEEDS.map(async (feed) => {
                 const xmlCandidates = [
-                    { url: feed.url, timeout: 4000 },
-                    { url: `https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`, timeout: 5000 },
-                    { url: `https://corsproxy.io/?${encodeURIComponent(feed.url)}`, timeout: 5000 }
+                    { url: feed.url, timeout: 4000 }
                 ];
 
                 // Try direct/proxy XML first (fastest on Capacitor native fetch)
@@ -722,7 +1075,7 @@
         async function fetchNews() {
             if (newsFetchInProgress) {
                 if (allNews.length > 0) {
-                    try { renderNews(); } catch (e) {}
+                    try { renderNews({ full: false }); } catch (e) {}
                 } else {
                     const container = document.getElementById('news-container');
                     if (container) {
@@ -753,7 +1106,7 @@
                         if (Array.isArray(parsed?.articles) && parsed.articles.length > 0) {
                             allNews = parsed.articles;
                             newsLoaded = true;
-                            if (!isHotFilter) await renderNews();
+                            if (!isHotFilter) await renderNews({ full: false });
                         }
                     }
                 } catch (_) {}
@@ -770,7 +1123,7 @@
                             if (parsed.articles && parsed.articles.length > 0) {
                                 allNews = parsed.articles;
                                 newsLoaded = true;
-                                renderNews();
+                                renderNews({ full: false });
                                 return;
                             }
                         }
@@ -803,15 +1156,21 @@
             // ==========================================
             // V7: PRIORITY SOURCES IN PARALLEL (backend + RSS)
             // ==========================================
-            const [backendResult, rssResult] = await Promise.allSettled([
-                fetchAINews(null, 0),
-                fetchGeneralNewsFromRSS(120)
-            ]);
+            const backendResult = await Promise.resolve(fetchAINews(null, 0))
+                .then(value => ({ status: 'fulfilled', value }))
+                .catch(reason => ({ status: 'rejected', reason }));
 
             const backendOk = backendResult.status === 'fulfilled' && backendResult.value === true;
             if (backendOk) {
                 successfulSources++;
                 totalFetched += aiClassifiedNews.length;
+            }
+
+            let rssResult = { status: 'fulfilled', value: 0 };
+            if (!backendOk || allNews.length < 60) {
+                rssResult = await Promise.resolve(fetchGeneralNewsFromRSS(120))
+                    .then(value => ({ status: 'fulfilled', value }))
+                    .catch(reason => ({ status: 'rejected', reason }));
             }
 
             if (rssResult.status === 'fulfilled' && rssResult.value > 0) {
@@ -869,8 +1228,7 @@
             // ==========================================
             if (allNews.length < 20) {
                 const corsProxies = [
-                    (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-                    (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
+                    (url) => url
                 ];
                 
                 const cryptoUrl = 'https://cryptopanic.com/api/free/v1/posts/?public=true&kind=news';
@@ -937,14 +1295,12 @@
                 // TRADUZIR PRIMEIRO as notícias antes de renderizar
                 // Isso evita que apareçam em inglês e depois mudem
                 if (newsFilter !== 'hot') {
-                    const initialTranslateCount = Math.min(120, Math.max(20, allNews.length));
+                    const initialTranslateCount = Math.min(NEWS_INITIAL_TRANSLATE_COUNT, Math.max(24, allNews.length));
                     await translateNewsBeforeRender(initialTranslateCount);
-                    await renderNews();
+                    await renderNews({ full: false });
 
                     // Traduz restante em background após o primeiro render.
-                    preTranslateNews()
-                        .then(() => { if (newsFilter !== 'hot') renderNews(); })
-                        .catch(() => {});
+                    scheduleNewsBackgroundTranslation();
                 }
                 
                 // BLOCO 4: Merge hot RSS news into allNews em background
@@ -952,15 +1308,26 @@
                 fetchHotNewsRSS().then(hotRssNews => {
                     if (hotRssNews.length > 0) {
                         let merged = 0;
+                        const hotUrlSet = new Set();
+                        const hotTitleBuckets = new Map();
+                        allNews.forEach(existing => {
+                            const urlKey = _normalizeNewsUrl(existing.url) || existing.url;
+                            if (urlKey) hotUrlSet.add(urlKey);
+                            const title = existing.translatedTitle || existing.title || '';
+                            if (title) _addNewsTitleBucket(hotTitleBuckets, title, { news: existing, title });
+                        });
                         for (const hot of hotRssNews) {
+                            const hotUrlKey = _normalizeNewsUrl(hot.url) || hot.url;
+                            const hotTitle = hot.translatedTitle || hot.title || '';
                             // Deduplicar: não adicionar se título muito similar já existe
-                            const isDuplicate = allNews.some(existing => 
-                                titleSimilarity(existing.title, hot.title) > 0.6 ||
-                                (existing.url && hot.url && existing.url === hot.url)
-                            );
+                            const isDuplicate =
+                                (hotUrlKey && hotUrlSet.has(hotUrlKey)) ||
+                                !!_findSimilarNewsInBuckets(hotTitleBuckets, hotTitle, 0.6);
                             if (!isDuplicate) {
                                 hot.isHotNews = true;
                                 allNews.push(hot);
+                                if (hotUrlKey) hotUrlSet.add(hotUrlKey);
+                                if (hotTitle) _addNewsTitleBucket(hotTitleBuckets, hotTitle, { news: hot, title: hotTitle });
                                 merged++;
                             }
                         }
@@ -1002,7 +1369,7 @@
             if (allNews.length > 0) {
                 try {
                     localStorage.setItem('vc4_news_cache', JSON.stringify({
-                        articles: allNews.slice(0, 50),
+                        articles: allNews.slice(0, 180),
                         timestamp: Date.now()
                     }));
                 } catch(e) {}
@@ -1017,7 +1384,7 @@
                         if (parsed.articles && parsed.articles.length > 0) {
                             allNews = parsed.articles;
                             newsLoaded = true;
-                            renderNews();
+                            renderNews({ full: false });
                         }
                     }
                 } catch(e) {}
@@ -1261,6 +1628,24 @@
             commodities: [
                 'oil shock', 'gas supply', 'opec', 'production cut',
                 'energy crisis'
+            ],
+            crypto_security: [
+                'hack', 'hacked', 'exploit', 'exploited', 'security breach',
+                'funds stolen', 'wallet drain', 'phishing', 'bridge exploit'
+            ],
+            crypto_regulation: [
+                'sec', 'cftc', 'lawsuit', 'sues', 'charges', 'charged',
+                'settlement', 'fine', 'ban', 'approval', 'approved',
+                'etf', 'stablecoin bill', 'crypto bill', 'regulation'
+            ],
+            institutional: [
+                'blackrock', 'fidelity', 'grayscale', 'microstrategy',
+                'spot bitcoin etf', 'spot ethereum etf', 'etf inflow',
+                'etf outflow', 'institutional'
+            ],
+            crypto_systemic: [
+                'bankruptcy', 'withdrawals paused', 'insolvency', 'depeg',
+                'exchange outage', 'proof of reserves', 'liquidation cascade'
             ]
         };
         
@@ -1312,7 +1697,17 @@
             'emergency bailout', 'capital controls', 'bank run', 'systemic risk',
             'depression', 'hyperinflation', 'emergency rate cut', 'emergency rate hike',
             'oil shock', 'energy crisis',
-            'trade war', 'embargo', 'export ban'
+            'trade war', 'embargo', 'export ban',
+            'hack', 'hacked', 'exploit', 'exploited', 'security breach',
+            'withdrawals paused', 'bankruptcy', 'depeg'
+        ]);
+        const HOT_SINGLE_MATCH_CATEGORIES = new Set([
+            'crypto_security',
+            'crypto_regulation',
+            'institutional',
+            'crypto_systemic',
+            'financial_collapse',
+            'macro_shock'
         ]);
 
         function isHotNews(title) {
@@ -1346,7 +1741,7 @@
                 }
             }
             // Um keyword crítico basta; keywords normais precisam de 2+ matches
-            if (hasCritical || matchCount >= 2) {
+            if (hasCritical || matchCount >= 2 || (matchCount >= 1 && HOT_SINGLE_MATCH_CATEGORIES.has(firstCategory))) {
                 return { isHot: true, category: firstCategory, keyword: firstKeyword };
             }
             return { isHot: false };
@@ -1370,6 +1765,19 @@
         // Retorna array de notícias hot com flags já aplicadas
         async function fetchHotNewsRSS() {
             const hotNews = [];
+            const workerItems = await fetchWorkerNewsItems(160, { merge: false });
+            workerItems.forEach((item) => {
+                const hotCheck = isHotNews(item.title);
+                if (hotCheck.isHot) {
+                    hotNews.push({
+                        ...item,
+                        hotCategory: hotCheck.category,
+                        hotKeyword: hotCheck.keyword,
+                        sentiment: analyzeSentimentForHot(item.title, hotCheck.category),
+                        isHotNews: true
+                    });
+                }
+            });
             
             const rssFeeds = [
                 { url: 'https://feeds.reuters.com/reuters/businessNews', source: 'Reuters' },
@@ -1386,8 +1794,7 @@
             
             const rssFetchPromises = rssFeeds.map(async (feed) => {
                 try {
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`;
-                    const response = await fetchWithTimeout(proxyUrl, {}, 4000);
+                    const response = await fetchWithTimeout(feed.url, {}, 4000);
                     
                     if (response.ok) {
                         const text = await response.text();
@@ -1459,8 +1866,7 @@
             // Executar todas as requisições RSS em paralelo para maior velocidade
             const rssFetchPromises = rssFeeds.map(async (feed) => {
                 try {
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feed.url)}`;
-                    const response = await fetchWithTimeout(proxyUrl, {}, 4000);
+                    const response = await fetchWithTimeout(feed.url, {}, 4000);
                     
                     if (response.ok) {
                         const text = await response.text();
@@ -1511,8 +1917,7 @@
                 for (const account of twitterAccounts) {
                     nitterPromises.push((async () => {
                         try {
-                            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://${instance}/${account}/rss`)}`;
-                            const response = await fetchWithTimeout(proxyUrl, {}, 2500);
+                            const response = await fetchWithTimeout(`https://${instance}/${account}/rss`, {}, 2500);
                             
                             if (response.ok) {
                                 const text = await response.text();
@@ -1614,11 +2019,13 @@
                     if (mediaContentMatch) imageUrl = mediaContentMatch[1];
                     else if (mediaThumbnailMatch) imageUrl = mediaThumbnailMatch[1];
                     else if (enclosureMatch) imageUrl = enclosureMatch[1] || enclosureMatch[2] || '';
+                    imageUrl = String(imageUrl || '').trim().replace(/&amp;/g, '&');
                     // Fallback: buscar <img src="..."> dentro do description CDATA
                     if (!imageUrl && descMatch && descMatch[1]) {
                         const imgInDesc = descMatch[1].match(/<img[^>]+src=["']([^"']+)["']/i);
                         if (imgInDesc) imageUrl = imgInDesc[1];
                     }
+                    imageUrl = String(imageUrl || '').trim().replace(/&amp;/g, '&');
                     
                     if (titleMatch && titleMatch[1]) {
                         const title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
@@ -1690,9 +2097,9 @@
             }
             
             // Traduzir títulos em bulk (muito mais rápido — 1 request por ~10 títulos)
-            const untranslatedHot = hotNews.filter(n => !n.translatedTitle);
+            const untranslatedHot = hotNews.filter(n => !n.translatedTitle && shouldRetryNewsTranslation(n));
             if (untranslatedHot.length > 0) {
-                const CHUNK = 10;
+                const CHUNK = 20;
                 const chunks = [];
                 for (let i = 0; i < untranslatedHot.length; i += CHUNK) {
                     chunks.push(untranslatedHot.slice(i, i + CHUNK));
@@ -1707,8 +2114,10 @@
                                 if (translatedTitle) {
                                     chunk[j].translatedTitle = translatedTitle;
                                     chunk[j].translationFailed = false;
+                                    chunk[j].translationFailedAt = 0;
                                 } else {
-                                    chunk[j].translationFailed = true;
+                                    chunk[j].translationFailed = false;
+                                    chunk[j].translationFailedAt = Date.now();
                                 }
                             }
                         })),
@@ -1720,7 +2129,7 @@
             
             // Never render English fallback in hot news cards.
             hotNews = hotNews.map((item) => {
-                if (!item.translatedTitle && item.translationFailed) {
+                if (!item.translatedTitle && item.translationFailed && !shouldRetryNewsTranslation(item)) {
                     item.translatedTitle = 'Titulo indisponivel em portugues';
                 }
                 return item;
@@ -1759,26 +2168,9 @@
                 const shortSource = shortenSource(news.source);
                 
                 // Thumbnail image
-                let thumbHtml;
-                if (news.image) {
-                    const thumbLoading = index < 6 ? 'eager' : 'lazy';
-                    const thumbPriority = index < 3 ? 'high' : 'low';
-                    thumbHtml = `<div class="news-item-thumb"><img src="${sanitizeHTML(news.image)}" alt="" loading="${thumbLoading}" fetchpriority="${thumbPriority}" decoding="async" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-newspaper\\' style=\\'color:var(--accent-blue)\\'></i>'"></div>`;
-                } else {
-                    // Generate icon-based thumbnail from title keywords
-                    const lowerTitle = (news.title || '').toLowerCase();
-                    let thumbIcon = 'fa-fire';
-                    let thumbColor = '#f97316';
-                    if (/bitcoin|btc/i.test(lowerTitle)) { thumbIcon = 'fa-bitcoin-sign'; thumbColor = '#F7931A'; }
-                    else if (/ethereum|eth\b/i.test(lowerTitle)) { thumbIcon = 'fa-ethereum'; thumbColor = '#627EEA'; }
-                    else if (/etf|sec|regulation|government|federal|law|congress/i.test(lowerTitle)) { thumbIcon = 'fa-landmark'; thumbColor = '#63b3ed'; }
-                    else if (/market|trading|price|rally|crash|bull|bear/i.test(lowerTitle)) { thumbIcon = 'fa-chart-line'; thumbColor = 'var(--accent-blue)'; }
-                    else if (/exchange|coinbase|binance|kraken/i.test(lowerTitle)) { thumbIcon = 'fa-exchange-alt'; thumbColor = 'var(--accent-purple)'; }
-                    else if (/war|conflict|tariff|sanctions|missile|invasion/i.test(lowerTitle)) { thumbIcon = 'fa-globe'; thumbColor = '#ef4444'; }
-                    else if (/trump|biden|president|election/i.test(lowerTitle)) { thumbIcon = 'fa-landmark-dome'; thumbColor = '#eab308'; }
-                    else if (/inflation|cpi|rate|fed|interest/i.test(lowerTitle)) { thumbIcon = 'fa-percent'; thumbColor = '#f59e0b'; }
-                    thumbHtml = `<div class="news-item-thumb" style="background: linear-gradient(135deg, ${thumbColor}15, ${thumbColor}25);"><i class="fas ${thumbIcon}" style="color:${thumbColor}; font-size: 18px;"></i></div>`;
-                }
+                const thumbLoading = index < 6 ? 'eager' : 'lazy';
+                const thumbPriority = index < 3 ? 'high' : 'low';
+                const thumbHtml = getNewsThumbHtml(news, thumbLoading, thumbPriority, 'fa-fire');
                 
                 return `
                     <div class="news-item hot" onclick="openHotNewsModal('${encodedUrl}')" style="border-left: 3px solid #f97316;">
@@ -1844,13 +2236,15 @@
                 const sentimentText = news.sentiment === 'positive' ? 'Positiva' : 'Negativa';
                 
                 // Traduzir título se ainda não foi traduzido
-                if (!news.translatedTitle && !news.translationFailed) {
+                if (!news.translatedTitle && shouldRetryNewsTranslation(news)) {
                     const translatedTitle = await translateText(news.title);
                     if (translatedTitle) {
                         news.translatedTitle = translatedTitle;
                         news.translationFailed = false;
+                        news.translationFailedAt = 0;
                     } else {
-                        news.translationFailed = true;
+                        news.translationFailed = false;
+                        news.translationFailedAt = Date.now();
                     }
                 }
                 const translatedTitle = getNewsTitleForDisplay(news) || 'Titulo indisponivel em portugues';
@@ -1902,11 +2296,9 @@
                 market_crisis: 'fa-triangle-exclamation'
             };
             const iconClass = categoryIcons[news.hotCategory] || 'fa-fire';
-            
-            // Se já tem imagem, usar
-            if (news.image) {
-                imageContainer.innerHTML = `<img src="${news.image}" alt="Imagem da notícia" onerror="this.parentElement.innerHTML='<div style=\\'display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; background: linear-gradient(135deg, #f97316, #ea580c);\\' ><i class=\\'fas ${iconClass}\\' style=\\'font-size: 60px; color: white; margin-bottom: 12px;\\'></i><span style=\\'font-size: 14px; font-weight: 600; color: white;\\'>🔥 Notícia Urgente</span></div>'">`;
-            } else {
+            imageContainer.innerHTML = getNewsModalImageHtml(news, iconClass);
+
+            if (!news.image && !getSourceLogoUrl(news)) {
                 // Mostrar ícone enquanto busca imagem
                 imageContainer.innerHTML = `
                     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; background: linear-gradient(135deg, #f97316, #ea580c);">
@@ -1918,7 +2310,7 @@
                 // Tentar buscar imagem em background
                 fetchSingleNewsImage(news).then(() => {
                     if (news.image) {
-                        imageContainer.innerHTML = `<img src="${news.image}" alt="Imagem da notícia" onerror="this.parentElement.innerHTML='<div style=\\'display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; background: linear-gradient(135deg, #f97316, #ea580c);\\' ><i class=\\'fas ${iconClass}\\' style=\\'font-size: 60px; color: white; margin-bottom: 12px;\\'></i><span style=\\'font-size: 14px; font-weight: 600; color: white;\\'>🔥 Notícia Urgente</span></div>'">`;
+                        imageContainer.innerHTML = getNewsModalImageHtml(news, iconClass);
                     }
                 });
             }
@@ -1933,7 +2325,7 @@
             }
         }
 
-        async function renderNews() {
+        async function renderNews(options = {}) {
             // Evitar renderizações simultâneas que causam "piscar"
             if (isRenderingNews) {
                 return;
@@ -2022,11 +2414,13 @@
             });
             
             // Ordenar por mais recente primeiro e limitar a 200 notícias
-            let sorted = [...filtered].sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 200);
+            const renderLimit = options.full ? NEWS_FULL_RENDER_LIMIT : NEWS_INITIAL_RENDER_LIMIT;
+            const hasMoreNewsForFullRender = !options.full && filtered.length > renderLimit;
+            let sorted = [...filtered].sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, renderLimit);
             
             // Render only Portuguese-ready titles to avoid showing English cards.
             sorted = sorted.map((news) => {
-                if (!news.translatedTitle && news.translationFailed) {
+                if (!news.translatedTitle && news.translationFailed && !shouldRetryNewsTranslation(news)) {
                     news.translatedTitle = 'Titulo indisponivel em portugues';
                 }
                 return news;
@@ -2046,13 +2440,13 @@
             }
             
             if (sorted.length === 0) {
-                const hasPendingTranslations = allNews.some(n => !n.translatedTitle && !n.translationFailed);
+                const hasPendingTranslations = allNews.some(n => !n.translatedTitle && shouldRetryNewsTranslation(n));
                 if (hasPendingTranslations) {
                     container.innerHTML = '<div class="loading"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">Traduzindo noticias...</p></div>';
                     if (!window._newsTranslationScheduled) {
                         window._newsTranslationScheduled = true;
-                        translateNewsBeforeRender(60)
-                            .then(() => { window._newsTranslationScheduled = false; renderNews(); })
+                        translateNewsBeforeRender(NEWS_INITIAL_TRANSLATE_COUNT)
+                            .then(() => { window._newsTranslationScheduled = false; renderNews({ full: false }); })
                             .catch(() => { window._newsTranslationScheduled = false; });
                     }
                     isRenderingNews = false;
@@ -2129,9 +2523,7 @@
                 // Thumbnail image
                 const thumbLoading = index < 8 ? 'eager' : 'lazy';
                 const thumbPriority = index < 4 ? 'high' : 'low';
-                const thumbHtml = news.image 
-                    ? `<div class="news-item-thumb"><img src="${sanitizeHTML(news.image)}" alt="" loading="${thumbLoading}" fetchpriority="${thumbPriority}" decoding="async" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-newspaper\\'></i>'"></div>`
-                    : `<div class="news-item-thumb"><i class="fas fa-newspaper"></i></div>`;
+                const thumbHtml = getNewsThumbHtml(news, thumbLoading, thumbPriority, 'fa-newspaper');
                 
                 return `
                     <div class="news-item ${sentimentClass}" onclick="${onclickHandler}" style="${isHot ? 'border-left: 3px solid #f97316;' : news.aiScore >= 70 ? 'border-left: 3px solid ' + (catDisplay ? catDisplay.color : '#10b981') + ';' : ''}">
@@ -2153,18 +2545,11 @@
               } catch(e) { return ''; }
             }).join('');
             requestAnimationFrame(() => { container.innerHTML = _newsHtml; });
+            if (hasMoreNewsForFullRender) scheduleNewsFullRender();
             
             // Traduzir restante em background APÓS renderizar (não bloqueia)
             // Re-renderizar UMA VEZ quando traduções ficarem prontas
-            if (!window._newsTranslationScheduled) {
-                window._newsTranslationScheduled = true;
-                setTimeout(() => {
-                    preTranslateNews().then(() => {
-                        window._newsTranslationScheduled = false;
-                        renderNews();
-                    }).catch(() => { window._newsTranslationScheduled = false; });
-                }, 5000);
-            }
+            if (!options.skipBackgroundTranslation) scheduleNewsBackgroundTranslation();
             } finally {
                 isRenderingNews = false;
             }
@@ -2177,7 +2562,7 @@
                     document.querySelectorAll('.news-filter').forEach(f => f.classList.remove('active'));
                     this.classList.add('active');
                     newsFilter = this.dataset.filter;
-                    renderNews();
+                    renderNews({ full: false });
                 });
             });
             
@@ -2186,7 +2571,7 @@
                 if (document.visibilityState === 'visible' && allNews.length > 0) {
                     const untranslated = allNews.filter(n => !n.translatedTitle);
                     if (untranslated.length > 0) {
-                        translateNewsBeforeRender(20).then(() => renderNews()).catch(() => {});
+                        translateNewsBeforeRender(20).then(() => renderNews({ full: false })).catch(() => {});
                     }
                 }
             });
@@ -2198,24 +2583,61 @@
         let lastFearGreedValue = null;
         let lastFearGreedTime = 0;
         const FEAR_GREED_CACHE_WINDOW = 30 * 60 * 1000; // 30 minutos
-        const FEAR_GREED_CACHE_KEY = 'fear_greed_cache';
+        const FEAR_GREED_CACHE_KEY = 'fear_greed_cache_v2';
+        const FEAR_GREED_DISPLAY_ADJUSTMENT = 1;
+
+        function clampIndexValue(value) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return null;
+            return Math.max(0, Math.min(100, Math.round(numeric)));
+        }
+
+        function normalizeFearGreedDisplayValue(rawValue) {
+            return clampIndexValue(Number(rawValue) + FEAR_GREED_DISPLAY_ADJUSTMENT);
+        }
+
+        function getWorkerFearGreedDisplayValue(workerData) {
+            const value = Number(workerData?.value);
+            if (!Number.isFinite(value)) return null;
+            const workerAlreadyAdjusted = Number(workerData?.displayAdjustment || 0) === FEAR_GREED_DISPLAY_ADJUSTMENT;
+            return workerAlreadyAdjusted ? clampIndexValue(value) : normalizeFearGreedDisplayValue(value);
+        }
         
         function getFearGreedCache() {
             try {
                 const cached = localStorage.getItem(FEAR_GREED_CACHE_KEY);
                 if (cached) {
                     const data = JSON.parse(cached);
-                    // Accept any cached data for initial display (will be refreshed)
-                    return data.value;
+                    const value = Number(data?.value);
+                    if (Number.isFinite(value)) {
+                        return { ...data, value: clampIndexValue(value) };
+                    }
+                }
+            } catch (e) {}
+            try {
+                const market = JSON.parse(localStorage.getItem('vc_last_valid_market_v1') || 'null');
+                const value = clampIndexValue(market?.altseasonIndex ?? market?.altseasonValue);
+                const ts = Number(market?.altseasonTs || market?.updatedAt || 0) || 0;
+                const age = Date.now() - ts;
+                if (value !== null && ts > 0 && ((forDisplay && age < ALTSEASON_ERROR_CACHE_WINDOW) || age < ALTSEASON_CACHE_DURATION)) {
+                    return {
+                        value,
+                        btcDom: Number(market?.altseasonBtcDom || market?.btcDominance || 0) || 0,
+                        source: ALTSEASON_SOURCE,
+                        timestamp: ts,
+                        stale: !!market?.altseasonStale
+                    };
                 }
             } catch (e) {}
             return null;
         }
         
-        function setFearGreedCache(value) {
+        function setFearGreedCache(value, meta = {}) {
             try {
                 localStorage.setItem(FEAR_GREED_CACHE_KEY, JSON.stringify({
-                    value: value,
+                    ...meta,
+                    value,
+                    displayAdjustment: FEAR_GREED_DISPLAY_ADJUSTMENT,
                     timestamp: Date.now()
                 }));
             } catch (e) {}
@@ -2225,9 +2647,11 @@
             const valEl = document.getElementById('fear-greed-value');
             const indEl = document.getElementById('fear-greed-indicator');
             if (!valEl || !indEl) return;
-            valEl.textContent = value;
-            valEl.className = `meter-value ${value > 50 ? 'pnl-positive' : 'pnl-negative'}`;
-            indEl.style.left = `${value}%`;
+            const displayValue = clampIndexValue(value);
+            if (displayValue === null) return;
+            valEl.textContent = displayValue;
+            valEl.className = `meter-value ${displayValue > 50 ? 'pnl-positive' : 'pnl-negative'}`;
+            indEl.style.left = `${displayValue}%`;
         }
         
         async function fetchFearGreed() {
@@ -2236,9 +2660,9 @@
                 if (lastFearGreedValue === null) {
                     const cached = getFearGreedCache();
                     if (cached !== null) {
-                        lastFearGreedValue = cached;
-                        lastFearGreedTime = Date.now();
-                        updateFearGreedUI(cached);
+                        lastFearGreedValue = cached.value;
+                        lastFearGreedTime = Number(cached.timestamp || Date.now()) || Date.now();
+                        updateFearGreedUI(cached.value);
                     } else {
                         const fgInit = document.getElementById('fear-greed-value');
                         if (fgInit) fgInit.textContent = '--';
@@ -2246,17 +2670,51 @@
                 }
                 
                 // API Alternative.me - gratuita e confiável
+                const workerUrl = getMarketWorkerUrl('/market/fear-greed');
+                if (workerUrl) {
+                    try {
+                        const workerRes = await fetchWithTimeout(workerUrl, {}, 3000);
+                        if (workerRes.ok) {
+                            const workerData = await workerRes.json();
+                            const workerValue = getWorkerFearGreedDisplayValue(workerData);
+                            if (workerData?.success !== false && workerValue !== null && workerValue >= 0 && workerValue <= 100) {
+                                lastFearGreedValue = workerValue;
+                                lastFearGreedTime = Number(workerData.updatedAt || Date.now()) || Date.now();
+                                const rawWorkerValue = Number(workerData.rawValue);
+                                setFearGreedCache(workerValue, {
+                                    source: workerData.source || 'worker',
+                                    rawValue: Number.isFinite(rawWorkerValue) ? Math.round(rawWorkerValue) : null,
+                                    dataTimestamp: workerData.dataTimestamp || null,
+                                    nextUpdateAt: workerData.nextUpdateAt || null,
+                                    classification: workerData.classification || null,
+                                    stale: !!workerData.stale
+                                });
+                                updateFearGreedUI(workerValue);
+                                return;
+                            }
+                        }
+                    } catch (_) {}
+                }
+
                 const response = await fetchWithTimeout('https://api.alternative.me/fng/', {}, 10000);
                 
                 if (response.ok) {
                     const data = await response.json();
                     if (data && data.data && data.data[0]) {
-                        const value = parseInt(data.data[0].value);
+                        const rawValue = parseInt(data.data[0].value, 10);
+                        const value = normalizeFearGreedDisplayValue(rawValue);
+                        if (value === null) throw new Error('Invalid Fear & Greed value');
                         
                         // Save to memory + localStorage
                         lastFearGreedValue = value;
                         lastFearGreedTime = Date.now();
-                        setFearGreedCache(value);
+                        setFearGreedCache(value, {
+                            source: 'alternative_me_direct',
+                            rawValue,
+                            dataTimestamp: Number(data.data[0].timestamp || 0) * 1000 || null,
+                            nextUpdateAt: Number(data.data[0].time_until_update || 0) > 0 ? Date.now() + Number(data.data[0].time_until_update) * 1000 : null,
+                            classification: data.data[0].value_classification || null
+                        });
                         
                         updateFearGreedUI(value);
                         return;
@@ -2287,34 +2745,56 @@
         }
 
         // ============================================
-        // ALTSEASON INDEX - Com cache para evitar rate limit
+        // ALTSEASON INDEX - somente Worker/BlockchainCenter
         // ============================================
-        const ALTSEASON_CACHE_KEY = 'altseason_cache_v2';
-        const ALTSEASON_CACHE_DURATION = 10 * 60 * 1000; // 10 minutos
-        const ALTSEASON_ERROR_CACHE_WINDOW = 30 * 60 * 1000; // 30 minutos - manter cache em caso de erro de API
+        const ALTSEASON_CACHE_KEY = 'altseason_cache_v4';
+        const ALTSEASON_CACHE_DURATION = 60 * 60 * 1000; // 1 hora
+        const ALTSEASON_ERROR_CACHE_WINDOW = 7 * 24 * 60 * 60 * 1000; // manter ultimo dado real em falha
+        const ALTSEASON_SOURCE = 'blockchaincenter';
+
+        function isBlockchainCenterAltseasonPayload(data) {
+            return String(data?.source || '').toLowerCase() === ALTSEASON_SOURCE;
+        }
         
         function getAltseasonCache(forDisplay) {
             try {
                 const cached = localStorage.getItem(ALTSEASON_CACHE_KEY);
                 if (cached) {
                     const data = JSON.parse(cached);
+                    const value = clampIndexValue(data.value);
+                    if (value === null || !isBlockchainCenterAltseasonPayload(data)) return null;
                     // For display on load, accept any cached data (will be refreshed)
                     // For normal use, respect the cache duration
-                    if (forDisplay || Date.now() - data.timestamp < ALTSEASON_CACHE_DURATION) {
-                        return data;
+                    const age = Date.now() - Number(data.timestamp || 0);
+                    if ((forDisplay && age < ALTSEASON_ERROR_CACHE_WINDOW) || age < ALTSEASON_CACHE_DURATION) {
+                        return { ...data, value };
                     }
                 }
             } catch (e) {}
             return null;
         }
         
-        function setAltseasonCache(value, btcDom) {
+        function setAltseasonCache(value, btcDom, meta = {}) {
             try {
                 localStorage.setItem(ALTSEASON_CACHE_KEY, JSON.stringify({
+                    ...meta,
+                    source: ALTSEASON_SOURCE,
                     value: value,
                     btcDom: btcDom,
                     timestamp: Date.now()
                 }));
+            } catch (e) {}
+            try {
+                if (typeof writeLastValidMarketCache === 'function') {
+                    writeLastValidMarketCache({
+                        altseasonIndex: value,
+                        altseasonValue: value,
+                        altseasonBtcDom: btcDom,
+                        altseasonTs: Number(meta.updatedAt || Date.now()) || Date.now(),
+                        altseasonSource: ALTSEASON_SOURCE,
+                        altseasonStale: !!meta.stale
+                    });
+                }
             } catch (e) {}
         }
         
@@ -2322,136 +2802,176 @@
         let lastAltseasonValue = null;
         let lastAltseasonBtcDom = null;
         let lastAltseasonTime = 0;
-        
+        let lastAltseasonSource = '';
+
+        function hasDisplayAltseasonCache() {
+            return lastAltseasonSource === ALTSEASON_SOURCE &&
+                Number.isFinite(Number(lastAltseasonValue)) &&
+                (Date.now() - Number(lastAltseasonTime || 0)) < ALTSEASON_ERROR_CACHE_WINDOW;
+        }
+
+        function getMarketWorkerUrl(path) {
+            const urls = getMarketWorkerUrls(path);
+            return urls[0] || '';
+        }
+
+        function getMarketWorkerUrls(path) {
+            const cfg = window.APP_CONFIG || {};
+            const configured = typeof window.getVisorWorkerUrls === 'function'
+                ? window.getVisorWorkerUrls()
+                : [
+                    cfg.CALENDAR_WORKER_URL,
+                    ...(Array.isArray(cfg.CALENDAR_WORKER_URLS) ? cfg.CALENDAR_WORKER_URLS : []),
+                    cfg.CALENDAR_WORKER_FALLBACK_URL
+                ];
+            return [...new Set(
+                configured
+                    .map(url => String(url || '').trim().replace(/\/+$/, ''))
+                    .filter(Boolean)
+                    .map(url => `${url}${path}`)
+            )];
+        }
+
+        async function fetchMarketWorkerJson(path, timeoutMs = 7000) {
+            const urls = getMarketWorkerUrls(path);
+            for (const url of urls) {
+                try {
+                    const response = await fetchWithTimeout(url, {
+                        cache: 'no-store',
+                        headers: { 'Accept': 'application/json' }
+                    }, timeoutMs);
+                    if (!response.ok) continue;
+                    const data = await response.json();
+                    if (data && typeof data === 'object' && data.success !== false) {
+                        return { data, url };
+                    }
+                } catch (_) {}
+            }
+            return null;
+        }
+
+        function normalizeAltseasonSnapshotBlock(data) {
+            const block = data?.altseasonIndex && typeof data.altseasonIndex === 'object'
+                ? data.altseasonIndex
+                : data;
+            const value = clampIndexValue(block?.value);
+            if (value === null) return null;
+            return {
+                value,
+                btcDom: Number(block?.btcDom || block?.btcDominance || data?.btcDominance?.value || data?.btcDominance || 0) || 0,
+                updatedAt: Number(block?.updatedAt || data?.updatedAt || Date.now()) || Date.now(),
+                stale: !!(block?.stale || data?.stale),
+                source: String(block?.source || data?.source || ALTSEASON_SOURCE),
+                methodology: block?.methodology || data?.methodology || 'top50_vs_btc_90d',
+                lookbackDays: block?.lookbackDays || data?.lookbackDays || 90,
+                label: block?.label || ''
+            };
+        }
+
+        function applyAltseasonSnapshot(block, fallbackBtcDom = 0) {
+            const normalized = normalizeAltseasonSnapshotBlock({ altseasonIndex: block, btcDominance: { value: fallbackBtcDom } });
+            if (!normalized || String(normalized.source).toLowerCase() !== ALTSEASON_SOURCE) return null;
+            lastAltseasonValue = normalized.value;
+            lastAltseasonBtcDom = normalized.btcDom || Number(fallbackBtcDom || 0) || lastAltseasonBtcDom || 0;
+            lastAltseasonTime = normalized.updatedAt || Date.now();
+            lastAltseasonSource = ALTSEASON_SOURCE;
+            setAltseasonCache(normalized.value, lastAltseasonBtcDom || 0, {
+                methodology: normalized.methodology,
+                lookbackDays: normalized.lookbackDays,
+                label: normalized.label,
+                stale: normalized.stale,
+                updatedAt: normalized.updatedAt
+            });
+            updateAltseasonUI(normalized.value, lastAltseasonBtcDom || 0);
+            return normalized.value;
+        }
+        window.applyAltseasonSnapshot = applyAltseasonSnapshot;
+
+        function setAltseasonLoading() {
+            const valueEl = document.getElementById('altseason-value');
+            const statusEl = document.getElementById('altseason-status');
+            const indicatorEl = document.getElementById('altseason-indicator');
+            if (valueEl) {
+                valueEl.className = 'meter-value';
+                valueEl.style.color = '';
+                valueEl.innerHTML = '<i class="fas fa-spinner fa-spin" style="font-size:14px;opacity:0.45;"></i>';
+            }
+            if (indicatorEl) indicatorEl.style.left = '50%';
+            if (statusEl) {
+                statusEl.innerHTML = '<span style="color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Carregando dados...</span>';
+            }
+        }
+
+        function setAltseasonUnavailable() {
+            const valueEl = document.getElementById('altseason-value');
+            const statusEl = document.getElementById('altseason-status');
+            const indicatorEl = document.getElementById('altseason-indicator');
+            if (valueEl) {
+                valueEl.className = 'meter-value';
+                valueEl.style.color = 'var(--text-muted)';
+                valueEl.textContent = '--';
+            }
+            if (indicatorEl) indicatorEl.style.left = '50%';
+            if (statusEl) {
+                statusEl.innerHTML = '<span style="color: var(--text-muted);">Altseason indisponivel no momento</span>';
+            }
+        }
+
         async function fetchAltseasonIndex() {
             const valueEl = document.getElementById('altseason-value');
             const statusEl = document.getElementById('altseason-status');
             
             // Show cached value immediately (from memory or localStorage)
-            if (!lastAltseasonValue) {
+            if (lastAltseasonValue === null) {
                 const cached = getAltseasonCache(true);
                 if (cached) {
-                    lastAltseasonValue = cached.value;
-                    lastAltseasonBtcDom = cached.btcDom || 58;
+                    lastAltseasonValue = Number(cached.value);
+                    lastAltseasonBtcDom = Number(cached.btcDom || 0);
                     lastAltseasonTime = cached.timestamp;
-                    updateAltseasonUI(cached.value, cached.btcDom || 58);
+                    lastAltseasonSource = ALTSEASON_SOURCE;
+                    updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 0);
                 } else {
-                    if (valueEl) valueEl.textContent = '--';
-                    if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Carregando...</span>';
+                    setAltseasonLoading();
                 }
             }
+
             try {
-                // Buscar dados do CoinGecko
-                let btcDom = 58;
-                let topCoins = null;
-                
-                // Buscar global data (para BTC dominance)
-                try {
-                    const globalRes = await fetchWithTimeout('https://api.coingecko.com/api/v3/global', {}, 10000);
-                    if (globalRes.ok) {
-                        const globalData = await globalRes.json();
-                        btcDom = globalData.data?.market_cap_percentage?.btc || 58;
-                    }
-                } catch (e) {
+                const snapshot = await fetchMarketWorkerJson('/market/global-snapshot', 7000);
+                if (snapshot?.data?.altseasonIndex) {
+                    const btcDom = Number(snapshot.data?.btcDominance?.value || snapshot.data?.btcDominance || 0) || 0;
+                    const applied = applyAltseasonSnapshot(snapshot.data.altseasonIndex, btcDom);
+                    if (applied !== null) return;
                 }
-                
-                // Buscar top coins para calcular altseason
-                try {
-                    // v7.1: Buscar top 50 (excluindo stablecoins) para cálculo mais preciso
-                    const topCoinsRes = await fetchWithTimeout(
-                        'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=75&page=1&sparkline=false&price_change_percentage=7d,14d,30d',
-                        {}, 15000
-                    );
-                    if (topCoinsRes.ok) {
-                        topCoins = await topCoinsRes.json();
-                    }
-                } catch (e) {
-                }
-                
-                let altValue = null;
-                
-                if (topCoins && topCoins.length > 0) {
-                    const excludeTerms = ['tether', 'usd-coin', 'binance-usd', 'dai', 'true-usd', 
-                        'wrapped', 'staked', 'bridged', 'paxos', 'frax', 'usdd', 'first-digital',
-                        'ethena', 'maker', 'paypal', 'gemini', 'huobi', 'wbtc', 'weth', 'lido'];
-                    
-                    const btcCoin = topCoins.find(c => c.id === 'bitcoin');
-                    const btc7d = btcCoin?.price_change_percentage_7d_in_currency || 0;
-                    const btc14d = btcCoin?.price_change_percentage_14d_in_currency || 0;
-                    const btc30d = btcCoin?.price_change_percentage_30d_in_currency || 0;
-                    
-                    // v7.1: Filter to top 50 non-stablecoin alts only (Blockchaincenter methodology)
-                    const altcoins = topCoins.filter(c => 
-                        c.id !== 'bitcoin' && 
-                        !excludeTerms.some(term => c.id.toLowerCase().includes(term)) &&
-                        !c.name.toLowerCase().includes('usd') &&
-                        c.market_cap_rank && c.market_cap_rank <= 100
-                    ).slice(0, 50);
-                    
-                    // v7.1: Blockchaincenter-style calculation
-                    // They use 90-day performance; CoinGecko free API max is 30d
-                    // We use 30d as primary (heaviest weight) since it's closest to 90d
-                    let outperform30d = 0;
-                    let valid30d = 0;
-                    
-                    altcoins.forEach(coin => {
-                        const change30d = coin.price_change_percentage_30d_in_currency;
-                        if (change30d !== null && change30d !== undefined) {
-                            valid30d++;
-                            if (change30d > btc30d) outperform30d++;
-                        }
+            } catch (e) {}
+
+            try {
+                const worker = await fetchMarketWorkerJson('/market/altseason', 7000);
+                const workerData = worker?.data;
+                const workerValue = clampIndexValue(workerData?.value);
+                const workerBtcDom = Number(workerData?.btcDom || workerData?.btcDominance || 0);
+                if (workerData?.success !== false && isBlockchainCenterAltseasonPayload(workerData) && workerValue !== null) {
+                    lastAltseasonValue = workerValue;
+                    lastAltseasonBtcDom = workerBtcDom || lastAltseasonBtcDom || 0;
+                    lastAltseasonTime = Number(workerData.updatedAt || Date.now()) || Date.now();
+                    lastAltseasonSource = ALTSEASON_SOURCE;
+                    setAltseasonCache(workerValue, workerBtcDom || 0, {
+                        methodology: workerData.methodology || 'top50_vs_btc_90d',
+                        lookbackDays: workerData.lookbackDays || 90,
+                        label: workerData.label || '',
+                        updatedAt: lastAltseasonTime,
+                        stale: !!workerData.stale
                     });
-                    
-                    // Primary: % of top 50 alts outperforming BTC over 30d
-                    // Blockchaincenter defines: > 75% = Altseason, < 25% = Bitcoin Season
-                    let pctOutperforming = valid30d > 0 ? (outperform30d / valid30d) * 100 : 50;
-                    
-                    // v7.1.1: Calibration to approximate Blockchaincenter 90d methodology
-                    // Since CoinGecko free API only provides 30d, we blend raw outperformance
-                    // with BTC dominance signal (which captures longer-term macro flow)
-                    // BTC dominance score: higher dom → lower altseason environment
-                    // At 40% dom → domScore 70, at 55% dom → domScore 40, at 65% dom → domScore 20
-                    const domScore = Math.max(0, Math.min(100, 150 - 2 * btcDom));
-                    
-                    // Blend: 35% raw 30d outperformance + 65% dominance signal
-                    // This approximates 90d behavior where BTC dominance trends are the
-                    // primary driver of sustained altseason vs bitcoin season
-                    altValue = Math.round(pctOutperforming * 0.35 + domScore * 0.65);
-                    
-                    altValue = Math.max(1, Math.min(100, altValue));
-                    
-                    /* console.log(`📊 Altseason v7.1.1: ${outperform30d}/${valid30d} alts outperform BTC (30d) = ${Math.round(pctOutperforming)}%, domScore=${domScore}, BTC Dom=${btcDom.toFixed(1)}%, Final: ${altValue}`); */
-                }
-                
-                // Se não conseguiu calcular, usar último valor se existir (dentro de 30 min)
-                if (altValue === null) {
-                    if (lastAltseasonValue && (Date.now() - lastAltseasonTime) < ALTSEASON_ERROR_CACHE_WINDOW) {
-                        updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 58);
-                    } else {
-                        if (valueEl) valueEl.textContent = '--';
-                        if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);">Erro na API</span>';
-                    }
+                    updateAltseasonUI(workerValue, workerBtcDom || 0);
                     return;
                 }
-                
-                // Salvar em cache de memória + localStorage
-                lastAltseasonValue = altValue;
-                lastAltseasonBtcDom = btcDom;
-                lastAltseasonTime = Date.now();
-                setAltseasonCache(altValue, btcDom);
-                
-                // Atualizar UI
-                updateAltseasonUI(altValue, btcDom);
-                
-            } catch (e) {
-                // Usar último valor se existir (dentro de 30 min)
-                if (lastAltseasonValue && (Date.now() - lastAltseasonTime) < ALTSEASON_ERROR_CACHE_WINDOW) {
-                    updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 58);
-                } else {
-                    if (valueEl) valueEl.textContent = '--';
-                    if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-muted);">Indisponível</span>';
-                }
+            } catch (e) {}
+
+            if (hasDisplayAltseasonCache()) {
+                updateAltseasonUI(lastAltseasonValue, lastAltseasonBtcDom || 0);
+            } else {
+                setAltseasonUnavailable();
             }
+            return;
         }
         
         // Função auxiliar para atualizar UI do Altseason
@@ -2460,12 +2980,15 @@
             const indEl = document.getElementById('altseason-indicator');
             const statEl = document.getElementById('altseason-status');
             if (!valEl || !indEl || !statEl) return;
+            altValue = clampIndexValue(altValue);
+            if (altValue === null) return;
             valEl.textContent = altValue;
             indEl.style.left = `${altValue}%`;
             
             let status = '';
+            const btcDomText = Number(btcDom) > 0 ? ` (${Number(btcDom).toFixed(1)}%)` : '';
             if (altValue < 25) {
-                status = '<span style="color: #6366f1;"><i class="fas fa-bitcoin"></i> Bitcoin Season</span> - BTC dominando (' + btcDom.toFixed(1) + '%)';
+                status = '<span style="color: #6366f1;"><i class="fas fa-bitcoin"></i> Bitcoin Season</span> - BTC dominando' + btcDomText;
                 valEl.style.color = '#6366f1';
             } else if (altValue < 45) {
                 status = '<span style="color: #a855f7;">BTC Favorecido</span> - Leve vantagem BTC';

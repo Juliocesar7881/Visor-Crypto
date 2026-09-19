@@ -1,0 +1,3 @@
+- Anúncios discretos em pausas naturais ajudam a manter o Visor Crypto gratuito.
+- Atalho do Heatmap do Bitcoin mais limpo e discreto na HOME.
+- Melhorias de segurança, desempenho, eficiência das animações e estabilidade.

@@ -1,0 +1,4 @@
+- Mere pålidelige 24/7 signalalarmer med FCM og automatisk gendannelse.
+- Tillid opdateres, når appen åbner og højst hvert 10. minut, mens den er åben.
+- Automatisk sprogvalg, manuel vælger, RTL support og global lokalisering.
+- Ydeevne og stabilitetsforbedringer.

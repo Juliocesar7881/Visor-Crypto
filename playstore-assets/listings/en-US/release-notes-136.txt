@@ -1,0 +1,4 @@
+- More reliable 24/7 signal alerts with FCM and automatic recovery.
+- Confidence refreshes when the app opens and at most every 10 minutes while open.
+- Automatic language selection, manual selector, RTL support and global localization.
+- Performance and stability improvements.

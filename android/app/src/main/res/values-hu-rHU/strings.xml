@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Kereskedési jelek</string>
+    <string name="signal_channel_description">Megerősített LONG és SHORT jelzésű riasztások</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Bizalom: %1$d%%</string>
+</resources>

@@ -1,0 +1,3 @@
+- Anúncios discretos em pausas naturais ajudam a manter o Visor Crypto gratuito.
+- Cleaner Bitcoin Atalho do mapa de calor no ecrã inicial.
+- Melhorias de segurança, desempenho, eficiência de animação e estabilidade.

@@ -54,8 +54,14 @@
         // ============================================
         let wsRetryCount = 0;
         const MAX_WS_RETRIES = 3;
-        const CORS_PROXY = 'https://corsproxy.io/?';
         let _wsFallbackIntervalId = null;
+
+        function stopPriceRestFallback() {
+            if (_wsFallbackIntervalId) {
+                clearInterval(_wsFallbackIntervalId);
+                _wsFallbackIntervalId = null;
+            }
+        }
         
         // Verificar se WebSocket está disponível e funcionando
         function isWebSocketSupported() {
@@ -69,6 +75,7 @@
                 
                 priceSocket.onopen = () => {
                     wsRetryCount = 0; // Reset retry count on successful connection
+                    stopPriceRestFallback();
                 };
                 
                 priceSocket.onmessage = (event) => {
@@ -106,49 +113,36 @@
             }
         }
         
-        // Fallback: Buscar preços via REST API com múltiplos proxies
+        // Fallback: Buscar preços via REST API direta; CoinGecko entra se a Binance falhar.
         async function fetchPricesViaREST() {
             const symbols = selectedCryptos.map(s => `"${s}"`).join(',');
             const binanceUrl = `https://api.binance.com/api/v3/ticker/24hr?symbols=[${symbols}]`;
             
-            // Lista de proxies CORS para tentar
-            const proxies = [
-                '', // Direto primeiro
-                'https://corsproxy.io/?',
-                'https://api.allorigins.win/raw?url=',
-                'https://cors-anywhere.herokuapp.com/'
-            ];
-            
-            for (const proxy of proxies) {
-                try {
-                    const url = proxy ? `${proxy}${encodeURIComponent(binanceUrl)}` : binanceUrl;
-                    const response = await fetch(url, { 
-                        timeout: 5000,
-                        headers: proxy.includes('herokuapp') ? { 'X-Requested-With': 'XMLHttpRequest' } : {}
+            try {
+                const response = await fetchWithTimeout(binanceUrl, {
+                    headers: { 'Accept': 'application/json' }
+                }, 5000);
+                if (!response.ok) throw new Error(`Binance REST HTTP ${response.status}`);
+
+                const data = await response.json();
+
+                if (Array.isArray(data) && data.length > 0) {
+                    data.forEach(ticker => {
+                        const symbol = ticker.symbol;
+                        previousPrices[symbol] = prices[symbol] || parseFloat(ticker.lastPrice);
+                        prices[symbol] = parseFloat(ticker.lastPrice);
+                        priceChanges[symbol] = parseFloat(ticker.priceChangePercent);
+                        updatePriceDisplay(symbol);
                     });
-                    
-                    if (!response.ok) continue;
-                    
-                    const data = await response.json();
-                    
-                    if (Array.isArray(data) && data.length > 0) {
-                        data.forEach(ticker => {
-                            const symbol = ticker.symbol;
-                            previousPrices[symbol] = prices[symbol] || parseFloat(ticker.lastPrice);
-                            prices[symbol] = parseFloat(ticker.lastPrice);
-                            priceChanges[symbol] = parseFloat(ticker.priceChangePercent);
-                            updatePriceDisplay(symbol);
-                        });
-                        
-                        renderAllPrices();
-                        updateAIRecommendation();
-                        return; // Sucesso!
-                    }
-                } catch (e) {
+
+                    renderAllPrices();
+                    updateAIRecommendation();
+                    return;
                 }
+            } catch (e) {
             }
             
-            // Se todos falharam, tentar CoinGecko como último recurso
+            // Se a Binance falhar, tentar CoinGecko como último recurso
             try {
                 await fetchPricesViaCoinGecko();
             } catch (e) {
@@ -161,7 +155,10 @@
             
             try {
                 const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cgIds}&vs_currencies=usd&include_24hr_change=true`;
-                const response = await fetch(url);
+                const response = await fetchWithTimeout(url, {
+                    headers: { 'Accept': 'application/json' }
+                }, 5000);
+                if (!response.ok) throw new Error(`CoinGecko HTTP ${response.status}`);
                 const data = await response.json();
                 
                 selectedCryptos.forEach(symbol => {
@@ -182,6 +179,7 @@
         }
 
         function reconnectPriceStream() {
+            stopPriceRestFallback();
             if (priceSocket) priceSocket.close();
             wsRetryCount = 0;
             connectPriceStream();
@@ -237,16 +235,20 @@
         // PRICES DISPLAY
         // ============================================
         function formatPrice(price) {
-            if (price > 0 && price < 0.0001) {
-                return { display: `$${price.toFixed(8)}`, multiplier: '' };
+            const numericPrice = Number(price);
+            if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+                return { display: 'Carregando', multiplier: '' };
             }
-            if (price > 0 && price < 0.01) {
-                return { display: `$${price.toFixed(6)}`, multiplier: '' };
+            if (numericPrice < 0.0001) {
+                return { display: `$${numericPrice.toFixed(8)}`, multiplier: '' };
             }
-            if (price > 0 && price < 1) {
-                return { display: `$${price.toFixed(4)}`, multiplier: '' };
+            if (numericPrice < 0.01) {
+                return { display: `$${numericPrice.toFixed(6)}`, multiplier: '' };
             }
-            return { display: `$${price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, multiplier: '' };
+            if (numericPrice < 1) {
+                return { display: `$${numericPrice.toFixed(4)}`, multiplier: '' };
+            }
+            return { display: `$${numericPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`, multiplier: '' };
         }
 
         function updatePriceDisplay(symbol) {
@@ -254,7 +256,7 @@
             if (!item) { renderAllPrices(); return; }
             
             const price = prices[symbol];
-            const change = priceChanges[symbol];
+            const change = Number(priceChanges[symbol] || 0);
             const prevPrice = previousPrices[symbol];
             const formatted = formatPrice(price);
             
@@ -285,8 +287,9 @@
             const container = document.getElementById('live-prices');
             const html = selectedCryptos.map(symbol => {
                 const info = CRYPTO_DATABASE[symbol];
-                const price = prices[symbol] || 0;
-                const change = priceChanges[symbol] || 0;
+                if (!info) return '';
+                const price = Number(prices[symbol] || 0);
+                const change = Number(priceChanges[symbol] || 0);
                 const formatted = formatPrice(price);
                 return `
                     <div class="ticker-item" id="ticker-${symbol}" onclick="openChartModal('${symbol}')">
@@ -326,14 +329,24 @@
             try { signalDirs = JSON.parse(localStorage.getItem('vc4_signal_directions') || '{}'); } catch(e) {}
             const now = Date.now();
             const maxAge = 15 * 60 * 1000; // 15 min
+            const normalizeDirection = (raw) => {
+                const value = String(raw || '').toUpperCase();
+                if (value.includes('LONG')) return 'LONG';
+                if (value.includes('SHORT')) return 'SHORT';
+                return 'NEUTRO';
+            };
 
             const opportunities = [];
             for (const [sym, data] of Object.entries(scoreHistory)) {
                 if (!data.ts || (now - data.ts) > maxAge) continue;
-                const dir = signalDirs[sym]?.direction || 'NEUTRAL';
-                if (dir === 'NEUTRAL') continue; // skip neutral
-                const confidence = data.confidence || 0;
-                if (confidence < 50) continue; // minimum threshold
+                const signalEntry = signalDirs[sym] || {};
+                const scoreConfidence = Math.max(0, Math.min(100, Math.round(Number(data.confidence || 0) || 0)));
+                const signalConfidence = Number.isFinite(Number(signalEntry.confidence))
+                    ? Math.max(0, Math.min(100, Math.round(Number(signalEntry.confidence || 0) || 0)))
+                    : scoreConfidence;
+                const confidence = Math.min(scoreConfidence, signalConfidence);
+                const dir = confidence >= 50 ? normalizeDirection(signalEntry.direction || signalEntry.signal || data.direction || data.signal) : 'NEUTRO';
+                if (dir !== 'LONG' && dir !== 'SHORT') continue;
                 const gateScore = data.gateScore || 0;
                 const passedGates = data.passedGates || 0;
                 const totalGates = data.totalGates || 9;

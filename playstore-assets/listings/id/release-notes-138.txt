@@ -1,0 +1,3 @@
+- Iklan yang tersembunyi dengan jeda alami membantu menjaga Visor Crypto tetap gratis.
+- Pintasan peta panas Bitcoin yang lebih bersih di layar Utama.
+- Peningkatan keamanan, kinerja, efisiensi animasi, dan stabilitas.

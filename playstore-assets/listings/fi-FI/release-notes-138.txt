@@ -1,0 +1,3 @@
+- Huomaamattomat mainokset luonnollisissa tauoissa auttavat pitämään Visor Crypto vapaana.
+- Puhtaamman Bitcoin lämpökartan pikakuvake aloitusnäytössä.
+- Turvallisuuden, suorituskyvyn, animaation tehokkuuden ja vakauden parannuksia.

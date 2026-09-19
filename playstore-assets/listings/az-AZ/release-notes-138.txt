@@ -1,0 +1,3 @@
+- Təbii fasilələrdə təmkinli reklamlar Visor Crypto-ni pulsuz saxlamağa kömək edir.
+- Əsas ekranda təmizləyici Bitcoin İstilik xəritəsi qısayolu.
+- Təhlükəsizlik, performans, animasiya səmərəliliyi və sabitlik təkmilləşdirmələri.

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Viðskiptamerki</string>
+    <string name="signal_channel_description">Staðfestar LONG og SHORT merki</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Traust: %1$d%%</string>
+</resources>

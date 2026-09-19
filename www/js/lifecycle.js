@@ -70,7 +70,7 @@
                 indicatorFsModal.remove();
                 (async () => {
                     try {
-                        if (window.lockPortrait) await window.lockPortrait();
+                        if (window.unlockOrientation) await window.unlockOrientation();
                         if (window.Capacitor && window.Capacitor.Plugins) {
                             if (window.Capacitor.Plugins.Fullscreen) await window.Capacitor.Plugins.Fullscreen.exitFullscreen();
                             if (window.Capacitor.Plugins.StatusBar) await window.Capacitor.Plugins.StatusBar.show();
@@ -94,8 +94,9 @@
             }
             
             // Modal de evento econômico do calendário (macro-section.js)
+            // Só remove o modal dinâmico da macro-section (ele contém #event-modal-sheet).
             const eventDetailMacro = document.getElementById('event-detail-modal');
-            if (eventDetailMacro) {
+            if (eventDetailMacro && eventDetailMacro.querySelector('#event-modal-sheet')) {
                 eventDetailMacro.remove();
                 _lastModalCloseTime = Date.now();
                 return true;
@@ -114,7 +115,13 @@
             // Se modal de detalhe de call (Dashboard) está aberto, fechar
             const dashCallModal = document.getElementById('dash-call-detail-modal');
             if (dashCallModal) {
-                dashCallModal.remove();
+                if (window._closeDetailModal) {
+                    window._closeDetailModal();
+                } else {
+                    dashCallModal.remove();
+                    document.body.style.overflow = '';
+                    document.documentElement.style.overflow = '';
+                }
                 _lastModalCloseTime = Date.now();
                 return true;
             }
@@ -181,7 +188,8 @@
             
             // Ativar nav item correspondente
             document.querySelectorAll('.nav-item').forEach(nav => {
-                if (nav.getAttribute('onclick')?.includes(sectionId)) {
+                const navSection = nav.dataset ? nav.dataset.section : null;
+                if (navSection === sectionId || nav.getAttribute('onclick')?.includes(sectionId)) {
                     nav.classList.add('active');
                 }
             });
@@ -198,25 +206,34 @@
                 fetchCryptoStats();
                 fetchMovingAverages();
             }
-            if (sectionId === 'dashboard') dashLoad();
-            if (sectionId !== 'dashboard' && typeof dashAbortScan === 'function') dashAbortScan();
+            if (sectionId === 'dashboard' && typeof dashLoad === 'function') dashLoad();
         }
 
-        // Listener para botão voltar do Android (Capacitor)
-        document.addEventListener('backbutton', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
+        // Back dispatcher único para evitar listeners duplicados de backbutton.
+        let _cordovaBackListenerAttached = false;
+        let _androidCustomBackListenerAttached = false;
+        function _dispatchBackButton(e) {
+            if (e && typeof e.preventDefault === 'function') e.preventDefault();
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
             window.backButtonHandled = handleBackButton();
-        }, false);
+            return window.backButtonHandled;
+        }
+        function _ensureCordovaBackListener() {
+            if (_cordovaBackListenerAttached) return;
+            document.addEventListener('backbutton', _dispatchBackButton, false);
+            _cordovaBackListenerAttached = true;
+        }
+        function _ensureAndroidCustomBackListener() {
+            if (_androidCustomBackListenerAttached) return;
+            document.addEventListener('androidBackButton', _dispatchBackButton, false);
+            _androidCustomBackListenerAttached = true;
+        }
 
-        // Listener para o evento deviceready do Capacitor/Cordova
-        document.addEventListener('deviceready', function() {
-            document.addEventListener('backbutton', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                window.backButtonHandled = handleBackButton();
-            }, false);
-        }, false);
+        // Listener para botão voltar do Android (Capacitor/Cordova)
+        _ensureCordovaBackListener();
+        document.addEventListener('deviceready', _ensureCordovaBackListener, false);
+        // Listener para evento customizado do Android (MainActivity.java)
+        _ensureAndroidCustomBackListener();
         
         // Integração com Capacitor App Plugin (método mais confiável)
         let _capacitorAppInitialized = false;
@@ -225,7 +242,7 @@
             _capacitorAppInitialized = true;
             try {
                 // TRAVAR orientação em PORTRAIT ao iniciar o app
-                await lockPortrait();
+                if (window.unlockOrientation) await window.unlockOrientation();
                 
                 // Verificar se o Capacitor está disponível para outros plugins
                 if (window.Capacitor && window.Capacitor.Plugins) {
@@ -347,427 +364,7 @@
         }
         document.addEventListener('DOMContentLoaded', () => setTimeout(showFirstLaunchDisclaimer, 500));
 
-        // ═══════════════════════════════════════
-        // GDPR / LGPD CONSENT + ADMOB (Banner + Interstitial + App Open)
-        // ═══════════════════════════════════════
-        const ADMOB_INTERSTITIAL_ID = 'ca-app-pub-6014128977421637/9331870850';
-        const ADMOB_BANNER_ID = 'ca-app-pub-6014128977421637/9331870850';
-        let admobReady = false;
-        let admobLoaded = false;
-        let _admobInitStarted = false;
-        let _admobConsentGranted = false;
-        let _bannerListenersAttached = false;
-        let _bannerRetryTimer = null;
-        let _bannerRequestInFlight = false;
-        let userAdConsent = localStorage.getItem('visor_ad_consent'); // 'granted' | 'denied' | null
-
-        // ── Timed interstitial config ──
-        let _lastInterstitialTime = 0;
-        const AD_TIMED_INTERVAL_MS = 600000;  // Intersticial a cada 10 minutos
-        const AD_FIRST_DELAY_MS = 10000;      // Primeiro ad 10s após abrir o app
-        
-        // AdMob logging (production: console only, no visible badge)
-        let _admobDebugEl = null;
-        function _admobDebug(msg, color) {
-            console.log('[AdMob]', msg);
-            // Debug badge disabled in production — uncomment below for debugging
-            // if (!_admobDebugEl) {
-            //     _admobDebugEl = document.createElement('div');
-            //     _admobDebugEl.style.cssText = 'position:fixed;bottom:70px;left:8px;z-index:999999;font-size:9px;padding:3px 8px;border-radius:12px;color:#fff;opacity:0.85;pointer-events:none;max-width:280px;word-break:break-all;';
-            //     document.body.appendChild(_admobDebugEl);
-            // }
-            // _admobDebugEl.style.background = color || '#333';
-            // _admobDebugEl.textContent = 'Ad: ' + msg;
-            // clearTimeout(_admobDebugEl._timer);
-            // _admobDebugEl._timer = setTimeout(() => { if (_admobDebugEl) _admobDebugEl.style.display = 'none'; }, 15000);
-            // _admobDebugEl.style.display = 'block';
-        }
-
-        // Show consent dialog on first launch (LGPD/GDPR compliance)
-        function showAdConsentDialog() {
-            return new Promise((resolve) => {
-                // Fast path: consent already given
-                if (userAdConsent === 'granted' || userAdConsent === 'denied') {
-                    return resolve(userAdConsent === 'granted');
-                }
-                // If dialog already on screen, queue this resolve so when the user
-                // finally taps a button ALL callers (incl. the 8s retry) are notified.
-                const existing = document.getElementById('ad-consent-overlay');
-                if (existing) {
-                    existing._pendingResolves = existing._pendingResolves || [];
-                    existing._pendingResolves.push(resolve);
-                    return;
-                }
-                const overlay = document.createElement('div');
-                overlay.id = 'ad-consent-overlay';
-                overlay._pendingResolves = [resolve];
-                overlay.style.cssText = 'position:fixed;inset:0;z-index:9999998;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.88);backdrop-filter:blur(14px);padding:16px;animation:fadeInOverlay 0.3s ease;';
-                overlay.innerHTML = `
-                    <div id="consent-card" style="background:linear-gradient(175deg,#1a1a2e 0%,#0f0f1e 100%);border:1px solid rgba(59,130,246,0.32);border-radius:24px;max-width:420px;width:100%;padding:28px 22px 28px;box-shadow:0 16px 64px rgba(0,0,0,0.6);animation:scaleInCard 0.35s cubic-bezier(0.22,1,0.36,1) forwards;">
-
-                        <!-- header -->
-                        <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">
-                            <div style="width:52px;height:52px;background:linear-gradient(135deg,rgba(59,130,246,0.2),rgba(59,130,246,0.06));border:1.5px solid rgba(59,130,246,0.45);border-radius:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                                <span style="font-size:24px;">🔒</span>
-                            </div>
-                            <div>
-                                <div style="font-size:16px;color:#60a5fa;font-weight:900;letter-spacing:0.3px;">Privacidade & Anúncios</div>
-                                <div style="font-size:11px;color:#6b7280;margin-top:3px;">Escolha como preferir</div>
-                            </div>
-                        </div>
-
-                        <!-- explanation card -->
-                        <div style="background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.2);border-radius:14px;padding:14px 16px;margin-bottom:16px;">
-                            <div style="font-size:12px;color:#d1d5db;line-height:1.75;">
-                                <div style="display:flex;align-items:flex-start;gap:9px;margin-bottom:10px;">
-                                    <span style="color:#34d399;flex-shrink:0;margin-top:2px;">✦</span>
-                                    <span>O <strong style="color:#e5e7eb;">Visor Crypto</strong> usa <strong>Google AdMob</strong> para manter o app completamente gratuito.</span>
-                                </div>
-                                <div style="display:flex;align-items:flex-start;gap:9px;margin-bottom:10px;">
-                                    <span style="color:#60a5fa;flex-shrink:0;margin-top:2px;">✦</span>
-                                    <span><strong style="color:#93c5fd;">Aceitar:</strong> anúncios personalizados (mais relevantes para você).</span>
-                                </div>
-                                <div style="display:flex;align-items:flex-start;gap:9px;">
-                                    <span style="color:#6b7280;flex-shrink:0;margin-top:2px;">✦</span>
-                                    <span><strong style="color:#9ca3af;">Recusar:</strong> anúncios genéricos, sem rastreamento adicional.</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <p style="font-size:10px;color:#4b5563;line-height:1.7;text-align:center;margin-bottom:20px;padding:0 4px;">Você pode alterar essa escolha nas configurações do dispositivo a qualquer momento.</p>
-
-                        <!-- buttons -->
-                        <div style="display:flex;gap:12px;margin-bottom:14px;">
-                            <button id="consent-deny"
-                                style="flex:1;height:54px;padding:0 10px;background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.1);border-radius:15px;color:#9ca3af;font-weight:700;font-size:13px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform 0.12s,opacity 0.12s;display:flex;align-items:center;justify-content:center;gap:6px;">
-                                <i class="fas fa-times"></i> Recusar
-                            </button>
-                            <button id="consent-accept"
-                                style="flex:2;height:54px;padding:0 10px;background:linear-gradient(135deg,rgba(59,130,246,0.28) 0%,rgba(59,130,246,0.14) 100%);border:1.5px solid rgba(59,130,246,0.65);border-radius:15px;color:#60a5fa;font-weight:800;font-size:14px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform 0.12s,opacity 0.12s;display:flex;align-items:center;justify-content:center;gap:7px;">
-                                <i class="fas fa-check-circle"></i> Aceitar e Continuar
-                            </button>
-                        </div>
-                        <a href="privacy-policy.html" target="_blank" style="display:block;text-align:center;color:#374151;font-size:10px;text-decoration:underline;">Política de Privacidade</a>
-                    </div>
-                `;
-                // Block any interaction outside buttons (overlay tap must not dismiss)
-                overlay.addEventListener('click', (e) => { if (e.target === overlay) e.stopPropagation(); });
-                overlay.addEventListener('touchend', (e) => { if (e.target === overlay) e.preventDefault(); });
-                // Block background scroll while overlay is open
-                overlay.addEventListener('touchmove', (e) => {
-                    const card = overlay.querySelector('#consent-card');
-                    if (card && card.contains(e.target)) return;
-                    e.preventDefault();
-                }, { passive: false });
-                document.body.style.overflow = 'hidden';
-                document.documentElement.style.overflow = 'hidden';
-                document.body.appendChild(overlay);
-
-                // ── Single-tap guard: prevents double-fire from click+touchend on WebView ──
-                let _consentHandled = false;
-                function handleConsent(granted) {
-                    if (_consentHandled) return;
-                    _consentHandled = true;
-                    const val = granted ? 'granted' : 'denied';
-                    localStorage.setItem('visor_ad_consent', val);
-                    userAdConsent = val;
-                    overlay.style.opacity = '0';
-                    overlay.style.transition = 'opacity 0.28s';
-                    setTimeout(() => {
-                        overlay.remove();
-                        document.body.style.overflow = '';
-                        document.documentElement.style.overflow = '';
-                    }, 295);
-                    // Resolve ALL pending callers (incl. the 8-second initAdMob retry)
-                    (overlay._pendingResolves || []).forEach(r => r(granted));
-                }
-
-                const btnAccept = overlay.querySelector('#consent-accept');
-                const btnDeny   = overlay.querySelector('#consent-deny');
-                [btnAccept, btnDeny].forEach(btn => {
-                    const isAccept = btn.id === 'consent-accept';
-                    let _cTouchStart = 0;
-                    // Visual feedback
-                    btn.addEventListener('pointerdown', () => { btn.style.transform = 'scale(0.96)'; btn.style.opacity = '0.8'; });
-                    btn.addEventListener('pointerup',   () => { btn.style.transform = ''; btn.style.opacity = ''; });
-                    btn.addEventListener('pointercancel', () => { btn.style.transform = ''; btn.style.opacity = ''; });
-                    // Tap guard: only fire on quick taps (<400ms), not press-and-hold
-                    btn.addEventListener('touchstart', () => { _cTouchStart = Date.now(); }, { passive: true });
-                    btn.addEventListener('touchend', (e) => {
-                        e.preventDefault();
-                        // Always reset visual state (pointerup may not fire after preventDefault)
-                        btn.style.transform = ''; btn.style.opacity = '';
-                        if (Date.now() - _cTouchStart < 400) handleConsent(isAccept);
-                    });
-                    // Fallback for desktop / mouse (only if no touch was used)
-                    btn.addEventListener('click', () => { if (!_cTouchStart) handleConsent(isAccept); });
-                });
-            });
-        }
-
-        async function initAdMob() {
-            if (_admobInitStarted) return; // Guard against double initialization
-            _admobInitStarted = true;
-            
-            _admobDebug('Iniciando...', '#2563eb');
-            try {
-                if (!window.Capacitor) {
-                    _admobDebug('Capacitor ausente', '#ef4444');
-                    _admobInitStarted = false;
-                    return;
-                }
-                
-                // Try multiple ways to access the AdMob plugin
-                let AdMob = null;
-                if (window.Capacitor.Plugins && window.Capacitor.Plugins.AdMob) {
-                    AdMob = window.Capacitor.Plugins.AdMob;
-                    _admobDebug('Plugin encontrado em Plugins', '#2563eb');
-                } else if (window.Capacitor.registerPlugin) {
-                    AdMob = window.Capacitor.registerPlugin('AdMob');
-                    _admobDebug('Plugin registrado via registerPlugin', '#2563eb');
-                }
-                
-                if (!AdMob) {
-                    _admobDebug('Plugin NAO disponivel!', '#ef4444');
-                    _admobInitStarted = false;
-                    return;
-                }
-                
-                // Ask for consent before initializing
-                const consentGranted = await showAdConsentDialog();
-                _admobConsentGranted = consentGranted;
-                
-                window._AdMob = AdMob;
-                
-                // Register listeners with error handling
-                try {
-                    AdMob.addListener('interstitialAdLoaded', () => { 
-                        admobLoaded = true; 
-                        _admobDebug('Ad carregado! Pronto.', '#22c55e');
-                    });
-                    AdMob.addListener('interstitialAdFailedToLoad', (info) => {
-                        admobLoaded = false;
-                        _admobDebug('Falha ao carregar: ' + JSON.stringify(info), '#ef4444');
-                        setTimeout(() => prepareInterstitial(), 15000);
-                    });
-                    AdMob.addListener('interstitialAdDismissed', () => {
-                        admobLoaded = false;
-                        setTimeout(() => prepareInterstitial(), 3000);
-                    });
-                    AdMob.addListener('interstitialAdFailedToShow', (info) => {
-                        admobLoaded = false;
-                        console.warn('[AdMob] Failed to show:', JSON.stringify(info));
-                        setTimeout(() => prepareInterstitial(), 5000);
-                    });
-                } catch (listenerErr) {
-                    console.warn('[AdMob] Listener setup error:', listenerErr?.message || listenerErr);
-                }
-                
-                await AdMob.initialize({
-                    initializeForTesting: false,
-                    tagForChildDirectedTreatment: false,
-                    tagForUnderAgeOfConsent: false,
-                    maxAdContentRating: 'General'
-                });
-                admobReady = true;
-                _admobDebug('Inicializado! Carregando ad...', '#f59e0b');
-                
-                await prepareInterstitial();
-                
-                // Rapid follow-up retries if first prepare didn't load
-                if (!admobLoaded) {
-                    setTimeout(() => { if (!admobLoaded) prepareInterstitial(); }, 10000);
-                    setTimeout(() => { if (!admobLoaded) prepareInterstitial(); }, 25000);
-                }
-                
-                // Periodic retry: ensure an ad is always pre-loaded (60s, skip when hidden)
-                setInterval(() => {
-                    if (admobReady && !admobLoaded && document.visibilityState !== 'hidden') {
-                        prepareInterstitial();
-                    }
-                }, 60000);
-
-                // ── Banner Ad ──
-                showBannerAd();
-
-
-            } catch (e) {
-                _admobDebug('Erro init: ' + (e?.message || e), '#ef4444');
-                _admobInitStarted = false;
-            }
-        }
-        
-        async function prepareInterstitial() {
-            if (!admobReady || !window._AdMob) return;
-            try {
-                await window._AdMob.prepareInterstitial({
-                    adId: ADMOB_INTERSTITIAL_ID,
-                    isTesting: false,
-                    npa: !_admobConsentGranted
-                });
-                admobLoaded = true;
-                _admobDebug('Ad preparado OK', '#22c55e');
-            } catch (e) {
-                admobLoaded = false;
-                const errMsg = e?.message || String(e);
-                // "Publisher data not found" = AdMob account not yet approved; retry silently later
-                if (errMsg.includes('Publisher') || errMsg.includes('No fill') || errMsg.includes('network')) {
-                    _admobDebug('Ad indisponível, tentando depois...', '#f59e0b');
-                } else {
-                    _admobDebug('Erro prepare: ' + errMsg, '#ef4444');
-                }
-            }
-        }
-        
-        async function showInterstitialAd() {
-            if (!admobReady || !window._AdMob) {
-                _admobDebug('showAd: nao inicializado', '#f59e0b');
-                if (!_admobInitStarted) initAdMob();
-                return false;
-            }
-            
-            // If ad not loaded yet, try to prepare and wait briefly
-            if (!admobLoaded) {
-                // console.log('[AdMob] Ad not loaded, attempting quick prepare...');
-                try {
-                    await prepareInterstitial();
-                    // Wait up to 5 seconds for the ad to be ready
-                    for (let i = 0; i < 10; i++) {
-                        if (admobLoaded) break;
-                        await new Promise(r => setTimeout(r, 500));
-                    }
-                } catch(e) {}
-            }
-            
-            if (!admobLoaded) {
-                // console.log('[AdMob] Ad still not loaded after retry, skipping');
-                return false;
-            }
-            
-            try {
-                await window._AdMob.showInterstitial();
-                // console.log('[AdMob] Ad shown successfully');
-                admobLoaded = false;
-                _lastInterstitialTime = Date.now();
-                setTimeout(() => prepareInterstitial(), 3000);
-                return true;
-            } catch (e) {
-                console.warn('[AdMob] Show error:', e?.message || e);
-                admobLoaded = false;
-                setTimeout(() => prepareInterstitial(), 5000);
-                return false;
-            }
-        }
-
-
-
-        // ═══════════════════════════════════════
-        // BANNER AD (persistent bottom, above nav)
-        // ═══════════════════════════════════════
-        function scheduleBannerRetry(delayMs) {
-            if (_bannerRetryTimer) return;
-            _bannerRetryTimer = setTimeout(() => {
-                _bannerRetryTimer = null;
-                showBannerAd();
-            }, delayMs);
-        }
-
-        async function showBannerAd() {
-            if (!admobReady || !window._AdMob || _bannerRequestInFlight) return;
-            try {
-                // Listen for banner events to only adjust layout when banner is truly visible
-                try {
-                    if (!_bannerListenersAttached) {
-                        _bannerListenersAttached = true;
-                        window._AdMob.addListener('bannerAdSizeChanged', (info) => {
-                            if (info && info.height > 0) {
-                                document.body.classList.add('has-banner-ad');
-                                return;
-                            }
-                            document.body.classList.remove('has-banner-ad');
-                        });
-                        window._AdMob.addListener('bannerAdFailedToLoad', () => {
-                            document.body.classList.remove('has-banner-ad');
-                            scheduleBannerRetry(30000);
-                        });
-                    }
-                } catch(e) {}
-
-                _bannerRequestInFlight = true;
-                await window._AdMob.showBanner({
-                    adId: ADMOB_BANNER_ID,
-                    adSize: 'ADAPTIVE_BANNER',
-                    position: 'BOTTOM_CENTER',
-                    margin: 0,
-                    isTesting: false,
-                    npa: !_admobConsentGranted
-                });
-                _bannerRequestInFlight = false;
-                _admobDebug('Banner solicitado', '#f59e0b');
-            } catch (e) {
-                _bannerRequestInFlight = false;
-                _admobDebug('Banner erro: ' + (e?.message || e), '#ef4444');
-                document.body.classList.remove('has-banner-ad');
-                scheduleBannerRetry(30000);
-            }
-        }
-
-        // Track when app goes to background / foreground (pause/resume timer)
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'hidden') {
-                if (window._timedAdInterval) { clearInterval(window._timedAdInterval); window._timedAdInterval = null; }
-            } else if (document.visibilityState === 'visible') {
-                _startTimedInterstitial();
-            }
-        });
-
-        // ── Timed interstitial (every 10 min, first at 10s) ──
-        function _startTimedInterstitial() {
-            if (window._timedAdInterval) return; // already running
-            window._timedAdInterval = setInterval(() => {
-                if (document.visibilityState !== 'visible') return;
-                _admobDebug('Timed interstitial (10min)', '#6366f1');
-                showInterstitialAd().catch(() => {});
-            }, AD_TIMED_INTERVAL_MS);
-        }
-        // First ad: 10s AFTER both initial screens are dismissed, then start 10-min cycle
-        function _waitForScreensThenStartAds() {
-            const check = setInterval(() => {
-                // Wait until both disclaimer and consent overlay are gone
-                if (document.getElementById('first-launch-disclaimer')) return;
-                if (document.getElementById('ad-consent-overlay')) return;
-                clearInterval(check);
-                // Both screens dismissed — start the 10s countdown
-                setTimeout(() => {
-                    if (admobReady) {
-                        _admobDebug('Primeiro ad (10s após telas iniciais)', '#6366f1');
-                        showInterstitialAd().catch(() => {});
-                    }
-                    _startTimedInterstitial();
-                }, AD_FIRST_DELAY_MS);
-            }, 500);
-        }
-        _waitForScreensThenStartAds();
-        
-        // Initialize AdMob when Capacitor is ready (with retry cascade)
-        document.addEventListener('DOMContentLoaded', () => setTimeout(initAdMob, 1000));
-        window.addEventListener('load', () => setTimeout(initAdMob, 3000));
-        // Third retry: if still not ready after 8s, reset guard and try again
-        // Skip if consent dialog is still on screen (user may still be reading it)
-        setTimeout(() => { 
-            if (!admobReady && !document.getElementById('ad-consent-overlay')) { 
-                _admobInitStarted = false; 
-                initAdMob(); 
-            } 
-        }, 8000);
-        
-        // Listener para evento customizado do Android (MainActivity.java)
-        document.addEventListener('androidBackButton', function(e) {
-            e.preventDefault();
-            window.backButtonHandled = handleBackButton();
-        }, false);
-        
-        // Inicializar variável global
+       // ═══════════════════════════════════════
         window.backButtonHandled = true;
 
         // Fallback: popstate para navegadores (suporta swipe back)

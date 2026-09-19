@@ -5,9 +5,6 @@ project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/
 include ':boengli-capacitor-fullscreen'
 project(':boengli-capacitor-fullscreen').projectDir = new File('../node_modules/@boengli/capacitor-fullscreen/android')
 
-include ':capacitor-community-admob'
-project(':capacitor-community-admob').projectDir = new File('../node_modules/@capacitor-community/admob/android')
-
 include ':capacitor-app'
 project(':capacitor-app').projectDir = new File('../node_modules/@capacitor/app/android')
 
@@ -22,9 +19,3 @@ project(':capacitor-screen-orientation').projectDir = new File('../node_modules/
 
 include ':capacitor-status-bar'
 project(':capacitor-status-bar').projectDir = new File('../node_modules/@capacitor/status-bar/android')
-
-include ':capgo-capacitor-screen-recorder'
-project(':capgo-capacitor-screen-recorder').projectDir = new File('../node_modules/@capgo/capacitor-screen-recorder/android')
-
-include ':capgo-native-audio'
-project(':capgo-native-audio').projectDir = new File('../node_modules/@capgo/native-audio/android')

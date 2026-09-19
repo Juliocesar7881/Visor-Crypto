@@ -1,0 +1,3 @@
+- Diskrete Anzeigen in natürlichen Pausen tragen dazu bei, Visor Crypto frei zu halten.
+- Sauberere Bitcoin Heatmap-Verknüpfung auf dem Startbildschirm.
+- Verbesserungen bei Sicherheit, Leistung, Animationseffizienz und Stabilität.

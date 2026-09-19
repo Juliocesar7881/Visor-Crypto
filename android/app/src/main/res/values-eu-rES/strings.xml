@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Negoziazio-seinaleak</string>
+    <string name="signal_channel_description">LONG eta SHORT seinaleen alertak baieztatu dira</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Konfiantza: %1$d%%</string>
+</resources>

@@ -6,6 +6,34 @@ def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
+def releaseKeystoreFile = keystoreProperties['storeFile']
+        ? file(keystoreProperties['storeFile'])
+        : null
+def releaseSigningReady = releaseKeystoreFile != null
+        && releaseKeystoreFile.exists()
+        && keystoreProperties['storePassword']
+        && keystoreProperties['keyAlias']
+        && keystoreProperties['keyPassword']
+
+// The Appodeal app key is a public SDK identifier, but remains outside source
+// control so release and development environments can be managed independently.
+def monetizationPropertiesFile = rootProject.file("monetization.properties")
+def monetizationProperties = new Properties()
+if (monetizationPropertiesFile.exists()) {
+    monetizationProperties.load(new FileInputStream(monetizationPropertiesFile))
+}
+def appodealAppKey = (monetizationProperties['appodealAppKey'] ?: System.getenv('APPODEAL_APP_KEY') ?: '').trim()
+def monetizationReady = appodealAppKey ==~ /[0-9a-fA-F]{48}/
+def releaseTaskRequested = gradle.startParameter.taskNames.any {
+    String.valueOf(it).toLowerCase(Locale.ROOT).contains('release')
+}
+
+if (!releaseSigningReady) {
+    logger.warn("Release signing not configured. Install android/keystore.properties with the Play Console validated upload key.")
+}
+if (releaseTaskRequested && !monetizationReady) {
+    throw new GradleException('Release build requires android/monetization.properties with a valid Appodeal app key.')
+}
 
 android {
     namespace = "com.visorcrypto.app"
@@ -14,8 +42,9 @@ android {
         applicationId "com.visorcrypto.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode 139
+        versionName "1.0.11"
+        resValue "string", "appodeal_app_key", appodealAppKey
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -26,7 +55,7 @@ android {
     
     signingConfigs {
         release {
-            storeFile file(keystoreProperties['storeFile'] ?: 'visor-crypto.keystore')
+            storeFile releaseKeystoreFile ?: rootProject.file('missing-release-keystore.jks')
             storePassword keystoreProperties['storePassword'] ?: ''
             keyAlias keystoreProperties['keyAlias'] ?: ''
             keyPassword keystoreProperties['keyPassword'] ?: ''
@@ -38,12 +67,21 @@ android {
             minifyEnabled true
             shrinkResources true
             debuggable false
-            signingConfig signingConfigs.release
+            ndk {
+                debugSymbolLevel 'SYMBOL_TABLE'
+            }
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
             minifyEnabled false
             debuggable true
+            // Device QA only: -PsignDebugWithRelease lets a debuggable build update the installed app in place.
+            if (releaseSigningReady && project.hasProperty('signDebugWithRelease')) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
@@ -59,6 +97,21 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation platform('com.google.firebase:firebase-bom:34.15.0')
+    implementation 'com.google.firebase:firebase-messaging'
+    implementation 'com.appodeal.ads.sdk:core:4.3.0'
+    // Lean global demand set. AdMob and Meta are intentionally excluded because
+    // this app uses Appodeal-managed demand and has no linked publisher accounts.
+    // IAB renderer (MRAID/VAST); without it Appodeal fails MRAID creatives with ADAPTER NOT FOUND.
+    implementation 'com.appodeal.ads.sdk.adapters:iab:1.8.1.0'
+    implementation 'com.appodeal.ads.sdk.adapters:bidmachine:3.7.1.0'
+    implementation 'com.appodeal.ads.sdk.adapters:bigo_ads:5.9.0.0'
+    implementation 'com.appodeal.ads.sdk.adapters:inmobi:11.3.0.0'
+    implementation 'com.appodeal.ads.sdk.adapters:mintegral:17.1.61.0'
+    implementation 'com.appodeal.ads.sdk.adapters:unity_ads:4.17.0.0'
+    implementation 'com.appodeal.ads.sdk.adapters:vungle:7.7.4.0'
+    implementation 'androidx.work:work-runtime:2.11.2'
+    implementation 'com.google.guava:guava:33.4.8-android'
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
@@ -68,11 +121,11 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+def googleServicesFile = file('google-services.json')
+if (googleServicesFile.exists() && googleServicesFile.length() > 0) {
+    apply plugin: 'com.google.gms.google-services'
+} else if (releaseTaskRequested) {
+    throw new GradleException('Release build requires android/app/google-services.json for FCM topic delivery.')
+} else {
+    logger.warn("google-services.json not found. Debug builds compile, but Firebase push is unavailable.")
 }

@@ -1,0 +1,1 @@
+Krypto signály, ceny, správy a makrodáta v reálnom čase.

@@ -1,87 +1,132 @@
 # Play Console - Copia e Cola (PT-BR)
 
-Este arquivo resume apenas o que ainda e manual no Play Console.
+Use este arquivo como fonte rapida para preencher a ficha do Visor Crypto no Google Play Console.
 
-## 1. Upload inicial
+## Upload
 
-1. Ir em Test and release > Internal testing.
-2. Criar release nova.
-3. Upload do arquivo:
-   - android/app/build/outputs/bundle/release/app-release.aab
-4. Confirmar que a versao aparece como:
-   - versionCode: 101
-   - versionName: 1.0.1
+1. Ir em `Test and release > Internal testing`.
+2. Criar uma nova release.
+3. Fazer upload do arquivo:
+   - `android/app/build/outputs/bundle/release/app-release.aab`
+4. Confirmar a versao:
+   - `versionCode: 106`
+   - `versionName: 1.0.0`
 
-## 2. Release notes (PT-BR)
+Se a Play Console mostrar aviso de simbolos nativos:
 
-Use este texto em "What is new":
+- Primeiro tente reenviar o AAB novo, gerado depois de ativar `debugSymbolLevel 'SYMBOL_TABLE'`.
+- Se o aviso continuar, no Explorador de app bundles abra a versao enviada, va em Downloads/Recursos e envie:
+  - `android/app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip`
+- Esse aviso nao bloqueia a publicacao, mas ajuda a Play a mostrar crashes e ANRs nativos com mais detalhes.
 
-Melhorias de estabilidade e desempenho geral.
-Noticias com carregamento mais rapido e fallback reforcado.
-Fed Watch com recuperacao mais robusta de dados.
-Relatorio de IA integrado via Worker com maior confiabilidade.
-Ajustes de seguranca e infraestrutura para release.
+## Nome do app
 
-## 3. Data safety (preencher)
+`Visor Crypto: Bitcoin`
 
-Preencher de acordo com o comportamento real do app no momento da publicacao.
-Checklist minimo para nao esquecer:
+Observacao: nome com 21 caracteres, dentro do limite de 30 caracteres da Play Store.
 
-1. Coleta de dados: revisar analytics, logs, notificacoes e ads.
-2. Compartilhamento de dados: marcar somente o que realmente ocorre.
-3. Criptografia em transito: marcar Sim se trafego usa HTTPS.
-4. Exclusao de conta/dados: informar politica real do produto.
-5. Link da politica de privacidade:
-   - https://visor-crypto-privacy-policy.pages.dev/
+## Descricao curta
 
-Base tecnica detectada neste projeto (confira antes de enviar):
+`Bitcoin, sinais cripto, notícias e macro em tempo real.`
 
-1. SDK de anuncios AdMob presente.
-2. Permissao de notificacoes presente (POST_NOTIFICATIONS).
-3. Foreground service ativo para sincronizacao em background (dataSync), iniciado por opt-in.
-4. Cache local de dados de mercado e historico tecnico em armazenamento local do app.
+## Descricao completa
 
-Texto base sugerido para observacoes internas do formulario:
+`Visor Crypto: Bitcoin é um app para acompanhar criptomoedas, sinais de mercado, notícias cripto e indicadores macro em tempo real.
 
-O aplicativo usa SDK de anuncios (AdMob), notificacoes locais e sincronizacao de dados de mercado em background. Dados tecnicos e de cache sao armazenados localmente no dispositivo para melhorar desempenho. Confirmar no formulario de Data Safety os itens coletados/compartilhados pelo SDK de anuncios conforme a documentacao oficial do Google Mobile Ads.
+Com o Visor Crypto você acompanha Bitcoin, Ethereum e altcoins em uma leitura rápida para celular, com preços, variação, análise técnica, alertas, notícias filtradas e contexto macroeconômico.
 
-## 4. Foreground service declaration
+Principais recursos:
+- Preços de criptomoedas em tempo real
+- Sinais cripto e análise técnica
+- Notícias cripto filtradas por relevância
+- Indicadores macro, VIX, S&P 500, dólar, energia e Fed Watch
+- Fear & Greed e Altseason Index com fontes reais
+- Alertas e acompanhamento de mercado
+- Interface feita para leitura rápida no celular
 
-O app declara foreground service do tipo dataSync.
-No formulario de politica, descreva uso real e objetivo para o usuario.
+Para quem e:
+- Usuários que acompanham Bitcoin e altcoins
+- Traders que precisam de contexto técnico e macro
+- Investidores que querem notícias e sinais no mesmo app
+- Pessoas que buscam uma visão organizada do mercado cripto
 
-Importante para conformidade:
+Importante:
+O Visor Crypto tem finalidade informativa e educacional. O app não constitui recomendação de investimento, consultoria financeira ou promessa de resultado. Criptomoedas envolvem alto risco e alta volatilidade.`
 
-- O servico so e iniciado apos acao explicita do usuario (opt-in).
-- O servico mostra notificacao persistente enquanto ativo.
-- O usuario pode parar manualmente o servico pelo app e pela acao "Parar" na notificacao.
-- O restart em boot/update ocorre apenas se o usuario tiver habilitado previamente.
+## Keywords e tags
 
-Texto base sugerido:
+Use estas palavras de forma natural em screenshots, descricao e campanhas:
 
-O aplicativo executa sincronizacao periodica de dados de mercado em foreground service tipo dataSync para manter alertas e sinais atualizados de forma confiavel. O servico e iniciado somente apos habilitacao explicita do usuario, exibe notificacao persistente enquanto ativo e pode ser interrompido a qualquer momento pelo usuario.
+`bitcoin, cripto, criptomoedas, altcoins, sinais cripto, notícias cripto, análise técnica, preços de criptomoedas, mercado financeiro, macroeconomia, Fed Watch, Fear and Greed, Altseason Index`
 
-## 5. App content
+Tags sugeridas no Play Console, conforme as opções disponíveis na sua conta:
 
-Concluir estes formularios:
+`Finance, Cryptocurrency, Investment, News, Portfolio, Trading`
 
-1. Content rating.
-2. Target audience and content.
-3. Ads declaration (se usa anuncios, marcar corretamente).
+Hashtags apenas para divulgação fora da Play Store:
 
-## 6. Store listing
+`#bitcoin #cripto #criptomoedas #altcoins #sinaiscripto #noticiascripto #analisetecnica #mercadocripto #fedwatch #altseason`
 
-Preencher e revisar:
+## Detalhes da release
 
-1. Titulo.
-2. Descricao curta.
-3. Descricao completa.
-4. 5+ screenshots.
-5. Icone 512x512.
-6. Feature graphic 1024x500.
+Nome da versao:
 
-## 7. Fluxo recomendado de publicacao
+`1.0.0 (106)`
 
-1. Internal testing (validar instalacao e comportamento).
-2. Closed testing (coletar feedback real).
-3. Production.
+Notas da versao:
+
+`Primeira versao do Visor Crypto na Google Play.
+
+- Acompanhamento de Bitcoin, altcoins e indicadores de mercado
+- Secao Sinais com historico de calls e percentuais oficiais de 1h, 2h e 4h
+- Noticias cripto filtradas por relevancia
+- Indicadores macro, Fed Watch, Fear & Greed e Altseason Index
+- Alertas e monitoramento de mercado quando habilitados pelo usuario
+- Ajustes de estabilidade, privacidade e desempenho para lancamento`
+
+## Data Safety
+
+Preencher conforme o comportamento real no momento do envio.
+
+Pontos que devem ser revisados:
+
+1. O app usa AdMob.
+2. O app pode usar notificacoes.
+3. O app usa foreground service `dataSync` para sincronizacao quando o usuario habilita.
+4. O app usa cache local para melhorar desempenho.
+5. A politica de privacidade publica deve ser informada:
+   - `https://visor-crypto-privacy-v2.pages.dev/`
+
+Worker de producao validado:
+   - `https://visor-crypto-calendar.visorcrypto.workers.dev`
+
+Texto base para observacao interna:
+
+`O aplicativo usa anuncios via Google AdMob, notificacoes e sincronizacao de dados de mercado quando habilitada pelo usuario. Dados tecnicos, cache local, identificador tecnico do dispositivo e token FCM podem ser usados para autenticar chamadas curtas, entregar notificacoes e evitar alertas duplicados. A declaracao de Data Safety deve refletir os dados tratados pelo SDK de anuncios e pelas funcionalidades ativas no app.`
+
+## Foreground service declaration
+
+Tipo declarado: `dataSync`
+
+Texto sugerido:
+
+`O aplicativo executa sincronizacao periodica de dados de mercado em foreground service do tipo dataSync para manter alertas e sinais atualizados de forma confiavel. O servico e iniciado somente apos habilitacao explicita do usuario, exibe notificacao persistente enquanto ativo e pode ser interrompido pelo usuario a qualquer momento.`
+
+## Screenshots recomendados
+
+1. Home/precos: `Bitcoin e altcoins em tempo real`
+2. Sinais: `Sinais cripto e analise tecnica`
+3. Noticias: `Noticias cripto filtradas por relevancia`
+4. MACRO/Fed Watch: `Macro, VIX, S&P 500 e Fed Watch`
+5. Alertas: `Alertas para acompanhar o mercado`
+
+## Checklist manual
+
+1. Subir AAB em teste interno.
+2. Preencher Data Safety.
+3. Declarar Ads/AdMob.
+4. Preencher Financial Features sem prometer lucro ou recomendacao.
+5. Preencher Foreground Service `dataSync`.
+6. Preencher content rating.
+7. Informar politica de privacidade publica.
+8. Testar APK release em aparelho real antes de promover para producao.

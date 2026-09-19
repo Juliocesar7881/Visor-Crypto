@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Isyarat dagangan</string>
+    <string name="signal_channel_description">Makluman isyarat LONG dan SHORT yang disahkan</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Keyakinan: %1$d%%</string>
+</resources>

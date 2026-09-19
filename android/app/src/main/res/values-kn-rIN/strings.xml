@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">ವ್ಯಾಪಾರ ಸಂಕೇತಗಳು</string>
+    <string name="signal_channel_description">LONG ಮತ್ತು SHORT ಸಿಗ್ನಲ್ ಎಚ್ಚರಿಕೆಗಳನ್ನು ದೃಢೀಕರಿಸಲಾಗಿದೆ</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">ವಿಶ್ವಾಸ: %1$d%%</string>
+</resources>

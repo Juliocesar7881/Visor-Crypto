@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Торгові сигнали</string>
+    <string name="signal_channel_description">Підтверджені сповіщення про сигнали LONG і SHORT</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Достовірність: %1$d%%</string>
+</resources>

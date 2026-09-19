@@ -1,0 +1,4 @@
+- Megbízhatóbb, éjjel-nappali riasztások FCM-mel és automatikus helyreállítással.
+- A bizalom frissül az alkalmazás megnyitásakor, és legfeljebb 10 percenként, amíg nyitva van.
+- Automatikus rendszernyelv-választás, RTL támogatás és globális lokalizáció.
+- A teljesítmény és a stabilitás javítása.

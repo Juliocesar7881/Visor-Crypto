@@ -1,5 +1,5 @@
 // Service Worker para Visor Crypto PWA
-const CACHE_NAME = 'visor-crypto-v4';
+const CACHE_NAME = 'visor-crypto-v7';
 
 // Recursos estáticos para cache (somente assets locais)
 const STATIC_ASSETS = [

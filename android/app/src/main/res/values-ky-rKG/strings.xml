@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Соода сигналдары</string>
+    <string name="signal_channel_description">Ырасталган LONG жана SHORT сигнал эскертүүлөрү</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Ишенимдүүлүк: %1$d%%</string>
+</resources>

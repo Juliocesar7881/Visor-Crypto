@@ -1,0 +1,4 @@
+- Pouzdanija 24/7 signalna upozorenja s FCM-om i automatskim oporavkom.
+- Povjerenje se osvježava kada se aplikacija otvori, a najviše svakih 10 minuta dok je otvorena.
+- Automatski odabir jezika sustava, RTL podrška i globalna lokalizacija.
+- Poboljšanja performansi i stabilnosti.

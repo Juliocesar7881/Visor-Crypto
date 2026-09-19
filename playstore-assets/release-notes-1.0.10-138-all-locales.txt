@@ -1,0 +1,521 @@
+<af>
+- Diskrete advertensies met natuurlike pouses help om Visor Crypto vry te hou.
+- Skoner Bitcoin Hittekaartkortpad op die tuisskerm.
+- Sekuriteit, werkverrigting, animasiedoeltreffendheid en stabiliteitverbeterings.
+</af>
+
+<sq>
+- Reklamat diskrete në pauza natyrale ndihmojnë për të mbajtur Visor Crypto pa pagesë.
+- Pastrues Bitcoin Shkurtorja e hartës së nxehtësisë në ekranin bazë.
+- Përmirësime të sigurisë, performancës, efikasitetit të animacionit dhe stabilitetit.
+</sq>
+
+<am>
+- በተፈጥሮ ባለበት ማቆም ላይ ያሉ አስተዋይ ማስታወቂያዎች Visor Crypto ነጻ እንዲሆኑ ያግዛሉ።
+- ማጽጃ Bitcoin የሙቀት ካርታ አቋራጭ በመነሻ ስክሪን ላይ።
+- ደህንነት፣ አፈጻጸም፣ የአኒሜሽን ቅልጥፍና እና የመረጋጋት ማሻሻያዎች።
+</am>
+
+<ar>
+- تساعد الإعلانات السرية عند التوقف المؤقت الطبيعي في الحفاظ على Visor Crypto مجانيًا.
+- منظف Bitcoin اختصار الخريطة الحرارية على الشاشة الرئيسية.
+- تحسينات في الأمان والأداء وكفاءة الرسوم المتحركة والاستقرار.
+</ar>
+
+<hy-AM>
+- Բնական դադարներով զուսպ գովազդն օգնում է Visor Crypto-ին անվճար պահել:
+- Մաքրող միջոց Bitcoin Հիմնական էկրանի ջերմային քարտեզի դյուրանցում:
+- Անվտանգության, կատարողականի, անիմացիայի արդյունավետության և կայունության բարելավումներ:
+</hy-AM>
+
+<az-AZ>
+- Təbii fasilələrdə təmkinli reklamlar Visor Crypto-ni pulsuz saxlamağa kömək edir.
+- Əsas ekranda təmizləyici Bitcoin İstilik xəritəsi qısayolu.
+- Təhlükəsizlik, performans, animasiya səmərəliliyi və sabitlik təkmilləşdirmələri.
+</az-AZ>
+
+<bn-BD>
+- প্রাকৃতিক বিরতিতে বিচক্ষণ বিজ্ঞাপন Visor Crypto বিনামূল্যে রাখতে সাহায্য করে।
+- হোম স্ক্রিনে ক্লিনার Bitcoin হিটম্যাপ শর্টকাট।
+- নিরাপত্তা, কর্মক্ষমতা, অ্যানিমেশন দক্ষতা এবং স্থিতিশীলতার উন্নতি।
+</bn-BD>
+
+<eu-ES>
+- Etenaldi naturaletan iragarki diskretuek Visor Crypto libre mantentzen laguntzen dute.
+- Bitcoin bero-mapa lasterbide garbitzailea hasierako pantailan.
+- Segurtasuna, errendimendua, animazioaren eraginkortasuna eta egonkortasunaren hobekuntzak.
+</eu-ES>
+
+<be>
+- Стрыманая рэклама ў натуральных паўзах дапамагае Visor Crypto заставацца свабодным.
+- Ачышчальнік Bitcoin Ярлык цеплавой карты на галоўным экране.
+- Паляпшэнні бяспекі, прадукцыйнасці, эфектыўнасці анімацыі і стабільнасці.
+</be>
+
+<bg>
+- Дискретните реклами на естествени паузи помагат да запазите Visor Crypto безплатно.
+- По-чист Bitcoin пряк път за топлинна карта на началния екран.
+- Подобрения в сигурността, производителността, ефективността на анимацията и стабилността.
+</bg>
+
+<my-MM>
+- သဘာဝအတိုင်း ခေတ္တရပ်ချိန်တွင် သတိမထားမိသောကြော်ငြာများသည် Visor Crypto ကို အခမဲ့ရရှိစေရန် ကူညီပေးပါသည်။
+- သန့်စင်ဆေး Bitcoin ပင်မမျက်နှာပြင်ရှိ အပူမြေပုံဖြတ်လမ်း။
+- လုံခြုံရေး၊ စွမ်းဆောင်ရည်၊ ကာတွန်းစွမ်းဆောင်ရည်နှင့် တည်ငြိမ်မှု မြှင့်တင်မှုများ။
+</my-MM>
+
+<ca>
+- Els anuncis discrets en pauses naturals ajuden a mantenir Visor Crypto lliure.
+- Drecera del mapa de calor Bitcoin de neteja a la pantalla d'inici.
+- Millores de seguretat, rendiment, eficiència de l'animació i estabilitat.
+</ca>
+
+<zh-HK>
+- 自然停頓時的謹慎廣告有助於保持 Visor Crypto 免費。
+- 主畫面上更清晰的 Bitcoin 熱圖快捷方式。
+- 安全性、效能、動畫效率和穩定性方面的改進。
+</zh-HK>
+
+<zh-CN>
+- 自然停顿时的谨慎广告有助于保持 Visor Crypto 免费。
+- 主屏幕上更清晰的 Bitcoin 热图快捷方式。
+- 安全性、性能、动画效率和稳定性方面的改进。
+</zh-CN>
+
+<zh-TW>
+- 自然停頓時的謹慎廣告有助於保持 Visor Crypto 免費。
+- 主畫面上更清晰的 Bitcoin 熱圖快捷方式。
+- 安全性、效能、動畫效率和穩定性方面的改進。
+</zh-TW>
+
+<hr>
+- Diskretni oglasi u prirodnim pauzama pomažu da Visor Crypto ostane slobodan.
+- Čišći Bitcoin Prečac za toplinsku kartu na početnom zaslonu.
+- Poboljšanja sigurnosti, performansi, učinkovitosti animacije i stabilnosti.
+</hr>
+
+<cs-CZ>
+- Diskrétní reklamy v přirozených pauzách pomáhají udržet Visor Crypto zdarma.
+- Čistič Bitcoin zkratka teplotní mapy na domovské obrazovce.
+- Vylepšení zabezpečení, výkonu, efektivity animace a stability.
+</cs-CZ>
+
+<da-DK>
+- Diskrete annoncer med naturlige pauser hjælper med at holde Visor Crypto fri.
+- Renere Bitcoin Heatmap-genvej på startskærmen.
+- Sikkerhed, ydeevne, animationseffektivitet og stabilitetsforbedringer.
+</da-DK>
+
+<nl-NL>
+- Discrete advertenties met natuurlijke pauzes zorgen ervoor dat Visor Crypto gratis blijft.
+- Cleaner Bitcoin Heatmap-snelkoppeling op het startscherm.
+- Beveiligings-, prestatie-, animatie-efficiëntie en stabiliteitsverbeteringen.
+</nl-NL>
+
+<en-AU>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</en-AU>
+
+<en-CA>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</en-CA>
+
+<en-US>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</en-US>
+
+<en-GB>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</en-GB>
+
+<en-IN>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</en-IN>
+
+<en-SG>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</en-SG>
+
+<en-ZA>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</en-ZA>
+
+<et>
+- Diskreetsed reklaamid loomulikel pausidel aitavad hoida Visor Crypto vabana.
+- Puhastaja Bitcoin soojuskaardi otsetee avakuval.
+- Turvalisuse, jõudluse, animatsiooni tõhususe ja stabiilsuse täiustused.
+</et>
+
+<fil>
+- Nakakatulong ang mga discreet na ad sa mga natural na pag-pause na panatilihing libre ang Visor Crypto.
+- Mas malinis na Bitcoin shortcut ng Heatmap sa Home screen.
+- Mga pagpapahusay sa seguridad, pagganap, kahusayan sa animation at katatagan.
+</fil>
+
+<fi-FI>
+- Huomaamattomat mainokset luonnollisissa tauoissa auttavat pitämään Visor Crypto vapaana.
+- Puhtaamman Bitcoin lämpökartan pikakuvake aloitusnäytössä.
+- Turvallisuuden, suorituskyvyn, animaation tehokkuuden ja vakauden parannuksia.
+</fi-FI>
+
+<fr-CA>
+- Des publicités discrètes lors de pauses naturelles permettent de garder Visor Crypto gratuit.
+- Raccourci Cleaner Bitcoin Heatmap sur l'écran d'accueil.
+- Améliorations de la sécurité, des performances, de l’efficacité de l’animation et de la stabilité.
+</fr-CA>
+
+<fr-FR>
+- Des publicités discrètes lors de pauses naturelles permettent de garder Visor Crypto gratuit.
+- Raccourci Cleaner Bitcoin Heatmap sur l'écran d'accueil.
+- Améliorations de la sécurité, des performances, de l’efficacité de l’animation et de la stabilité.
+</fr-FR>
+
+<gl-ES>
+- Os anuncios discretos en pausas naturais axudan a manter Visor Crypto gratuíto.
+- Atallo de mapa de calor Bitcoin máis limpo na pantalla de inicio.
+- Melloras de seguridade, rendemento, eficiencia da animación e estabilidade.
+</gl-ES>
+
+<ka-GE>
+- ფრთხილი რეკლამები ბუნებრივ პაუზებში გვეხმარება Visor Crypto უფასო შენარჩუნებაში.
+- გამწმენდი Bitcoin Heatmap მალსახმობი მთავარ ეკრანზე.
+- უსაფრთხოების, შესრულების, ანიმაციის ეფექტურობისა და სტაბილურობის გაუმჯობესება.
+</ka-GE>
+
+<de-DE>
+- Diskrete Anzeigen in natürlichen Pausen tragen dazu bei, Visor Crypto frei zu halten.
+- Sauberere Bitcoin Heatmap-Verknüpfung auf dem Startbildschirm.
+- Verbesserungen bei Sicherheit, Leistung, Animationseffizienz und Stabilität.
+</de-DE>
+
+<el-GR>
+- Οι διακριτικές διαφημίσεις σε φυσικές παύσεις συμβάλλουν στη διατήρηση του Visor Crypto δωρεάν.
+- Cleaner Bitcoin Συντόμευση Heatmap στην Αρχική οθόνη.
+- Βελτιώσεις στην ασφάλεια, τις επιδόσεις, την αποδοτικότητα των κινούμενων εικόνων και τη σταθερότητα.
+</el-GR>
+
+<gu>
+- કુદરતી વિરામ પર સમજદાર જાહેરાતો Visor Crypto મુક્ત રાખવામાં મદદ કરે છે.
+- હોમ સ્ક્રીન પર ક્લીનર Bitcoin હીટમેપ શોર્ટકટ.
+- સુરક્ષા, પ્રદર્શન, એનિમેશન કાર્યક્ષમતા અને સ્થિરતા સુધારણા.
+</gu>
+
+<iw-IL>
+- מודעות דיסקרטיות בהפסקות טבעיות עוזרות לשמור את Visor Crypto חופשי.
+- מנקה Bitcoin קיצור מפת חום במסך הבית.
+- שיפורי אבטחה, ביצועים, יעילות אנימציה ויציבות.
+</iw-IL>
+
+<hi-IN>
+- प्राकृतिक विरामों पर विवेकपूर्ण विज्ञापन Visor Crypto को मुक्त रखने में मदद करते हैं।
+- होम स्क्रीन पर क्लीनर Bitcoin हीटमैप शॉर्टकट।
+- सुरक्षा, प्रदर्शन, एनीमेशन दक्षता और स्थिरता में सुधार।
+</hi-IN>
+
+<hu-HU>
+- A diszkrét hirdetések természetes szünetekben segítenek megőrizni a Visor Crypto ingyenességét.
+- Tisztább Bitcoin hőtérkép parancsikon a kezdőképernyőn.
+- Biztonság, teljesítmény, animáció hatékonysága és stabilitása.
+</hu-HU>
+
+<is-IS>
+- Nákvæmar auglýsingar í náttúrulegum hléum hjálpa til við að halda Visor Crypto ókeypis.
+- Hreinsari Bitcoin Flýtileið fyrir hitakort á heimaskjánum.
+- Öryggi, afköst, skilvirkni hreyfimynda og endurbætur á stöðugleika.
+</is-IS>
+
+<id>
+- Iklan yang tersembunyi dengan jeda alami membantu menjaga Visor Crypto tetap gratis.
+- Pintasan peta panas Bitcoin yang lebih bersih di layar Utama.
+- Peningkatan keamanan, kinerja, efisiensi animasi, dan stabilitas.
+</id>
+
+<it-IT>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</it-IT>
+
+<ja-JP>
+- 自然な一時停止で目立たない広告を表示することで、Visor Crypto を無料に保つことができます。
+- ホーム画面の Bitcoin ヒートマップ ショートカットがクリーンになりました。
+- セキュリティ、パフォーマンス、アニメーションの効率、安定性が向上しました。
+</ja-JP>
+
+<kn-IN>
+- ನೈಸರ್ಗಿಕ ವಿರಾಮಗಳಲ್ಲಿ ವಿವೇಚನಾಯುಕ್ತ ಜಾಹೀರಾತುಗಳು Visor Crypto ಅನ್ನು ಉಚಿತವಾಗಿ ಇರಿಸಲು ಸಹಾಯ ಮಾಡುತ್ತದೆ.
+- ಮುಖಪುಟ ಪರದೆಯಲ್ಲಿ ಕ್ಲೀನರ್ Bitcoin ಹೀಟ್‌ಮ್ಯಾಪ್ ಶಾರ್ಟ್‌ಕಟ್.
+- ಭದ್ರತೆ, ಕಾರ್ಯಕ್ಷಮತೆ, ಅನಿಮೇಷನ್ ದಕ್ಷತೆ ಮತ್ತು ಸ್ಥಿರತೆಯ ಸುಧಾರಣೆಗಳು.
+</kn-IN>
+
+<kk>
+- Табиғи кідірістегі ақылды жарнамалар Visor Crypto тегін сақтауға көмектеседі.
+- Негізгі экрандағы Bitcoin Жылу картасының төте жолы.
+- Қауіпсіздік, өнімділік, анимация тиімділігі және тұрақтылықты жақсарту.
+</kk>
+
+<km-KH>
+- ការផ្សាយពាណិជ្ជកម្មមិនច្បាស់លាស់នៅពេលផ្អាកធម្មជាតិជួយរក្សា Visor Crypto ដោយឥតគិតថ្លៃ។
+- Cleaner Bitcoin ផ្លូវកាត់ Heatmap នៅលើអេក្រង់ដើម។
+- សុវត្ថិភាព ការអនុវត្ត ប្រសិទ្ធភាពចលនា និងការកែលម្អស្ថេរភាព។
+</km-KH>
+
+<ko-KR>
+- 자연스럽게 일시중지되는 눈에 띄지 않는 광고는 Visor Crypto를 무료로 유지하는 데 도움이 됩니다.
+- 홈 화면의 더욱 깔끔한 Bitcoin 히트맵 바로가기.
+- 보안, 성능, 애니메이션 효율성 및 안정성이 향상되었습니다.
+</ko-KR>
+
+<ky-KG>
+- Табигый тыныгуулардагы акылдуу жарнамалар Visor Crypto ды акысыз сактоого жардам берет.
+- Тазалоочу Bitcoin Башкы экрандагы Жылуулук картасынын кыска жолу.
+- Коопсуздук, аткаруу, анимациялык эффективдүүлүк жана туруктуулукту жакшыртуу.
+</ky-KG>
+
+<lo-LA>
+- ໂຄສະນາແບບບໍ່ສຸພາບໃນເວລາຢຸດຊົ່ວຄາວແບບທຳມະຊາດຊ່ວຍຮັກສາ Visor Crypto ຟຣີ.
+- ຕົວເຮັດຄວາມສະອາດ Bitcoin ທາງລັດແຜນທີ່ຄວາມຮ້ອນໃນໜ້າຈໍຫຼັກ.
+- ຄວາມປອດໄພ, ການປະຕິບັດ, ປະສິດທິພາບການເຄື່ອນໄຫວແລະການປັບປຸງສະຖຽນລະພາບ.
+</lo-LA>
+
+<lv>
+- Diskrētas reklāmas dabiskās pauzēs palīdz saglabāt Visor Crypto brīvu.
+- Apkopēja Bitcoin siltuma kartes saīsne sākuma ekrānā.
+- Drošības, veiktspējas, animācijas efektivitātes un stabilitātes uzlabojumi.
+</lv>
+
+<lt>
+- Diskretiški skelbimai natūraliomis pauzėmis padeda išlaikyti Visor Crypto laisvą.
+- Valytojo Bitcoin šilumos žemėlapio spartusis klavišas pagrindiniame ekrane.
+- Saugumo, našumo, animacijos efektyvumo ir stabilumo patobulinimai.
+</lt>
+
+<mk-MK>
+- Дискретните реклами при природни паузи помагаат да остане Visor Crypto бесплатно.
+- Почиста Bitcoin Кратенка за топлинска карта на почетниот екран.
+- Подобрувања на безбедноста, перформансите, ефикасноста на анимацијата и стабилноста.
+</mk-MK>
+
+<ms-MY>
+- Iklan bijak pada jeda semula jadi membantu mengekalkan Visor Crypto percuma.
+- Bitcoin Pintasan peta haba yang lebih bersih pada skrin Utama.
+- Keselamatan, prestasi, kecekapan animasi dan peningkatan kestabilan.
+</ms-MY>
+
+<ms>
+- Iklan bijak pada jeda semula jadi membantu mengekalkan Visor Crypto percuma.
+- Bitcoin Pintasan peta haba yang lebih bersih pada skrin Utama.
+- Keselamatan, prestasi, kecekapan animasi dan peningkatan kestabilan.
+</ms>
+
+<ml-IN>
+- സ്വാഭാവിക വിരാമങ്ങളിലെ വിവേകപൂർണ്ണമായ പരസ്യങ്ങൾ Visor Crypto സൗജന്യമായി നിലനിർത്താൻ സഹായിക്കുന്നു.
+- ഹോം സ്‌ക്രീനിൽ ക്ലീനർ Bitcoin ഹീറ്റ്‌മാപ്പ് കുറുക്കുവഴി.
+- സുരക്ഷ, പ്രകടനം, ആനിമേഷൻ കാര്യക്ഷമത, സ്ഥിരത മെച്ചപ്പെടുത്തലുകൾ.
+</ml-IN>
+
+<mr-IN>
+- नैसर्गिक विरामांवर विवेकी जाहिराती Visor Crypto विनामूल्य ठेवण्यात मदत करतात.
+- होम स्क्रीनवर क्लीनर Bitcoin हीटमॅप शॉर्टकट.
+- सुरक्षा, कार्यप्रदर्शन, ॲनिमेशन कार्यक्षमता आणि स्थिरता सुधारणा.
+</mr-IN>
+
+<mn-MN>
+- Байгалийн завсарлагатай зар сурталчилгаа нь Visor Crypto-г үнэгүй байлгахад тусалдаг.
+- Цэвэрлэгч Bitcoin Үндсэн дэлгэц дээрх дулааны зураглалын товчлол.
+- Аюулгүй байдал, гүйцэтгэл, хөдөлгөөнт дүрсний үр ашиг, тогтвортой байдлын сайжруулалт.
+</mn-MN>
+
+<ne-NP>
+- प्राकृतिक पजहरूमा विवेकी विज्ञापनहरूले Visor Crypto नि:शुल्क राख्न मद्दत गर्छ।
+- क्लिनर Bitcoin होम स्क्रिनमा हिटम्याप सर्टकट।
+- सुरक्षा, प्रदर्शन, एनिमेसन दक्षता र स्थिरता सुधार।
+</ne-NP>
+
+<no-NO>
+- Diskrete annonser ved naturlige pauser bidrar til å holde Visor Crypto fri.
+- Renere Bitcoin Heatmap-snarvei på startskjermen.
+- Sikkerhet, ytelse, animasjonseffektivitet og stabilitetsforbedringer.
+</no-NO>
+
+<fa>
+- تبلیغات محتاطانه در مکث های طبیعی به رایگان نگه داشتن Visor Crypto کمک می کند.
+- پاک کننده Bitcoin میانبر Heatmap در صفحه اصلی.
+- بهبود امنیت، عملکرد، کارایی انیمیشن و ثبات.
+</fa>
+
+<fa-AE>
+- تبلیغات محتاطانه در مکث های طبیعی به رایگان نگه داشتن Visor Crypto کمک می کند.
+- پاک کننده Bitcoin میانبر Heatmap در صفحه اصلی.
+- بهبود امنیت، عملکرد، کارایی انیمیشن و ثبات.
+</fa-AE>
+
+<fa-AF>
+- تبلیغات محتاطانه در مکث های طبیعی به رایگان نگه داشتن Visor Crypto کمک می کند.
+- پاک کننده Bitcoin میانبر Heatmap در صفحه اصلی.
+- بهبود امنیت، عملکرد، کارایی انیمیشن و ثبات.
+</fa-AF>
+
+<fa-IR>
+- تبلیغات محتاطانه در مکث های طبیعی به رایگان نگه داشتن Visor Crypto کمک می کند.
+- پاک کننده Bitcoin میانبر Heatmap در صفحه اصلی.
+- بهبود امنیت، عملکرد، کارایی انیمیشن و ثبات.
+</fa-IR>
+
+<pl-PL>
+- Dyskretne reklamy w naturalnych przerwach pomagają zachować Visor Crypto wolność.
+- Cleaner Bitcoin Skrót mapy cieplnej na ekranie głównym.
+- Ulepszenia bezpieczeństwa, wydajności, wydajności animacji i stabilności.
+</pl-PL>
+
+<pt-BR>
+- Anúncios discretos em pausas naturais ajudam a manter o Visor Crypto gratuito.
+- Atalho do Heatmap do Bitcoin mais limpo e discreto na HOME.
+- Melhorias de segurança, desempenho, eficiência das animações e estabilidade.
+</pt-BR>
+
+<pt-PT>
+- Anúncios discretos em pausas naturais ajudam a manter o Visor Crypto gratuito.
+- Cleaner Bitcoin Atalho do mapa de calor no ecrã inicial.
+- Melhorias de segurança, desempenho, eficiência de animação e estabilidade.
+</pt-PT>
+
+<pa>
+- ਕੁਦਰਤੀ ਵਿਰਾਮਾਂ 'ਤੇ ਸਮਝਦਾਰ ਵਿਗਿਆਪਨ Visor Crypto ਨੂੰ ਮੁਫ਼ਤ ਰੱਖਣ ਵਿੱਚ ਮਦਦ ਕਰਦੇ ਹਨ।
+- ਹੋਮ ਸਕ੍ਰੀਨ 'ਤੇ ਕਲੀਨਰ Bitcoin ਹੀਟਮੈਪ ਸ਼ਾਰਟਕੱਟ।
+- ਸੁਰੱਖਿਆ, ਪ੍ਰਦਰਸ਼ਨ, ਐਨੀਮੇਸ਼ਨ ਕੁਸ਼ਲਤਾ ਅਤੇ ਸਥਿਰਤਾ ਸੁਧਾਰ।
+</pa>
+
+<ro>
+- Anunțurile discrete la pauze naturale ajută la menținerea liberă a Visor Crypto.
+- Comandă rapidă pentru hărți termice Bitcoin de curățare pe ecranul de pornire.
+- Securitate, performanță, eficiență a animației și îmbunătățiri ale stabilității.
+</ro>
+
+<rm>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</rm>
+
+<ru-RU>
+- Незаметная реклама в естественных паузах помогает сохранить Visor Crypto бесплатным.
+- Очиститель Bitcoin Ярлык тепловой карты на главном экране.
+- Улучшения безопасности, производительности, эффективности анимации и стабильности.
+</ru-RU>
+
+<sr>
+- Discreet ads at natural pauses help keep Visor Crypto free.
+- Cleaner Bitcoin Heatmap shortcut on the Home screen.
+- Security, performance, animation efficiency and stability improvements.
+</sr>
+
+<si-LK>
+- ස්වභාවික විරාම වල නුවණැති දැන්වීම් Visor Crypto නොමිලේ තබා ගැනීමට උදවු කරයි.
+- මුල් තිරය මත පිරිසිදු Bitcoin තාප සිතියම් කෙටිමඟ.
+- ආරක්ෂාව, කාර්ය සාධනය, සජීවිකරණ කාර්යක්ෂමතාව සහ ස්ථාවරත්වය වැඩිදියුණු කිරීම.
+</si-LK>
+
+<sk>
+- Diskrétne reklamy v prirodzených prestávkach pomáhajú udržať Visor Crypto zadarmo.
+- Skratka teplotnej mapy Cleaner Bitcoin na domovskej obrazovke.
+- Vylepšenia zabezpečenia, výkonu, efektivity animácií a stability.
+</sk>
+
+<sl>
+- Diskretni oglasi ob naravnih premorih pomagajo ohraniti Visor Crypto brezplačno.
+- Čistejša bližnjica za toplotni zemljevid Bitcoin na začetnem zaslonu.
+- Varnost, zmogljivost, učinkovitost animacije in izboljšave stabilnosti.
+</sl>
+
+<es-419>
+- Los anuncios discretos en pausas naturales ayudan a mantener Visor Crypto gratuito.
+- Bitcoin Acceso directo al mapa de calor más limpio en la pantalla de inicio.
+- Mejoras en seguridad, rendimiento, eficiencia de animación y estabilidad.
+</es-419>
+
+<es-ES>
+- Los anuncios discretos en pausas naturales ayudan a mantener Visor Crypto gratuito.
+- Bitcoin Acceso directo al mapa de calor más limpio en la pantalla de inicio.
+- Mejoras en seguridad, rendimiento, eficiencia de animación y estabilidad.
+</es-ES>
+
+<es-US>
+- Los anuncios discretos en pausas naturales ayudan a mantener Visor Crypto gratuito.
+- Bitcoin Acceso directo al mapa de calor más limpio en la pantalla de inicio.
+- Mejoras en seguridad, rendimiento, eficiencia de animación y estabilidad.
+</es-US>
+
+<sw>
+- Matangazo ya busara katika mapumziko ya asili husaidia kuweka Visor Crypto bila malipo.
+- Kisafishaji Bitcoin Njia ya mkato ya Ramani ya joto kwenye Skrini ya kwanza.
+- Usalama, utendakazi, ufanisi wa uhuishaji na uboreshaji wa uthabiti.
+</sw>
+
+<sv-SE>
+- Diskreta annonser vid naturliga pauser hjälper till att hålla Visor Crypto gratis.
+- Renare Bitcoin Värmekarta genväg på startskärmen.
+- Säkerhet, prestanda, animeringseffektivitet och stabilitetsförbättringar.
+</sv-SE>
+
+<ta-IN>
+- இயற்கையான இடைநிறுத்தங்களில் விவேகமான விளம்பரங்கள் Visor Cryptoஐ இலவசமாக வைத்திருக்க உதவும்.
+- முகப்புத் திரையில் கிளீனர் Bitcoin ஹீட்மேப் ஷார்ட்கட்.
+- பாதுகாப்பு, செயல்திறன், அனிமேஷன் செயல்திறன் மற்றும் நிலைப்புத்தன்மை மேம்பாடுகள்.
+</ta-IN>
+
+<te-IN>
+- సహజ విరామాలలో వివేకవంతమైన ప్రకటనలు Visor Cryptoని ఉచితంగా ఉంచడంలో సహాయపడతాయి.
+- హోమ్ స్క్రీన్‌లో క్లీనర్ Bitcoin హీట్‌మ్యాప్ సత్వరమార్గం.
+- భద్రత, పనితీరు, యానిమేషన్ సామర్థ్యం మరియు స్థిరత్వం మెరుగుదలలు.
+</te-IN>
+
+<th>
+- โฆษณาที่รอบคอบโดยหยุดชั่วคราวตามธรรมชาติช่วยให้ Visor Crypto เป็นอิสระ
+- Cleaner Bitcoin ทางลัด Heatmap บนหน้าจอหลัก
+- การปรับปรุงความปลอดภัย ประสิทธิภาพ ประสิทธิภาพของแอนิเมชั่น และความเสถียร
+</th>
+
+<tr-TR>
+- Doğal duraklamalardaki gizli reklamlar, Visor Crypto'nin ücretsiz kalmasına yardımcı olur.
+- Ana ekrandaki temiz Bitcoin Isı Haritası kısayolu.
+- Güvenlik, performans, animasyon verimliliği ve kararlılık iyileştirmeleri.
+</tr-TR>
+
+<uk>
+- Непомітна реклама на природних паузах допомагає зберегти Visor Crypto.
+- Очищувач Bitcoin Ярлик теплової карти на головному екрані.
+- Покращення безпеки, продуктивності, ефективності анімації та стабільності.
+</uk>
+
+<ur>
+- فطری وقفوں پر سمجھدار اشتہارات Visor Crypto کو مفت رکھنے میں مدد کرتے ہیں۔
+- کلینر Bitcoin ہوم اسکرین پر ہیٹ میپ کا شارٹ کٹ۔
+- سیکورٹی، کارکردگی، حرکت پذیری کی کارکردگی اور استحکام میں بہتری۔
+</ur>
+
+<vi>
+- Quảng cáo kín đáo ở các khoảng dừng tự nhiên giúp giữ cho Visor Crypto luôn trống.
+- Phím tắt Bản đồ nhiệt Bitcoin trên Màn hình chính của Trình dọn dẹp.
+- Cải thiện tính bảo mật, hiệu suất, hiệu quả hoạt ảnh và độ ổn định.
+</vi>
+
+<zu>
+- Izikhangiso ezihlakaniphile lapho umiswa okwesikhashana zisiza ukugcina i-Visor Crypto imahhala.
+- Isinqamuleli se-Heatmap Bitcoin Esihlanzekile esikrinini sasekhaya.
+- Ukuphepha, ukusebenza, ukusebenza kahle kopopayi nokuthuthukiswa kokuzinza.
+</zu>

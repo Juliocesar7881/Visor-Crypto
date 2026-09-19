@@ -1,0 +1,3 @@
+- Diskretni oglasi ob naravnih premorih pomagajo ohraniti Visor Crypto brezplačno.
+- Čistejša bližnjica za toplotni zemljevid Bitcoin na začetnem zaslonu.
+- Varnost, zmogljivost, učinkovitost animacije in izboljšave stabilnosti.

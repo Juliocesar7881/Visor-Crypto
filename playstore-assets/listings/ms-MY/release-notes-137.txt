@@ -1,0 +1,4 @@
+- Makluman isyarat 24/7 yang lebih dipercayai dengan FCM dan pemulihan automatik.
+- Keyakinan disegarkan apabila apl dibuka dan paling banyak setiap 10 minit semasa dibuka.
+- Pemilihan bahasa sistem automatik, sokongan RTL dan penyetempatan global.
+- Peningkatan prestasi dan kestabilan.

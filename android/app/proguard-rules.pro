@@ -26,10 +26,6 @@
 # Keep our custom plugins
 -keep class com.visorcrypto.app.** { *; }
 
-# Keep AdMob
--keep class com.google.android.gms.ads.** { *; }
--dontwarn com.google.android.gms.ads.**
-
 # Keep Firebase/FCM (if used)
 -keep class com.google.firebase.** { *; }
 -dontwarn com.google.firebase.**

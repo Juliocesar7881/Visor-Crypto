@@ -1,0 +1,3 @@
+- Diskretni oglasi u prirodnim pauzama pomažu da Visor Crypto ostane slobodan.
+- Čišći Bitcoin Prečac za toplinsku kartu na početnom zaslonu.
+- Poboljšanja sigurnosti, performansi, učinkovitosti animacije i stabilnosti.

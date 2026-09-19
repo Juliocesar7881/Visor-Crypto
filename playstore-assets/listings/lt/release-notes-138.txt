@@ -1,0 +1,3 @@
+- Diskretiški skelbimai natūraliomis pauzėmis padeda išlaikyti Visor Crypto laisvą.
+- Valytojo Bitcoin šilumos žemėlapio spartusis klavišas pagrindiniame ekrane.
+- Saugumo, našumo, animacijos efektyvumo ir stabilumo patobulinimai.

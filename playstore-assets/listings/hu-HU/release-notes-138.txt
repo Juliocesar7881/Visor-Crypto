@@ -1,0 +1,3 @@
+- A diszkrét hirdetések természetes szünetekben segítenek megőrizni a Visor Crypto ingyenességét.
+- Tisztább Bitcoin hőtérkép parancsikon a kezdőképernyőn.
+- Biztonság, teljesítmény, animáció hatékonysága és stabilitása.

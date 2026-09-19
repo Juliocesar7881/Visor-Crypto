@@ -1,0 +1,4 @@
+- Spolehlivější upozornění na signál 24/7 s FCM a automatickou obnovou.
+- Důvěra se obnovuje při otevření aplikace a maximálně každých 10 minut, když je otevřená.
+- Automatický výběr jazyka, manuální výběr, podpora RTL a globální lokalizace.
+- Vylepšení výkonu a stability.

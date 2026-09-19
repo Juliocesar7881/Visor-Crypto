@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">交易信号</string>
+    <string name="signal_channel_description">已确认的 LONG 和 SHORT 信号警报</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">置信度：%1$d%%</string>
+</resources>

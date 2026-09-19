@@ -1,0 +1,4 @@
+- Mer pålitelige 24/7-signalvarsler med FCM og automatisk gjenoppretting.
+- Tillit oppdateres når appen åpnes og maksimalt hvert 10. minutt mens den er åpen.
+- Automatisk systemspråkvalg, RTL-støtte og global lokalisering.
+- Ytelses- og stabilitetsforbedringer.

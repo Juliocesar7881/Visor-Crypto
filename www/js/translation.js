@@ -16,10 +16,9 @@
         
         function persistTranslationCache() {
             try {
-                // Keep only most recent 300 entries to avoid storage bloat
                 const keys = Object.keys(translationCache);
-                if (keys.length > 300) {
-                    const toKeep = keys.slice(-300);
+                if (keys.length > 1000) {
+                    const toKeep = keys.slice(-1000);
                     const trimmed = {};
                     toKeep.forEach(k => trimmed[k] = translationCache[k]);
                     localStorage.setItem(TRANSLATION_LS_KEY, JSON.stringify(trimmed));
@@ -35,19 +34,34 @@
             if (!dst) return false;
             return src !== dst;
         }
+
+        function getNewsTranslationTarget() {
+            const locale = window.VisorI18n && typeof window.VisorI18n.getLocale === 'function'
+                ? window.VisorI18n.getLocale()
+                : 'pt-BR';
+            const normalized = String(locale || 'en-US').replace(/^iw-/, 'he-');
+            if (normalized.toLowerCase().startsWith('en')) return 'en';
+            if (normalized.toLowerCase().startsWith('es')) return 'es';
+            if (normalized.toLowerCase().startsWith('fr')) return 'fr';
+            if (normalized.toLowerCase().startsWith('fa')) return 'fa';
+            if (normalized === 'fil') return 'tl';
+            return normalized;
+        }
         
         async function translateText(text) {
             if (!text || text.trim() === '') return text;
             
             // Se já está em cache, retornar
-            const cacheKey = text.trim().toLowerCase();
+            const targetLang = getNewsTranslationTarget();
+            if (targetLang === 'en') return text;
+            const cacheKey = `${targetLang}:${text.trim().toLowerCase()}`;
             if (translationCache[cacheKey]) {
                 return translationCache[cacheKey];
             }
             
             try {
                 // Usar Google Translate via API pública - Português Brasileiro
-                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=pt-BR&dt=t&q=${encodeURIComponent(text)}`;
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${encodeURIComponent(targetLang)}&dt=t&q=${encodeURIComponent(text)}`;
                 const response = await fetchWithTimeout(url, {}, 5000);
                 const data = await response.json();
                 
@@ -68,7 +82,7 @@
             
             // Fallback para MyMemory - Português Brasileiro
             try {
-                const response = await fetchWithTimeout(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|pt-BR`, {}, 3000);
+                const response = await fetchWithTimeout(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${encodeURIComponent(targetLang)}`, {}, 3000);
                 const data = await response.json();
                 
                 if (data.responseStatus === 200 && data.responseData?.translatedText) {
@@ -94,8 +108,11 @@
             const toTranslateIndices = [];
 
             // Verificar cache primeiro
+            const targetLang = getNewsTranslationTarget();
+            if (targetLang === 'en') return texts.slice();
+
             for (let i = 0; i < texts.length; i++) {
-                const cacheKey = (texts[i] || '').trim().toLowerCase();
+                const cacheKey = `${targetLang}:${(texts[i] || '').trim().toLowerCase()}`;
                 if (translationCache[cacheKey]) {
                     results[i] = translationCache[cacheKey];
                 } else {
@@ -110,7 +127,7 @@
             const joined = toTranslate.join('\n');
 
             try {
-                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=pt-BR&dt=t&q=${encodeURIComponent(joined)}`;
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${encodeURIComponent(targetLang)}&dt=t&q=${encodeURIComponent(joined)}`;
                 const response = await fetchWithTimeout(url, {}, 12000);
                 const data = await response.json();
 
@@ -126,7 +143,7 @@
                         const translated = (lines[i] || '').trim();
                         if (translated && isTranslationUsable(toTranslate[i], translated)) {
                             results[idx] = translated;
-                            const cacheKey = toTranslate[i].trim().toLowerCase();
+                            const cacheKey = `${targetLang}:${toTranslate[i].trim().toLowerCase()}`;
                             translationCache[cacheKey] = translated;
                         } else {
                             results[idx] = null;
@@ -157,7 +174,7 @@
             if (toTranslate.length === 0) return;
 
             // Chunks de 10 títulos — cada chunk = 1 HTTP request
-            const CHUNK = 10;
+            const CHUNK = 20;
             const chunks = [];
             for (let i = 0; i < toTranslate.length; i += CHUNK) {
                 chunks.push(toTranslate.slice(i, i + CHUNK));
@@ -174,11 +191,12 @@
                             chunk[j].translatedTitle = translatedTitle;
                             chunk[j].translationFailed = false;
                         } else {
-                            chunk[j].translationFailed = true;
+                            chunk[j].translationFailed = false;
+                            chunk[j].translationFailedAt = Date.now();
                         }
                     }
                 } catch (e) {
-                    chunk.forEach(n => { n.translationFailed = true; });
+                    chunk.forEach(n => { n.translationFailed = false; n.translationFailedAt = Date.now(); });
                 }
             }));
 
@@ -187,10 +205,11 @@
 
         // Pré-traduzir notícias restantes (roda em background após renderizar)
         async function preTranslateNews() {
-            const untranslated = allNews.filter(n => !n.translatedTitle && !n.translationFailed);
+            const now = Date.now();
+            const untranslated = allNews.filter(n => !n.translatedTitle && (!n.translationFailedAt || (now - n.translationFailedAt) > 120000));
             if (untranslated.length === 0) return;
 
-            const CHUNK = 10;
+            const CHUNK = 20;
             let translatedCount = 0;
             for (let i = 0; i < untranslated.length; i += CHUNK) {
                 const chunk = untranslated.slice(i, i + CHUNK);
@@ -204,11 +223,12 @@
                             chunk[j].translationFailed = false;
                             translatedCount++;
                         } else {
-                            chunk[j].translationFailed = true;
+                            chunk[j].translationFailed = false;
+                            chunk[j].translationFailedAt = Date.now();
                         }
                     }
                 } catch (e) {
-                    chunk.forEach(n => { n.translationFailed = true; });
+                    chunk.forEach(n => { n.translationFailed = false; n.translationFailedAt = Date.now(); });
                 }
                 // Pausa entre batches para não sobrecarregar
                 if (i + CHUNK < untranslated.length) {
@@ -217,4 +237,24 @@
             }
             if (translatedCount > 0) persistTranslationCache();
         }
-        
+
+        window.translateVisorText = async function(text, sourceLanguage = 'auto', requestedTarget = '') {
+            const sourceText = String(text || '').trim();
+            if (!sourceText) return sourceText;
+            const target = String(requestedTarget || getNewsTranslationTarget()).replace(/^iw-/, 'he-');
+            if (!target || (target.toLowerCase().startsWith('en') && sourceLanguage === 'en')) return sourceText;
+            const key = `${sourceLanguage}:${target}:${sourceText.toLowerCase()}`;
+            if (translationCache[key]) return translationCache[key];
+            try {
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sourceLanguage)}&tl=${encodeURIComponent(target)}&dt=t&q=${encodeURIComponent(sourceText)}`;
+                const response = await fetchWithTimeout(url, {}, 8000);
+                const data = await response.json();
+                const translated = (data?.[0] || []).map((part) => part?.[0] || '').join('').trim();
+                if (translated && !/undefined|\[object Object\]|\bNaN\b/i.test(translated)) {
+                    translationCache[key] = translated;
+                    persistTranslationCache();
+                    return translated;
+                }
+            } catch (_) {}
+            return sourceText;
+        };

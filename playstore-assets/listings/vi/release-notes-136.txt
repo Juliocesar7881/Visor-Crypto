@@ -1,0 +1,4 @@
+- Cảnh báo tín hiệu 24/7 đáng tin cậy hơn với FCM và phục hồi tự động.
+- Độ tin cậy được làm mới khi ứng dụng mở và tối đa 10 phút một lần khi mở.
+- Lựa chọn ngôn ngữ tự động, bộ chọn thủ công, hỗ trợ RTL và bản địa hóa toàn cầu.
+- Cải thiện hiệu suất và độ ổn định.

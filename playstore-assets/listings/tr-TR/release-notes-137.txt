@@ -1,0 +1,4 @@
+- FCM ve otomatik kurtarma ile daha güvenilir 7/24 sinyal uyarıları.
+- Güven, uygulama açıldığında ve açıkken en fazla 10 dakikada bir yenilenir.
+- Otomatik sistem dili seçimi, RTL desteği ve global yerelleştirme.
+- Performans ve kararlılık iyileştirmeleri.

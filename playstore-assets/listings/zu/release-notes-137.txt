@@ -1,0 +1,4 @@
+- Izaziso zesignali ezinokwethenjelwa kakhudlwana ezingu-24/7 nge-FCM nokuthola ngokuzenzakalelayo.
+- Ukuzethemba kuvuselela lapho uhlelo lokusebenza luvuleka futhi ngokuvamile njalo ngemizuzu eyi-10 ngenkathi luvuliwe.
+- Ukukhetha ulimi lwesistimu okuzenzakalelayo, ukusekelwa kwe-RTL nokwenza kwasendaweni emhlabeni jikelele.
+- Ukuthuthukiswa kokusebenza nokuzinza.

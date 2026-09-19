@@ -1,0 +1,3 @@
+- Diskrētas reklāmas dabiskās pauzēs palīdz saglabāt Visor Crypto brīvu.
+- Apkopēja Bitcoin siltuma kartes saīsne sākuma ekrānā.
+- Drošības, veiktspējas, animācijas efektivitātes un stabilitātes uzlabojumi.

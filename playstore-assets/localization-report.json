@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-16T13:37:04.719Z",
+  "locales": 87,
+  "messageKeys": 87,
+  "staticPhrases": 1381,
+  "fallback": "en-US",
+  "rtl": [
+    "ar",
+    "iw-IL",
+    "fa",
+    "fa-AE",
+    "fa-AF",
+    "fa-IR",
+    "ur"
+  ]
+}

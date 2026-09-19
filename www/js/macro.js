@@ -26,24 +26,39 @@ function switchMacroTab(tab) {
 }
 
         // FOMC Meeting Dates 2025-2026 com horários de anúncio (16:00 horário de Brasília)
+        // Legacy block is overridden immediately below with the current Fed calendar.
         const FOMC_MEETINGS = [
-            { date: '2025-01-29', label: '28-29 Jan 2025', time: '16:00' },
-            { date: '2025-03-19', label: '18-19 Mar 2025', time: '16:00' },
-            { date: '2025-05-07', label: '6-7 Mai 2025', time: '16:00' },
-            { date: '2025-06-18', label: '17-18 Jun 2025', time: '16:00' },
-            { date: '2025-07-30', label: '29-30 Jul 2025', time: '16:00' },
-            { date: '2025-09-17', label: '16-17 Set 2025', time: '16:00' },
-            { date: '2025-11-05', label: '4-5 Nov 2025', time: '16:00' },
-            { date: '2025-12-17', label: '16-17 Dez 2025', time: '16:00' },
             { date: '2026-01-28', label: '27-28 Jan 2026', time: '16:00' },
             { date: '2026-03-18', label: '17-18 Mar 2026', time: '16:00' },
-            { date: '2026-05-06', label: '5-6 Mai 2026', time: '16:00' },
+            { date: '2026-04-29', label: '28-29 Abr 2026', time: '15:00' },
             { date: '2026-06-17', label: '16-17 Jun 2026', time: '16:00' },
             { date: '2026-07-29', label: '28-29 Jul 2026', time: '16:00' },
             { date: '2026-09-16', label: '15-16 Set 2026', time: '16:00' },
-            { date: '2026-11-04', label: '3-4 Nov 2026', time: '16:00' },
-            { date: '2026-12-16', label: '15-16 Dez 2026', time: '16:00' }
+            { date: '2026-10-28', label: '27-28 Out 2026', time: '15:00' },
+            { date: '2026-12-09', label: '8-9 Dez 2026', time: '16:00' }
         ];
+
+        // Override legacy dates with the current official Fed calendar (reviewed 2026-04-27).
+        // This file is not loaded by index.html today, but keeping it current avoids stale packaged code.
+        FOMC_MEETINGS.splice(0, FOMC_MEETINGS.length, ...[
+            { date: '2026-01-28', label: '27-28 Jan 2026', time: '16:00' },
+            { date: '2026-03-18', label: '17-18 Mar 2026', time: '15:00' },
+            { date: '2026-04-29', label: '28-29 Abr 2026', time: '15:00' },
+            { date: '2026-06-17', label: '16-17 Jun 2026', time: '15:00' },
+            { date: '2026-07-29', label: '28-29 Jul 2026', time: '15:00' },
+            { date: '2026-09-16', label: '15-16 Set 2026', time: '15:00' },
+            { date: '2026-10-28', label: '27-28 Out 2026', time: '15:00' },
+            { date: '2026-12-09', label: '8-9 Dez 2026', time: '16:00' },
+            { date: '2027-01-27', label: '26-27 Jan 2027', time: '16:00' },
+            { date: '2027-03-17', label: '16-17 Mar 2027', time: '15:00' },
+            { date: '2027-04-28', label: '27-28 Abr 2027', time: '15:00' },
+            { date: '2027-06-09', label: '8-9 Jun 2027', time: '15:00' },
+            { date: '2027-07-28', label: '27-28 Jul 2027', time: '15:00' },
+            { date: '2027-09-15', label: '14-15 Set 2027', time: '15:00' },
+            { date: '2027-10-27', label: '26-27 Out 2027', time: '15:00' },
+            { date: '2027-12-08', label: '7-8 Dez 2027', time: '16:00' },
+            { date: '2028-01-26', label: '25-26 Jan 2028', time: '16:00' }
+        ]);
 
         function getNextFOMCMeeting() {
             const today = new Date();
@@ -173,19 +188,22 @@ function switchMacroTab(tab) {
                 
                 // 2. Buscar taxa atual do FRED (direto, sem proxy)
                 try {
-                    const fredKey = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
-                    if (!fredKey) throw new Error('FRED key not configured');
-                    const directUrl = `${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/series/observations?series_id=FEDFUNDS&sort_order=desc&limit=3&api_key=${fredKey}&file_type=json`;
+                    const workerUrl = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
+                    if (!workerUrl) throw new Error('Worker not configured');
+                    const directUrl = `${workerUrl}/history?series=FEDFUNDS&sort=desc&limit=3`;
                     
                     const fredRes = await fetchWithTimeout(directUrl, {}, 10000);
                     if (fredRes.ok) {
                         const fredData = await fredRes.json();
-                        if (fredData.observations && fredData.observations.length > 0) {
-                            const latestRate = parseFloat(fredData.observations[0].value);
+                        const observations = Array.isArray(fredData.data)
+                            ? fredData.data.map(o => ({ date: o.date, value: String(o.value) }))
+                            : (Array.isArray(fredData.observations) ? fredData.observations : []);
+                        if (observations.length > 0) {
+                            const latestRate = parseFloat(observations[0].value);
                             currentRate = `${(latestRate - 0.25).toFixed(2)}-${latestRate.toFixed(2)}%`;
                             
                             // Últimas decisões
-                            lastDecisions = fredData.observations.slice(0, 2).map(obs => ({
+                            lastDecisions = observations.slice(0, 2).map(obs => ({
                                 date: obs.date,
                                 rate: parseFloat(obs.value)
                             }));
@@ -291,14 +309,13 @@ function switchMacroTab(tab) {
             const lastDecisionEl = document.getElementById('last-fed-decision');
             
             // FRED API key - fallback direto quando proxy indisponível
-            const FRED_KEY = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
             const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
             
             try {
                 // Buscar últimas 400 observações do DFEDTARU para encontrar mudanças
-                const FRED_KEY_HIST = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
-                if (!FRED_KEY_HIST) throw new Error('FRED key not configured');
-                const directUrl = `${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/series/observations?series_id=DFEDTARU&sort_order=desc&limit=400&api_key=${FRED_KEY_HIST}&file_type=json`;
+                const workerUrl = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
+                if (!workerUrl) throw new Error('Worker not configured');
+                const directUrl = `${workerUrl}/history?series=DFEDTARU&sort=desc&limit=400`;
                 
                 let response = null;
                 try {
@@ -308,6 +325,9 @@ function switchMacroTab(tab) {
                 
                 if (!response || !response.ok) throw new Error('Todas as tentativas FRED falharam');
                 const fredData = await response.json();
+                if (Array.isArray(fredData.data) && !Array.isArray(fredData.observations)) {
+                    fredData.observations = fredData.data.map(o => ({ date: o.date, value: String(o.value) }));
+                }
                 
                 if (!fredData.observations || fredData.observations.length < 2) throw new Error('No data');
                 
@@ -471,22 +491,7 @@ function switchMacroTab(tab) {
                     } catch(e) {}
                 }
 
-                // Fallback: FRED direto
-                if (!historyData && FRED_API_KEY_CALENDAR) {
-                    try {
-                        const fredUrl = `${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=12&api_key=${FRED_API_KEY_CALENDAR}&file_type=json${unitsParam}`;
-                        const fredRes = await fetchWithTimeout(fredUrl, {}, 8000);
-                        if (fredRes.ok) {
-                            const fredData = await fredRes.json();
-                            if (fredData.observations) {
-                                historyData = fredData.observations
-                                    .filter(o => o.value && o.value !== '.')
-                                    .map(o => ({ date: o.date, value: parseFloat(o.value) }))
-                                    .reverse();
-                            }
-                        }
-                    } catch(e) {}
-                }
+                // Sem fallback direto para FRED no app; /history e caches locais cobrem o fluxo seguro.
                 
                 if (!historyData || historyData.length === 0) {
                     container.innerHTML = '';
@@ -690,7 +695,6 @@ function switchMacroTab(tab) {
         const CALENDAR_WORKER_URL = (window.APP_CONFIG && window.APP_CONFIG.CALENDAR_WORKER_URL) || '';
         
         // FRED API key - hardcoded como fallback (mesma do macro-section.js)
-        const FRED_API_KEY_CALENDAR = (window.APP_CONFIG && window.APP_CONFIG.FRED_KEY) || '';
         
         // FRED series IDs para dados históricos dos eventos
         const FRED_SERIES_MAP = {
@@ -801,34 +805,6 @@ function switchMacroTab(tab) {
                 }
             } catch(e) {}
             
-            // Tentativa 2: proxy allorigins (fallback para PWA/browser)
-            try {
-                const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, {}, 6000);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data)) {
-                        return data.filter(e => 
-                            (e.country || '').toUpperCase() === 'USD' && 
-                            e.impact === 'High'
-                        );
-                    }
-                }
-            } catch(e) {}
-            
-            // Tentativa 3: proxy corsproxy.io (fallback)
-            try {
-                const res = await fetchWithTimeout(`https://corsproxy.io/?${encodeURIComponent(url)}`, {}, 6000);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data)) {
-                        return data.filter(e => 
-                            (e.country || '').toUpperCase() === 'USD' && 
-                            e.impact === 'High'
-                        );
-                    }
-                }
-            } catch(e) {}
-            
             return [];
         }
         
@@ -859,8 +835,8 @@ function switchMacroTab(tab) {
                 const startStr = `${startDate.getFullYear()}-${pad(startDate.getMonth()+1)}-${pad(startDate.getDate())}`;
                 const endStr = `${endDate.getFullYear()}-${pad(endDate.getMonth()+1)}-${pad(endDate.getDate())}`;
                 
-                if (FRED_API_KEY_CALENDAR) {
-                    const fredUrl = `${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/releases/dates?realtime_start=${startStr}&realtime_end=${endStr}&api_key=${FRED_API_KEY_CALENDAR}&file_type=json&include_release_dates_with_no_data=true&sort_order=asc`;
+                if (false) {
+                    const fredUrl = '';
                     
                     try {
                         const res = await fetchWithTimeout(fredUrl, {}, 12000);
@@ -1586,8 +1562,6 @@ function switchMacroTab(tab) {
                 
                 // Também tentar com CORS proxy para browser
                 const corsProxies = [
-                    `https://corsproxy.io/?`,
-                    `https://api.allorigins.win/raw?url=`
                 ];
                 
                 let data = null;

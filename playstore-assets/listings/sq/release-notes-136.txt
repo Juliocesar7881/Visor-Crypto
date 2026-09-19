@@ -1,0 +1,4 @@
+- Sinjalizime më të besueshme të sinjalit 24/7 me FCM dhe rikuperim automatik.
+- Besimi rifreskohet kur hapet aplikacioni dhe maksimumi çdo 10 minuta kur është i hapur.
+- Zgjedhja automatike e gjuhës, përzgjedhësi manual, mbështetja RTL dhe lokalizimi global.
+- Përmirësime të performancës dhe stabilitetit.

@@ -1,0 +1,4 @@
+- Zanesljivejša 24/7 signalna opozorila s FCM in samodejno obnovitvijo.
+- Zaupanje se osveži, ko se aplikacija odpre in največ vsakih 10 minut, ko je odprta.
+- Samodejna izbira sistemskega jezika, podpora RTL in globalna lokalizacija.
+- Izboljšave zmogljivosti in stabilnosti.

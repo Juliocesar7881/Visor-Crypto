@@ -1,0 +1,4 @@
+- Spoľahlivejšie upozornenia na signál 24/7 s FCM a automatickou obnovou.
+- Dôvera sa obnovuje pri otvorení aplikácie a maximálne každých 10 minút, keď je otvorená.
+- Automatický výber jazyka, manuálny volič, podpora RTL a globálna lokalizácia.
+- Vylepšenia výkonu a stability.

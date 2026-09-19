@@ -1,0 +1,4 @@
+- Peringatan sinyal 24/7 yang lebih andal dengan FCM dan pemulihan otomatis.
+- Keyakinan disegarkan saat aplikasi dibuka dan paling banyak setiap 10 menit saat dibuka.
+- Pemilihan bahasa otomatis, pemilih manual, dukungan RTL dan lokalisasi global.
+- Peningkatan kinerja dan stabilitas.

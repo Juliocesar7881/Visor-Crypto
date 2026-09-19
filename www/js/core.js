@@ -40,6 +40,18 @@
             }
             return false;
         }
+
+        async function unlockOrientation() {
+            try {
+                const plugin = await getScreenOrientationPlugin();
+                if (plugin && typeof plugin.unlock === 'function') {
+                    await plugin.unlock();
+                    return true;
+                }
+            } catch (e) {
+            }
+            return false;
+        }
         
         // ============================================
         // GLOBAL ERROR HANDLER — Prevent unhandled crashes
@@ -123,7 +135,7 @@
         let allNews = [];
         let aiClassifiedNews = []; // AI-classified news from backend
         let aiNewsLoaded = false;  // Whether backend AI news was successfully loaded
-        const NEWS_BACKEND_URL = 'https://visor-crypto-api.onrender.com/api';
+        const NEWS_BACKEND_URL = String(window.APP_CONFIG?.CALENDAR_WORKER_URL || 'https://visorcrypto.loan').trim().replace(/\/+$/, '');
         let translationCache = {}; // Cache de traduções
         let translationQueue = []; // Fila de traduções
         let isTranslating = false;

@@ -1,0 +1,3 @@
+- Doğal duraklamalardaki gizli reklamlar, Visor Crypto'nin ücretsiz kalmasına yardımcı olur.
+- Ana ekrandaki temiz Bitcoin Isı Haritası kısayolu.
+- Güvenlik, performans, animasyon verimliliği ve kararlılık iyileştirmeleri.

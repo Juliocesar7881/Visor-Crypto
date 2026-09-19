@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">ట్రేడింగ్ సిగ్నల్స్</string>
+    <string name="signal_channel_description">ధృవీకరించబడిన LONG మరియు SHORT సిగ్నల్ హెచ్చరికలు</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">విశ్వాసం: %1$d%%</string>
+</resources>

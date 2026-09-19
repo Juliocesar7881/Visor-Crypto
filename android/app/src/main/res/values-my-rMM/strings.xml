@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">ကုန်သွယ်မှုအချက်ပြမှုများ</string>
+    <string name="signal_channel_description">LONG နှင့် SHORT အချက်ပြ သတိပေးချက်များကို အတည်ပြုထားသည်</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">ယုံကြည်မှု- %1$d%%</string>
+</resources>

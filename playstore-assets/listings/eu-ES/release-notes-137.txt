@@ -1,0 +1,4 @@
+- 24/7 seinalearen alerta fidagarriagoak FCM eta berreskuratze automatikoarekin.
+- Konfiantza freskatzen da aplikazioa irekitzen denean eta irekita dagoen bitartean gehienez 10 minutuz behin.
+- Sistemaren hizkuntza aukeraketa automatikoa, RTL euskarria eta lokalizazio globala.
+- Errendimendua eta egonkortasuna hobetzea.

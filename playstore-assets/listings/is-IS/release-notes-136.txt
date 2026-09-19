@@ -1,0 +1,4 @@
+- Áreiðanlegri 24/7 merki viðvaranir með FCM og sjálfvirkri endurheimt.
+- Sjálfstraust endurnýjast þegar appið opnast og í mesta lagi á 10 mínútna fresti þegar það er opið.
+- Sjálfvirkt tungumálaval, handvirkt val, RTL stuðningur og alþjóðleg staðsetning.
+- Endurbætur á afköstum og stöðugleika.

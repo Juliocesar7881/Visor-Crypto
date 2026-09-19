@@ -1,0 +1,4 @@
+- Mas maaasahang 24/7 signal alert na may FCM at awtomatikong pagbawi.
+- Nagre-refresh ang kumpiyansa kapag bumukas ang app at hindi hihigit sa bawat 10 minuto habang bukas.
+- Awtomatikong pagpili ng wika, manu-manong tagapili, suporta sa RTL at pandaigdigang lokalisasyon.
+- Mga pagpapabuti sa pagganap at katatagan.

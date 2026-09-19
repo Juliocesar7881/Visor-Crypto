@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">אותות מסחר</string>
+    <string name="signal_channel_description">התראות אות LONG ו-SHORT מאושרות</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">ביטחון: %1$d%%</string>
+</resources>

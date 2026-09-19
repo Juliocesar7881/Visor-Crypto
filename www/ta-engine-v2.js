@@ -616,8 +616,10 @@
             const toDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             
             const [calendarRes, newsRes] = await Promise.all([
-                fetch(`${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fmp/api/v3/economic_calendar?from=${fromDate}&to=${toDate}`)
-                    .then(r => r.ok ? r.json() : []).catch(() => []),
+                fetch(`${window.APP_CONFIG.CALENDAR_WORKER_URL}/calendar?from=${fromDate}&to=${toDate}`)
+                    .then(r => r.ok ? r.json() : [])
+                    .then(json => Array.isArray(json) ? json : (Array.isArray(json.events) ? json.events : []))
+                    .catch(() => []),
                 // CryptoPanic for urgent crypto news
                 fetch(`https://cryptopanic.com/api/free/v1/posts/?public=true&kind=news&filter=important`)
                     .then(r => r.ok ? r.json() : { results: [] }).catch(() => ({ results: [] }))
@@ -758,7 +760,7 @@
         };
         
         try {
-            // === Yahoo Finance batch request with CORS proxy fallback ===
+            // === Yahoo Finance batch request with Worker fallback ===
             const yhSymbols = 'AAPL,MSFT,TSLA,META,NVDA,%5EGSPC,%5EVIX,DX-Y.NYB,%5ETNX,%5ETYX,%5EFVX,%5EIRX';
             const yhUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yhSymbols}`;
             
@@ -788,32 +790,30 @@
                     }
                 } catch(e) { /* console.log('YF query2 failed:', e.message); */ }
                 
-                // Strategy 3: CORS proxy (corsproxy.io)
+                // Strategy 3: Worker allowlisted cache
                 try {
-                    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(yhUrl);
-                    const r3 = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+                    const workerUrl = String(window.APP_CONFIG?.CALENDAR_WORKER_URL || '').replace(/\/+$/, '');
+                    if (!workerUrl) return null;
+                    const r3 = await fetch(`${workerUrl}/market/yahoo-quotes?symbols=${yhSymbols}`, {
+                        headers: { 'Accept': 'application/json' },
+                        signal: AbortSignal.timeout(8000)
+                    });
                     if (r3.ok) {
                         const json = await r3.json();
                         if (json?.quoteResponse?.result?.length > 0) return json;
                     }
-                } catch(e) { /* console.log('YF corsproxy failed:', e.message); */ }
-                
-                // Strategy 4: allorigins proxy
-                try {
-                    const allOriginsUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(yhUrl);
-                    const r4 = await fetch(allOriginsUrl, { signal: AbortSignal.timeout(10000) });
-                    if (r4.ok) {
-                        const json = await r4.json();
-                        if (json?.quoteResponse?.result?.length > 0) return json;
-                    }
-                } catch(e) { /* console.log('YF allorigins failed:', e.message); */ }
+                } catch(e) { /* console.log('YF worker failed:', e.message); */ }
                 
                 return null;
             }
             
             const fredFetch = (seriesId) => {
-                return fetch(`${window.APP_CONFIG.CALENDAR_WORKER_URL}/proxy/fred/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=1&file_type=json`, { signal: AbortSignal.timeout(8000) })
+                return fetch(`${window.APP_CONFIG.CALENDAR_WORKER_URL}/history?series=${seriesId}&sort=desc&limit=1`, { signal: AbortSignal.timeout(8000) })
                     .then(r => r.ok ? r.json() : null)
+                    .then(json => {
+                        if (!json || !Array.isArray(json.data)) return json;
+                        return { observations: json.data.map(o => ({ date: o.date, value: String(o.value) })) };
+                    })
                     .catch(() => null);
             };
             
@@ -1260,52 +1260,70 @@
     // 7. DYNAMIC TARGETS (ATR-based R:R)
     // ========================================================================
     function calculateDynamicTargets(signalType, currentPrice, atr1h, atr4h, poc, vah, val) {
-        if (signalType === 'neutral' || !atr1h) {
+        // RULE: if neutral or no price, return explicit nulls (render layer handles this)
+        if (signalType === 'neutral' || !currentPrice || currentPrice <= 0) {
             return { entry: null, sl: null, tp1: null, tp2: null, tp3: null, rr1: null, rr2: null, rr3: null };
         }
-        
+
+        // ATR must come from real candles. Do not synthesize stop/target distance.
+        const atr = (Number.isFinite(atr1h) && atr1h > 0) ? atr1h
+                   : (Number.isFinite(atr4h) && atr4h > 0) ? atr4h
+                   : 0;
+        if (!Number.isFinite(atr) || atr <= 0) {
+            return { entry: null, sl: null, tp1: null, tp2: null, tp3: null, rr1: null, rr2: null, rr3: null };
+        }
+
         const entry = currentPrice;
-        const atr = atr1h;
-        
+        // Sanitize Volume Profile levels — treat 0 or non-finite as unavailable
+        const safePoc = (Number.isFinite(poc) && poc > 0) ? poc : 0;
+        const safeVah = (Number.isFinite(vah) && vah > 0) ? vah : 0;
+        const safeVal = (Number.isFinite(val) && val > 0) ? val : 0;
+
+        // Helper: ensure a number is finite and positive, else use fallback
+        const safeNum = (v, fb) => (Number.isFinite(v) && v > 0) ? v : fb;
+        const safeRR = (reward, risk) => (Number.isFinite(risk) && risk > 0 && Number.isFinite(reward)) ? (reward / risk).toFixed(1) : '0';
+
         if (signalType === 'long') {
-            const sl = Math.max(val * 0.998, currentPrice - atr * 1.5);
-            const risk = entry - sl;
-            
-            const tp1 = poc > currentPrice ? poc : currentPrice + atr * 1.5;
-            const tp2 = vah > currentPrice ? vah : currentPrice + atr * 2.5;
+            const slRaw = safeVal > 0 ? Math.max(safeVal * 0.998, currentPrice - atr * 1.5) : currentPrice - atr * 1.5;
+            const sl = safeNum(slRaw, currentPrice - atr * 1.5);
+            const risk = Math.max(entry - sl, atr * 0.5); // GUARANTEE: risk > 0
+
+            const tp1 = (safePoc > currentPrice) ? safePoc : currentPrice + atr * 1.5;
+            const tp2 = (safeVah > currentPrice) ? safeVah : currentPrice + atr * 2.5;
             const tp3 = currentPrice + atr * 4;
-            
+
             return {
                 entry,
                 sl,
-                tp1,
-                tp2,
-                tp3,
-                rr1: risk > 0 ? ((tp1 - entry) / risk).toFixed(1) : '0',
-                rr2: risk > 0 ? ((tp2 - entry) / risk).toFixed(1) : '0',
-                rr3: risk > 0 ? ((tp3 - entry) / risk).toFixed(1) : '0',
+                tp1: safeNum(tp1, currentPrice + atr * 1.5),
+                tp2: safeNum(tp2, currentPrice + atr * 2.5),
+                tp3: safeNum(tp3, currentPrice + atr * 4),
+                rr1: safeRR(tp1 - entry, risk),
+                rr2: safeRR(tp2 - entry, risk),
+                rr3: safeRR(tp3 - entry, risk),
                 risk,
-                riskPercent: ((risk / entry) * 100).toFixed(2)
+                riskPercent: (entry > 0 ? (risk / entry) * 100 : 0).toFixed(2)
             };
         } else {
-            const sl = Math.min(vah * 1.002, currentPrice + atr * 1.5);
-            const risk = sl - entry;
-            
-            const tp1 = poc < currentPrice ? poc : currentPrice - atr * 1.5;
-            const tp2 = val < currentPrice ? val : currentPrice - atr * 2.5;
+            const slRaw = safeVah > 0 ? Math.min(safeVah * 1.002, currentPrice + atr * 1.5) : currentPrice + atr * 1.5;
+            const sl = safeNum(slRaw, currentPrice + atr * 1.5);
+            const risk = Math.max(sl - entry, atr * 0.5); // GUARANTEE: risk > 0
+
+            const tp1 = (safePoc > 0 && safePoc < currentPrice) ? safePoc : currentPrice - atr * 1.5;
+            const tp2 = (safeVal > 0 && safeVal < currentPrice) ? safeVal : currentPrice - atr * 2.5;
             const tp3 = currentPrice - atr * 4;
-            
+
             return {
                 entry,
                 sl,
-                tp1,
-                tp2,
-                tp3,
-                rr1: risk > 0 ? ((entry - tp1) / risk).toFixed(1) : '0',
-                rr2: risk > 0 ? ((entry - tp2) / risk).toFixed(1) : '0',
-                rr3: risk > 0 ? ((entry - tp3) / risk).toFixed(1) : '0',
+                tp1: safeNum(tp1, currentPrice - atr * 1.5),
+                tp2: safeNum(tp2, currentPrice - atr * 2.5),
+                tp3: safeNum(tp3, currentPrice - atr * 4),
+                rr1: safeRR(entry - tp1, risk),
+                rr2: safeRR(entry - tp2, risk),
+                rr3: safeRR(entry - tp3, risk),
                 risk,
-                riskPercent: ((risk / entry) * 100).toFixed(2)
+                riskPercent: (entry > 0 ? (risk / entry) * 100 : 0).toFixed(2)
             };
         }
     }

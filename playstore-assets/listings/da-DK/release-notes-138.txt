@@ -1,0 +1,3 @@
+- Diskrete annoncer med naturlige pauser hjælper med at holde Visor Crypto fri.
+- Renere Bitcoin Heatmap-genvej på startskærmen.
+- Sikkerhed, ydeevne, animationseffektivitet og stabilitetsforbedringer.

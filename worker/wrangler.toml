@@ -1,21 +1,46 @@
 name = "visor-crypto-calendar"
 main = "index.js"
 compatibility_date = "2024-01-01"
+workers_dev = true
 
-# Route to the newly purchased domain
-routes = [{pattern = "visorcrypto.loan", custom_domain = true}]
+# Custom domain visorcrypto.loan is not in this Cloudflare account.
+# The app uses the workers.dev URL until the domain is moved/proxied here.
+# routes = [{pattern = "visorcrypto.loan", custom_domain = true}]
 
 [[kv_namespaces]]
 binding = "CALENDAR_KV"
 id = "8e2cc438aee541088ec5ca2da3496947"
 
+[[d1_databases]]
+binding = "VISOR_DB"
+database_name = "visor-db"
+database_id = "69ee9294-8734-44a5-8635-03283bc04292"
+
 [[durable_objects.bindings]]
 name = "CALL_HISTORY_DO"
 class_name = "CallHistoryDO"
+
+[[durable_objects.bindings]]
+name = "LIQUIDATIONS_DO"
+class_name = "LiquidationsDO"
+
+[[durable_objects.bindings]]
+name = "NOTIFICATION_REGISTRY_DO"
+class_name = "NotificationRegistryDO"
 
 [[migrations]]
 tag = "v1_call_history_do"
 new_sqlite_classes = ["CallHistoryDO"]
 
+[[migrations]]
+tag = "v2_free_first_scale_dos"
+new_sqlite_classes = ["LiquidationsDO", "NotificationRegistryDO"]
+
 [triggers]
-crons = ["*/5 * * * *"]
+crons = [
+  "*/5 * * * *",
+  "4,14,24,34,44,54 * * * *",
+  "2,17,32,47 * * * *",
+  "7,22,37,52 * * * *",
+  "12,42 * * * *"
+]

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">Sygnały handlowe</string>
+    <string name="signal_channel_description">Potwierdzone alerty dotyczące sygnałów LONG i SHORT</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">Pewność: %1$d%%</string>
+</resources>

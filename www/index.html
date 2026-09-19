@@ -3,15 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Visor Crypto - Análise de Criptomoedas em Tempo Real</title>
+    <title>Visor Crypto: Bitcoin, sinais e noticias cripto</title>
 
     <!-- Macro Section flag -->
     <script>window.__MACRO_SECTION_LOADING__ = true;</script>
 
     <!-- SEO & PWA Meta Tags -->
-    <meta name="description" content="Visor Crypto: análise técnica avançada de criptomoedas em tempo real. Preços, sinais de trading, notícias filtradas por IA, indicadores macroeconômicos e alertas de baleias.">
-    <meta name="keywords" content="crypto, criptomoedas, bitcoin, ethereum, análise técnica, sinais trading, preços tempo real, whale alert, macroeconomia, fed watch">
+    <meta name="description" content="Visor Crypto acompanha Bitcoin, altcoins, sinais cripto, noticias filtradas, analise tecnica e indicadores macro em tempo real.">
+    <meta name="keywords" content="bitcoin, cripto, criptomoedas, altcoins, sinais cripto, noticias cripto, analise tecnica, mercado financeiro, Fed Watch, Altseason Index">
     <meta name="author" content="Visor Crypto">
+    <link rel="canonical" href="https://visorcrypto.loan/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Visor Crypto">
+    <meta property="og:title" content="Visor Crypto: Bitcoin, sinais e noticias cripto">
+    <meta property="og:description" content="Bitcoin, sinais cripto, noticias e macro em tempo real.">
+    <meta property="og:image" content="https://visorcrypto.loan/Icone.png">
+    <meta property="og:url" content="https://visorcrypto.loan/">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Visor Crypto: Bitcoin, sinais e noticias cripto">
+    <meta name="twitter:description" content="Precos, sinais, noticias filtradas e macro/Fed Watch em um painel cripto.">
+    <meta name="twitter:image" content="https://visorcrypto.loan/Icone.png">
     <meta name="theme-color" content="#58a6ff">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -20,8 +31,8 @@
     <link rel="apple-touch-icon" href="icons/icon-192.png">
 
     <!-- Fonts & Icons -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="vendor/inter/inter.css">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
 
     <!-- Styles -->
     <link rel="stylesheet" href="css/styles.css">
@@ -259,8 +270,8 @@
                             <div style="margin-bottom:10px;">
                                 <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Confiança mínima para alerta</div>
                                 <div style="display:flex;align-items:center;gap:8px;">
-                                    <input type="range" id="notif-confidence-slider" min="70" max="100" value="75" step="5" oninput="updateNotifConfLabel(this.value)" onchange="saveNotifConfig()" style="flex:1;accent-color:#6366f1;">
-                                    <span id="notif-confidence-label" style="font-size:14px;font-weight:800;color:#6366f1;min-width:36px;text-align:right;">75%</span>
+                                    <input type="range" id="notif-confidence-slider" min="70" max="100" value="70" step="1" oninput="updateNotifConfLabel(this.value)" onchange="saveNotifConfig()" style="flex:1;accent-color:#6366f1;">
+                                    <span id="notif-confidence-label" style="font-size:14px;font-weight:800;color:#6366f1;min-width:36px;text-align:right;">70%</span>
                                 </div>
                             </div>
                             <div style="margin-top:10px;padding:8px;background:rgba(99,102,241,0.1);border-radius:8px;font-size:10px;color:var(--text-muted);text-align:center;">
@@ -544,6 +555,16 @@
                     </div>
                 </div>
 
+                <div class="home-heatmap-action">
+                    <button class="btc-heatmap-button" onclick="openBtcHeatmap()" aria-label="Abrir Heatmap BTC">
+                        <div class="btc-heatmap-icon">
+                            <i class="fas fa-fire"></i>
+                        </div>
+                        <span class="btc-heatmap-label">Heatmap BTC</span>
+                        <i class="fas fa-chevron-right btc-heatmap-arrow"></i>
+                    </button>
+                </div>
+
                 <div class="card ai-card">
                     <div class="card-header">
                         <div class="card-title">
@@ -641,7 +662,7 @@
                         <span>Altseason</span>
                     </div>
                     <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted); text-align: center;">
-                        <span id="altseason-status">Calculando...</span>
+                        <span id="altseason-status">Carregando dados...</span>
                     </div>
                 </div>
 
@@ -999,7 +1020,7 @@
                     <div class="card-header" style="margin-bottom: 12px;">
                         <div class="card-title">
                             <i class="fas fa-calendar-week"></i>
-                            Calendário EUA • Alta Importância • 30 dias
+                            Calendário EUA • Próximos 30 dias
                         </div>
                     </div>
                     <div id="economic-calendar">
@@ -1110,7 +1131,7 @@
                     </div>
                     <div id="dash-active-count" class="dash-pill">0 sinais</div>
                 </div>
-                <div id="dash-active-signals" style="display:flex;flex-direction:column;gap:6px;margin-bottom:2px;">
+                <div id="dash-active-signals" style="display:flex;flex-direction:column;gap:4px;margin-bottom:2px;">
                     <div class="dash-empty-state">
                         <i class="fas fa-satellite-dish" style="font-size:32px;margin-bottom:12px;opacity:0.2;"></i>
                         <div style="font-size:14px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">Nenhum sinal ativo</div>
@@ -1150,7 +1171,7 @@
                         <div onclick="dashFilterHistory('short')" class="dash-hist-filter" data-filter="short">Short</div>
                     </div>
                 </div>
-                <div id="dash-history-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:2px;max-height:440px;overflow-y:auto;padding-right:2px;">
+                <div id="dash-history-list" style="display:flex;flex-direction:column;gap:3px;margin-bottom:2px;max-height:320px;overflow-y:auto;padding-right:2px;">
                     <div class="dash-empty-state">
                         <i class="fas fa-clock-rotate-left" style="font-size:32px;margin-bottom:12px;opacity:0.2;"></i>
                         <div style="font-size:14px;font-weight:700;color:var(--text-secondary);margin-bottom:4px;">Nenhum histórico ainda</div>
@@ -1168,13 +1189,21 @@
                     </div>
                 </div>
                 <div class="card" id="dash-signal-settings-card">
+                    <button id="ad-privacy-options-button" class="app-privacy-button" type="button" hidden onclick="window.showAdPrivacyOptions && window.showAdPrivacyOptions()">
+                        <i class="fas fa-shield-alt" aria-hidden="true"></i>
+                        <span>
+                            <strong data-i18n="adPrivacyOptions">Ad privacy options</strong>
+                            <small data-i18n="adPrivacyDescription">Review your consent choices</small>
+                        </span>
+                        <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                    </button>
                     <!-- Global Confidence -->
                     <div style="margin-bottom:16px;">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                            <div style="font-size:12px;font-weight:700;color:var(--text-primary);">Confiança mínima global</div>
+                            <div class="global-confidence-label" style="font-size:12px;font-weight:700;color:var(--text-primary);">Confiança mínima global</div>
                             <span id="dash-global-label" style="font-size:15px;font-weight:800;color:#6366f1;">70%</span>
                         </div>
-                           <input type="range" class="signal-conf-slider" id="dash-global-slider" min="70" max="100" value="70" step="5"
+                           <input type="range" class="signal-conf-slider" id="dash-global-slider" min="70" max="100" value="70" step="1"
                                oninput="dashUpdateGlobalLabel(this.value)" onchange="dashSaveGlobalConf()"
                                style="width:100%;accent-color:#6366f1;height:4px;">
                         <div style="display:flex;justify-content:space-between;margin-top:4px;">
@@ -1183,7 +1212,7 @@
                         </div>
                     </div>
                     <div style="height:1px;background:var(--border-subtle);margin-bottom:14px;"></div>
-                    <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:10px;">Por Criptomoeda</div>
+                    <div class="per-crypto-label" style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;margin-bottom:10px;">Por Criptomoeda</div>
                     <div id="dash-crypto-items" style="display:flex;flex-direction:column;gap:6px;">
                         <!-- Generated by JS -->
                     </div>
@@ -1196,23 +1225,23 @@
 
         <!-- Bottom Navigation -->
         <div class="bottom-nav">
-            <div class="nav-item active" onclick="showSection('home')">
+            <div class="nav-item active" data-section="home" role="button" tabindex="0">
                 <i class="fas fa-home"></i>
                 <span>Home</span>
             </div>
-            <div class="nav-item" onclick="showSection('dashboard')">
+            <div class="nav-item" data-section="dashboard" role="button" tabindex="0">
                 <i class="fas fa-satellite-dish"></i>
                 <span>Sinais</span>
             </div>
-            <div class="nav-item" onclick="showSection('news')">
+            <div class="nav-item" data-section="news" role="button" tabindex="0">
                 <i class="fas fa-newspaper"></i>
                 <span>Notícias</span>
             </div>
-            <div class="nav-item" onclick="showSection('macro')">
+            <div class="nav-item" data-section="macro" role="button" tabindex="0">
                 <i class="fas fa-landmark"></i>
                 <span>Macro</span>
             </div>
-            <div class="nav-item" onclick="showSection('analysis')">
+            <div class="nav-item" data-section="analysis" role="button" tabindex="0">
                 <i class="fas fa-chart-line"></i>
                 <span>Análise</span>
             </div>
@@ -1234,6 +1263,8 @@
 
     <!-- App Modules (load order matters - core first, init/lifecycle last) -->
     <script src="js/config.js"></script>
+    <script src="js/generated-locales.js"></script>
+    <script src="js/i18n.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/core.js"></script>
     <script src="js/browser.js"></script>
@@ -1245,6 +1276,7 @@
     <script src="js/init.js"></script>
     <script src="js/charts.js"></script>
     <script src="js/signals.js"></script>
+    <script src="js/monetization.js"></script>
     <script src="js/technical.js"></script>
     <script src="js/whale.js"></script>
     <script src="js/lifecycle.js"></script>

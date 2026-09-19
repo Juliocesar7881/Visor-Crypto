@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">សញ្ញាជួញដូរ</string>
+    <string name="signal_channel_description">បាន​បញ្ជាក់ LONG និង SHORT សញ្ញា​ជូន​ដំណឹង</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">ទំនុកចិត្ត៖ %1$d%%</string>
+</resources>

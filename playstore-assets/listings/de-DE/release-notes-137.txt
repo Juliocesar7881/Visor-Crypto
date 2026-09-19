@@ -1,0 +1,4 @@
+- Zuverlässigere Signalwarnungen rund um die Uhr mit FCM und automatischer Wiederherstellung.
+- Das Vertrauen wird aktualisiert, wenn die App geöffnet wird und höchstens alle 10 Minuten, während sie geöffnet ist.
+- Automatische Systemsprachenauswahl, RTL-Unterstützung und globale Lokalisierung.
+- Leistungs- und Stabilitätsverbesserungen.

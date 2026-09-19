@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">ट्रेडिंग सिग्नल</string>
+    <string name="signal_channel_description">LONG आणि SHORT सिग्नल सूचनांची पुष्टी केली</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">आत्मविश्वास: %1$d%%</string>
+</resources>

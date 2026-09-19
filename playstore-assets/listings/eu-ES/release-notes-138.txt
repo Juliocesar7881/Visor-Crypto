@@ -1,0 +1,3 @@
+- Etenaldi naturaletan iragarki diskretuek Visor Crypto libre mantentzen laguntzen dute.
+- Bitcoin bero-mapa lasterbide garbitzailea hasierako pantailan.
+- Segurtasuna, errendimendua, animazioaren eraginkortasuna eta egonkortasunaren hobekuntzak.

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="signal_channel_name">取引シグナル</string>
+    <string name="signal_channel_description">LONG および SHORT 信号アラートを確認しました</string>
+    <string name="signal_notification_title">%1$s - %2$s</string>
+    <string name="signal_notification_body">信頼度: %1$d%%</string>
+</resources>
