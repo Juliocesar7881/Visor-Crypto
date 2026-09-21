@@ -1,6 +1,6 @@
 {
   "name": "worker",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Cloudflare Worker que serve o calendário econômico dos EUA com dados limpos e deduplicados.",
   "main": "index.js",
   "scripts": {

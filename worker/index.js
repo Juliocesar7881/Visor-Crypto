@@ -35,7 +35,7 @@ const LIQUIDATIONS_BASE_SYMBOLS = [
 const CALLS_POST_RATE_LIMIT_PER_DEVICE = 60;  // writes per minute per authenticated device
 const CALLS_POST_RATE_LIMIT_PER_IP = 1200;    // shared IP ceiling to preserve burst capacity behind NAT
 const CALLS_POST_RATE_WINDOW_SECONDS = 60;
-const WORKER_BUILD_VERSION = '1.3.1';
+const WORKER_BUILD_VERSION = '1.3.2';
 const CALL_HISTORY_STORAGE_VERSION = 'v6';
 const SHARED_CALL_HISTORY_KEY = `shared_call_history_${CALL_HISTORY_STORAGE_VERSION}`;
 const CALL_HISTORY_DO_KEY = `calls_${CALL_HISTORY_STORAGE_VERSION}`;
@@ -89,6 +89,16 @@ const NOTIF_PREFS_SYNC_WINDOW_SECONDS = 90 * 24 * 60 * 60;
 const SIGNAL_TOPIC_PROTOCOL_VERSION = 'topic_v1';
 const SIGNAL_TOPIC_PREFIX = 'visor_s6_inv_';
 const SIGNAL_RUNTIME_STATUS_KEY = 'signals';
+// Workers Free allows 10 ms of CPU per invocation; these caches keep the
+// 5-minute cron and the hot GET routes under it (see loadCallFeedbackStatsCached).
+const CALLS_REVISION_KEY = 'calls_revision';
+const SIGNAL_FEEDBACK_CACHE_KEY = 'signal_feedback_v1';
+const SIGNAL_FEEDBACK_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+const SIGNAL_FEEDBACK_STALE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const CALLS_PAGE_CACHE_PREFIX = 'calls_page_v1:';
+const CALLS_PAGE_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+const SIGNALS_HTTP_REFRESH_LOCK_KEY = 'signals_http_refresh_lock';
+const FCM_ACCESS_TOKEN_KV_KEY = 'fcm_access_token_v1';
 const SIGNAL_CRON_EXPRESSION = '*/5 * * * *';
 const LEGACY_PUSH_CRON_EXPRESSION = '4,14,24,34,44,54 * * * *';
 const MARKET_CRON_EXPRESSION = '2,17,32,47 * * * *';
@@ -182,7 +192,12 @@ function normalizeUsdmPriceForAppSymbol(rawSymbol, rawPrice) {
 }
 
 function scaleUsdmKlineForAppSymbol(row, rawSymbol) {
-    const spec = getUsdmContractSpec(rawSymbol);
+    return scaleUsdmKlineRow(row, getUsdmContractSpec(rawSymbol));
+}
+
+// Takes a resolved spec so batch callers resolve the contract once per symbol,
+// not once per candle (2,640 lookups per signal cron otherwise).
+function scaleUsdmKlineRow(row, spec) {
     if (!spec || !Array.isArray(row)) return row;
     if (spec.priceScale === 1) return row;
     const out = [...row];
@@ -832,6 +847,7 @@ async function d1PersistCalls(env, rawCalls, options = {}) {
             written += batch.length;
         }
     }
+    if (written > 0) await d1BumpCallsRevision(env).catch(() => false);
     return { written, calls: rows.map((row) => row.call) };
 }
 
@@ -910,7 +926,8 @@ async function d1GetCallsPayload(env, options = {}) {
     const limit = Math.min(Math.max(Number(options.limit || 100) || 100, 1), 500);
     const filterDir = normalizeSignalDirection(options.direction || '');
     const settlementLimit = Math.min(120, Math.max(20, limit));
-    let settlementCalls = await d1ListCalls(env, { limit: settlementLimit });
+    // Only list the settlement window when settling; plain reads skipped it anyway.
+    const settlementCalls = options.settle === true ? await d1ListCalls(env, { limit: settlementLimit }) : [];
     let settlement = {
         version: CALL_SETTLEMENT_VERSION,
         settledIntervals: 0,
@@ -955,6 +972,78 @@ async function d1GetCallsPayload(env, options = {}) {
     };
 }
 
+function parseCallsPageCacheEntry(text) {
+    if (typeof text !== 'string' || text.charCodeAt(text.length - 1) !== 125) return null;
+    const header = /^\{"revision":(\d+),"builtAt":(\d+),"hasCalls":(true|false),"body":/.exec(text);
+    if (!header) return null;
+    return {
+        revision: Number(header[1]),
+        builtAt: Number(header[2]),
+        hasCalls: header[3] === 'true',
+        body: text.slice(header[0].length, -1)
+    };
+}
+
+// GET /calls is polled by every open app and used to rebuild and re-serialise
+// hundreds of calls per request. The page only changes when a call is written,
+// so the serialised body is stored in D1 tagged with the calls revision; a hit
+// is one indexed query with no per-call parsing or JSON.stringify.
+async function d1GetCallsPageCached(env, options = {}) {
+    if (!hasVisorD1(env)) return null;
+    const limit = Math.min(Math.max(Number(options.limit || 100) || 100, 1), 500);
+    const direction = normalizeSignalDirection(options.direction || '');
+    const directionKey = direction === 'LONG' || direction === 'SHORT' ? direction : 'ALL';
+    const cacheKey = `${CALLS_PAGE_CACHE_PREFIX}${limit}:${directionKey}`;
+
+    const rows = await d1ReadRuntimeRows(env, [CALLS_REVISION_KEY, cacheKey]);
+    const revision = callsRevisionFromRows(rows);
+    const cached = parseCallsPageCacheEntry(rows.get(cacheKey)?.payload_json);
+    if (cached && cached.revision === revision && Date.now() - cached.builtAt < CALLS_PAGE_CACHE_MAX_AGE_MS) {
+        return { body: cached.body, hasCalls: cached.hasCalls, cache: 'd1-page' };
+    }
+    if (options.inline !== true && env?.CALL_HISTORY_DO) {
+        const rebuilt = await rebuildCallsPageViaDurableObject(env, limit, directionKey);
+        if (rebuilt) return rebuilt;
+    }
+
+    const payload = await d1GetCallsPayload(env, {
+        limit,
+        direction: directionKey === 'ALL' ? '' : directionKey
+    });
+    if (!payload) return null;
+    const body = JSON.stringify(payload);
+    const hasCalls = payload.calls.length > 0;
+    const builtAt = Date.now();
+    await env.VISOR_DB.prepare(`
+        INSERT INTO runtime_status (status_key, payload_json, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(status_key) DO UPDATE SET
+          payload_json = excluded.payload_json,
+          updated_at = excluded.updated_at
+    `).bind(
+        cacheKey,
+        `{"revision":${revision},"builtAt":${builtAt},"hasCalls":${hasCalls},"body":${body}}`,
+        builtAt
+    ).run().catch(() => false);
+    return { body, hasCalls, cache: 'd1' };
+}
+
+async function rebuildCallsPageViaDurableObject(env, limit, directionKey) {
+    try {
+        const doStub = env.CALL_HISTORY_DO.get(env.CALL_HISTORY_DO.idFromName('global'));
+        const resp = await doStub.fetch('https://call-history.internal/internal/calls-page', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ limit, direction: directionKey })
+        });
+        if (!resp.ok) return null;
+        return { body: await resp.text(), hasCalls: resp.headers.get('X-Visor-Has-Calls') === '1', cache: 'd1-do' };
+    } catch (e) {
+        console.warn('Calls page DO rebuild failed:', e?.message || e);
+        return null;
+    }
+}
+
 async function d1SettleCalls(env, options = {}) {
     if (!hasVisorD1(env)) return null;
     const maxCalls = Math.min(120, Math.max(1, Number(options.maxCalls || 80) || 80));
@@ -988,6 +1077,7 @@ async function d1ResetCalls(env) {
         env.VISOR_DB.prepare('DELETE FROM signal_stats'),
         env.VISOR_DB.prepare('DELETE FROM notification_events')
     ]);
+    await d1BumpCallsRevision(env).catch(() => false);
     return true;
 }
 
@@ -1229,6 +1319,51 @@ async function d1ReadRuntimeStatus(env, key) {
     const payload = safeJsonParse(row.payload_json, {}) || {};
     payload.updatedAt = Number(payload.updatedAt || row.updated_at || 0) || 0;
     return payload;
+}
+
+async function d1ReadRuntimeRows(env, keys) {
+    const rows = new Map();
+    if (!hasVisorD1(env) || !Array.isArray(keys) || keys.length === 0) return rows;
+    const result = await env.VISOR_DB.prepare(
+        `SELECT status_key, payload_json, updated_at FROM runtime_status WHERE status_key IN (${keys.map(() => '?').join(', ')})`
+    ).bind(...keys).all();
+    (Array.isArray(result?.results) ? result.results : []).forEach((row) => rows.set(row.status_key, row));
+    return rows;
+}
+
+// Every write to `calls` bumps this counter (updated_at, strictly increasing).
+// Caches derived from the calls table are tagged with the revision they were
+// built from, so they stay valid until a call is recorded or settled.
+async function d1BumpCallsRevision(env) {
+    if (!hasVisorD1(env)) return false;
+    await env.VISOR_DB.prepare(`
+        INSERT INTO runtime_status (status_key, payload_json, updated_at)
+        VALUES (?, '{}', ?)
+        ON CONFLICT(status_key) DO UPDATE SET
+          updated_at = MAX(runtime_status.updated_at + 1, excluded.updated_at)
+    `).bind(CALLS_REVISION_KEY, Date.now()).run();
+    return true;
+}
+
+function callsRevisionFromRows(rows) {
+    return Number(rows?.get(CALLS_REVISION_KEY)?.updated_at || 0) || 0;
+}
+
+// Cross-isolate "at most once per ttlMs" guard backed by one D1 row.
+async function tryAcquireRuntimeLock(env, key, ttlMs) {
+    if (!hasVisorD1(env)) return true;
+    const now = Date.now();
+    try {
+        const result = await env.VISOR_DB.prepare(`
+            INSERT INTO runtime_status (status_key, payload_json, updated_at)
+            VALUES (?, '{}', ?)
+            ON CONFLICT(status_key) DO UPDATE SET updated_at = excluded.updated_at
+            WHERE runtime_status.updated_at <= ?
+        `).bind(key, now, now - ttlMs).run();
+        return Number(result?.meta?.changes || 0) > 0;
+    } catch (_) {
+        return false;
+    }
 }
 
 function parseAllowedOrigins(env) {
@@ -1488,6 +1623,20 @@ async function getFcmAccessToken(env, externalBudget = null) {
         return FCM_ACCESS_TOKEN_CACHE.token;
     }
 
+    // Share the OAuth token across isolates: signing the RS256 assertion costs
+    // ~3 ms of CPU, a third of the Free plan budget, on every fresh isolate.
+    const tokenOwner = `${getSecret(env, 'FCM_PROJECT_ID')}|${getSecret(env, 'FCM_CLIENT_EMAIL')}`;
+    if (env?.CALENDAR_KV) {
+        try {
+            const shared = await env.CALENDAR_KV.get(FCM_ACCESS_TOKEN_KV_KEY, 'json');
+            if (shared?.token && shared.owner === tokenOwner && Number(shared.expiresAt || 0) > now + 5 * 60_000) {
+                FCM_ACCESS_TOKEN_CACHE = { token: String(shared.token), expiresAt: Number(shared.expiresAt) };
+                globalThis.__visorFcmAccessTokenCache = FCM_ACCESS_TOKEN_CACHE;
+                return FCM_ACCESS_TOKEN_CACHE.token;
+            }
+        } catch (_) {}
+    }
+
     const assertion = await signServiceAccountJwt(env);
     if (!assertion) return '';
 
@@ -1511,6 +1660,16 @@ async function getFcmAccessToken(env, externalBudget = null) {
         expiresAt: now + Math.max(60, Number(data?.expires_in || 3600) - 60) * 1000
     };
     globalThis.__visorFcmAccessTokenCache = FCM_ACCESS_TOKEN_CACHE;
+    if (env?.CALENDAR_KV) {
+        const ttlSeconds = Math.floor((FCM_ACCESS_TOKEN_CACHE.expiresAt - now) / 1000) - 60;
+        if (ttlSeconds >= 60) {
+            await env.CALENDAR_KV.put(FCM_ACCESS_TOKEN_KV_KEY, JSON.stringify({
+                token,
+                owner: tokenOwner,
+                expiresAt: FCM_ACCESS_TOKEN_CACHE.expiresAt
+            }), { expirationTtl: ttlSeconds }).catch(() => false);
+        }
+    }
     return token;
 }
 
@@ -2144,6 +2303,73 @@ async function loadCallFeedbackStats(env) {
     return { version: 'feedback_v1', evaluatedCalls: 0, stats: {} };
 }
 
+// Rebuilds the D1 feedback stats and stores them tagged with the calls revision
+// they were built from. Returns null when D1 has no calls.
+async function refreshCallFeedbackCache(env, revision) {
+    const calls = await d1ListCalls(env, { limit: 500 });
+    if (calls.length === 0) return null;
+    const feedback = buildCallFeedbackStats(calls);
+    const builtAt = Date.now();
+    await d1WriteRuntimeStatus(env, SIGNAL_FEEDBACK_CACHE_KEY, {
+        revision: Number(revision) || 0,
+        builtAt,
+        updatedAt: builtAt,
+        feedback
+    }).catch(() => false);
+    return feedback;
+}
+
+async function refreshCallFeedbackViaDurableObject(env, revision) {
+    if (!env?.CALL_HISTORY_DO) return null;
+    try {
+        const doStub = env.CALL_HISTORY_DO.get(env.CALL_HISTORY_DO.idFromName('global'));
+        const resp = await doStub.fetch('https://call-history.internal/internal/feedback-refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ revision })
+        });
+        if (!resp.ok) return null;
+        const data = await resp.json().catch(() => null);
+        return data?.success && data.feedback ? data.feedback : null;
+    } catch (e) {
+        console.warn('Call feedback DO refresh failed:', e?.message || e);
+        return null;
+    }
+}
+
+// Feedback stats from D1, or null when D1 has no calls. Rebuilding them from
+// 500 rows costs ~10 ms of CPU (the whole Free plan budget) yet they only
+// change when a call is written or settled. Serve the stored copy while the
+// calls revision is unchanged; otherwise let CallHistoryDO rebuild it, since a
+// Durable Object request gets 30 s of CPU. `inline` is for callers that already
+// run inside a Durable Object.
+async function getD1CallFeedbackStats(env, options = {}) {
+    if (!hasVisorD1(env)) return null;
+    const rows = await d1ReadRuntimeRows(env, [CALLS_REVISION_KEY, SIGNAL_FEEDBACK_CACHE_KEY]);
+    const revision = callsRevisionFromRows(rows);
+    const cached = safeJsonParse(rows.get(SIGNAL_FEEDBACK_CACHE_KEY)?.payload_json, null);
+    const cacheAgeMs = Date.now() - (Number(cached?.builtAt || 0) || 0);
+    if (cached?.feedback && Number(cached.revision) === revision && cacheAgeMs < SIGNAL_FEEDBACK_CACHE_MAX_AGE_MS) {
+        return cached.feedback;
+    }
+    if (options.inline !== true) {
+        const refreshed = await refreshCallFeedbackViaDurableObject(env, revision);
+        if (refreshed) return refreshed;
+        if (cached?.feedback && cacheAgeMs < SIGNAL_FEEDBACK_STALE_MAX_AGE_MS) return cached.feedback;
+    }
+    return refreshCallFeedbackCache(env, revision);
+}
+
+async function loadCallFeedbackStatsCached(env, options = {}) {
+    try {
+        const feedback = await getD1CallFeedbackStats(env, options);
+        if (feedback) return feedback;
+    } catch (e) {
+        console.warn('Call feedback cache unavailable:', e?.message || e);
+    }
+    return loadCallFeedbackStats(env);
+}
+
 function buildUnavailableSignalResult(symbol, reason = 'provider_unavailable') {
     return {
         symbol,
@@ -2166,32 +2392,83 @@ function buildUnavailableSignalResult(symbol, reason = 'provider_unavailable') {
     };
 }
 
-async function fetchSignalTickerMap(externalBudget = null) {
-    let rows = null;
+// Binance/Gate list endpoints return every contract (0.2-0.5 MB of JSON). Only
+// the APP_SIGNAL_SYMBOLS rows are needed, so slice those flat objects out of
+// the text and parse them alone. Returns null when the body is not the
+// expected compact array (the caller then parses the whole body as before).
+function pickJsonArrayRows(text, field, wanted) {
+    if (typeof text !== 'string' || text.charCodeAt(0) !== 91) return null;
+    // One pass over the body. The needle deliberately omits the leading quote:
+    // quotes are every few bytes in JSON, so starting on the field's first
+    // letter makes indexOf skip far more text per step.
+    const needle = `${field}":"`;
+    const rows = [];
+    for (let at = text.indexOf(needle); at !== -1; at = text.indexOf(needle, at + needle.length)) {
+        if (text.charCodeAt(at - 1) !== 34) continue;
+        const valueStart = at + needle.length;
+        const valueEnd = text.indexOf('"', valueStart);
+        if (valueEnd === -1) return null;
+        const value = text.slice(valueStart, valueEnd);
+        if (!wanted.has(value)) continue;
+        const start = text.lastIndexOf('{', at);
+        const end = text.indexOf('}', valueEnd);
+        if (start === -1 || end === -1) return null;
+        let row;
+        try {
+            row = JSON.parse(text.slice(start, end + 1));
+        } catch (_) {
+            return null;
+        }
+        if (!row || typeof row !== 'object' || row[field] !== value) return null;
+        rows.push(row);
+    }
+    return rows.length > 0 ? rows : null;
+}
+
+const SIGNAL_USDM_CONTRACTS = new Set(APP_SIGNAL_SYMBOL_LIST.map((symbol) => getUsdmContractSpec(symbol)?.contractSymbol).filter(Boolean));
+const SIGNAL_GATE_CONTRACTS = new Set(APP_SIGNAL_SYMBOL_LIST.map((symbol) => getGateUsdtContract(symbol)).filter(Boolean));
+
+async function fetchBinanceSignalRows(path, label, externalBudget = null) {
     let lastStatus = '';
     for (const host of BINANCE_USDM_SIGNAL_HOSTS) {
         try {
             if (!consumeExternalBudget(externalBudget)) break;
-            const resp = await fetch(`${host}/fapi/v1/ticker/24hr`, BINANCE_FETCH_INIT);
-            lastStatus = `ticker HTTP ${resp.status}`;
+            const resp = await fetch(`${host}${path}`, BINANCE_FETCH_INIT);
+            lastStatus = `${label} HTTP ${resp.status}`;
             if (!resp.ok) continue;
-            const payload = await resp.json().catch(() => null);
-            if (Array.isArray(payload)) {
-                rows = payload;
-                break;
-            }
+            const text = await resp.text().catch(() => '');
+            const payload = pickJsonArrayRows(text, 'symbol', SIGNAL_USDM_CONTRACTS) || safeJsonParse(text, null);
+            if (Array.isArray(payload)) return { rows: payload, lastStatus };
         } catch (e) {
-            lastStatus = e?.message || 'ticker fetch failed';
+            lastStatus = e?.message || `${label} fetch failed`;
         }
     }
+    return { rows: null, lastStatus };
+}
+
+// Ticker and funding both fall back to the same Gate endpoint; `shared` lets
+// one snapshot build fetch and parse it once instead of twice.
+function fetchGateSignalTickerRows(externalBudget = null, shared = null) {
+    if (shared?.gateTickers) return shared.gateTickers;
+    const promise = (async () => {
+        if (!consumeExternalBudget(externalBudget)) throw new Error('external request budget exhausted');
+        const text = await fetchTextWithTimeout(`${GATE_USDT_FUTURES_BASE}/tickers`, {
+            headers: BINANCE_FETCH_INIT.headers,
+            cf: { cacheTtl: 30 }
+        }, 7000);
+        const payload = pickJsonArrayRows(text, 'contract', SIGNAL_GATE_CONTRACTS) || JSON.parse(text);
+        return Array.isArray(payload) ? payload : null;
+    })();
+    if (shared) shared.gateTickers = promise;
+    return promise;
+}
+
+async function fetchSignalTickerMap(externalBudget = null, shared = null) {
+    let { rows, lastStatus } = await fetchBinanceSignalRows('/fapi/v1/ticker/24hr', 'ticker', externalBudget);
     let provider = 'binance_usdm';
     if (!Array.isArray(rows)) {
         try {
-            if (!consumeExternalBudget(externalBudget)) throw new Error('external request budget exhausted');
-            const payload = await fetchJsonWithTimeout(`${GATE_USDT_FUTURES_BASE}/tickers`, {
-                headers: BINANCE_FETCH_INIT.headers,
-                cf: { cacheTtl: 30 }
-            }, 7000);
+            const payload = await fetchGateSignalTickerRows(externalBudget, shared);
             if (Array.isArray(payload)) {
                 rows = payload;
                 provider = 'gate_usdt_perp';
@@ -2228,32 +2505,12 @@ async function fetchSignalTickerMap(externalBudget = null) {
     return map;
 }
 
-async function fetchSignalFundingMap(externalBudget = null) {
-    let rows = null;
-    let lastStatus = '';
-    for (const host of BINANCE_USDM_SIGNAL_HOSTS) {
-        try {
-            if (!consumeExternalBudget(externalBudget)) break;
-            const resp = await fetch(`${host}/fapi/v1/premiumIndex`, BINANCE_FETCH_INIT);
-            lastStatus = `funding HTTP ${resp.status}`;
-            if (!resp.ok) continue;
-            const payload = await resp.json().catch(() => null);
-            if (Array.isArray(payload)) {
-                rows = payload;
-                break;
-            }
-        } catch (e) {
-            lastStatus = e?.message || 'funding fetch failed';
-        }
-    }
+async function fetchSignalFundingMap(externalBudget = null, shared = null) {
+    let { rows, lastStatus } = await fetchBinanceSignalRows('/fapi/v1/premiumIndex', 'funding', externalBudget);
     let provider = 'binance_usdm';
     if (!Array.isArray(rows)) {
         try {
-            if (!consumeExternalBudget(externalBudget)) throw new Error('external request budget exhausted');
-            const payload = await fetchJsonWithTimeout(`${GATE_USDT_FUTURES_BASE}/tickers`, {
-                headers: BINANCE_FETCH_INIT.headers,
-                cf: { cacheTtl: 30 }
-            }, 7000);
+            const payload = await fetchGateSignalTickerRows(externalBudget, shared);
             if (Array.isArray(payload)) {
                 rows = payload;
                 provider = 'gate_usdt_perp';
@@ -2302,7 +2559,7 @@ async function fetchSignalKlines(symbol, interval = '15m', limit = 120, external
                 if (!resp.ok) continue;
                 const rows = await resp.json().catch(() => null);
                 if (Array.isArray(rows) && rows.length >= 50) {
-                    const normalized = rows.map((row) => scaleUsdmKlineForAppSymbol(row, safeSymbol));
+                    const normalized = rows.map((row) => scaleUsdmKlineRow(row, spec));
                     normalized.provider = 'binance_usdm';
                     return normalized;
                 }
@@ -2537,11 +2794,12 @@ async function analyzeSignalSymbol(symbol, marketData = {}, feedback = null, ext
 async function buildSignalsSnapshot(env, persist = true, options = {}) {
     const symbols = [...APP_SIGNAL_SYMBOLS];
     const results = {};
-    const feedback = await loadCallFeedbackStats(env);
+    const feedback = await loadCallFeedbackStatsCached(env, { inline: options.inlineFeedback === true });
     const externalBudget = options.externalBudget || null;
+    const sharedProviderData = {};
     const [tickersResult, fundingResult] = await Promise.allSettled([
-        fetchSignalTickerMap(externalBudget),
-        fetchSignalFundingMap(externalBudget)
+        fetchSignalTickerMap(externalBudget, sharedProviderData),
+        fetchSignalFundingMap(externalBudget, sharedProviderData)
     ]);
     const marketData = {
         tickers: tickersResult.status === 'fulfilled' ? tickersResult.value : new Map(),
@@ -3287,6 +3545,90 @@ async function dispatchSignalPushes(env, snapshot, options = {}) {
         lastPushAt: (topicSent + legacySent) > 0 ? now : 0,
         protocol: SIGNAL_TOPIC_PROTOCOL_VERSION
     };
+}
+
+// One signal cycle: shared snapshot, topic pushes and the runtime status row.
+// Runs inside SignalCycleDO (30 s of CPU per request) when that binding exists;
+// inline in the cron otherwise.
+async function runSignalCycle(env, options = {}) {
+    const signalRunStartedAt = Date.now();
+    const externalBudget = options.externalBudget || createExternalBudget(48);
+    try {
+        const snapshot = await buildSignalsSnapshot(env, true, { externalBudget, inlineFeedback: options.inlineFeedback === true });
+        const pushResult = snapshot?.stale === true
+            ? { sent: 0, skipped: Object.keys(snapshot?.results || {}).length, stale: true }
+            : await dispatchSignalPushes(env, snapshot, {
+                topics: true,
+                legacy: false,
+                externalBudget
+            });
+        const previousSignalStatus = await d1ReadRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY).catch(() => null);
+        const pushError = Number(pushResult?.topicFailed || 0) > 0
+            ? `${Number(pushResult.topicFailed)}_topic_push_failed`
+            : '';
+        const signalStatus = {
+            success: snapshot?.stale !== true && !pushError,
+            updatedAt: Date.now(),
+            startedAt: signalRunStartedAt,
+            durationMs: Date.now() - signalRunStartedAt,
+            snapshotUpdatedAt: Number(snapshot?.updatedAt || 0) || 0,
+            snapshotStale: snapshot?.stale === true,
+            symbols: Object.keys(snapshot?.results || {}).length,
+            push: pushResult,
+            lastPushAt: Number(pushResult?.lastPushAt || previousSignalStatus?.lastPushAt || 0) || 0,
+            lastError: pushError,
+            externalRequestsUsed: Number(externalBudget.used || 0) || 0,
+            protocol: SIGNAL_TOPIC_PROTOCOL_VERSION,
+            strategyVersion: SIGNAL_STRATEGY_VERSION,
+            runner: options.runner || 'cron'
+        };
+        await d1WriteRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY, signalStatus).catch(() => false);
+        console.log(
+            `Signal snapshot refreshed: ${Object.keys(snapshot?.results || {}).length} symbols, ` +
+            `topic sent=${pushResult.topicSent || 0}, legacy sent=${pushResult.legacySent || 0}, skipped=${pushResult.skipped || 0}`
+        );
+        return signalStatus;
+    } catch (e) {
+        console.error('Cron error (signals):', e);
+        const previousSignalStatus = await d1ReadRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY).catch(() => null);
+        await d1WriteRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY, {
+            success: false,
+            updatedAt: Date.now(),
+            startedAt: signalRunStartedAt,
+            durationMs: Date.now() - signalRunStartedAt,
+            error: String(e?.message || e || 'Signal cron failed').slice(0, 240),
+            lastError: String(e?.message || e || 'Signal cron failed').slice(0, 240),
+            lastPushAt: Number(previousSignalStatus?.lastPushAt || 0) || 0,
+            snapshotUpdatedAt: Number(previousSignalStatus?.snapshotUpdatedAt || 0) || 0,
+            externalRequestsUsed: Number(externalBudget.used || 0) || 0,
+            protocol: SIGNAL_TOPIC_PROTOCOL_VERSION,
+            strategyVersion: SIGNAL_STRATEGY_VERSION
+        }).catch(() => false);
+        return { success: false, error: String(e?.message || e || 'Signal cron failed').slice(0, 240) };
+    }
+}
+
+async function delegateToSignalCycleDO(env, action) {
+    if (!env?.SIGNAL_CYCLE_DO) return false;
+    try {
+        const stub = env.SIGNAL_CYCLE_DO.get(env.SIGNAL_CYCLE_DO.idFromName('signals'));
+        const resp = await stub.fetch(`https://signal-cycle.internal/${action}`, { method: 'POST' });
+        if (!resp.ok) console.warn(`SignalCycleDO ${action} returned HTTP ${resp.status}`);
+    } catch (e) {
+        // Do not fall back inline: the object may already be mid-cycle, and the
+        // inline path is exactly what exceeds the Free plan CPU limit.
+        console.error(`SignalCycleDO ${action} failed:`, e?.message || e);
+    }
+    return true;
+}
+
+// After each cycle, rebuild what the hot GET routes read (feedback stats and
+// the default /calls page) so app requests stay cache hits.
+async function prewarmCallDerivedCaches(env) {
+    if (!hasVisorD1(env)) return false;
+    await getD1CallFeedbackStats(env, { inline: true });
+    await d1GetCallsPageCached(env, { limit: 200, inline: true });
+    return true;
 }
 
 // Apenas eventos de ALTA importância dos EUA
@@ -6157,11 +6499,88 @@ class CallHistoryDO {
             }
         }
 
+        // Internal only (reachable through the binding, never proxied from the
+        // public router): rebuilds the D1 feedback cache off the Worker's 10 ms budget.
+        if (url.pathname === '/internal/feedback-refresh' && request.method === 'POST') {
+            try {
+                const body = await request.json().catch(() => ({}));
+                const feedback = await refreshCallFeedbackCache(this.env, Number(body?.revision || 0) || 0);
+                return this._json({ success: !!feedback, feedback }, feedback ? 200 : 404);
+            } catch (e) {
+                console.error('CallHistoryDO FEEDBACK REFRESH error:', e);
+                return this._json({ success: false, error: 'Failed to refresh feedback' }, 500);
+            }
+        }
+
+        if (url.pathname === '/internal/calls-page' && request.method === 'POST') {
+            try {
+                const body = await request.json().catch(() => ({}));
+                const page = await d1GetCallsPageCached(this.env, { limit: body?.limit, direction: body?.direction, inline: true });
+                if (!page) return this._json({ success: false, error: 'Calls page unavailable' }, 404);
+                return new Response(page.body, {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json', 'X-Visor-Has-Calls': page.hasCalls ? '1' : '0' }
+                });
+            } catch (e) {
+                console.error('CallHistoryDO CALLS PAGE error:', e);
+                return this._json({ success: false, error: 'Failed to build calls page' }, 500);
+            }
+        }
+
         return this._json({ success: false, error: 'Not found' }, 404);
     }
 }
 
-export { CallHistoryDO, LiquidationsDO, NotificationRegistryDO };
+// Runs the signal cycle for the 5-minute cron. A Free plan cron invocation gets
+// 10 ms of CPU; a Durable Object request gets 30 s, so the cron only forwards
+// here. It keeps no storage: the snapshot, status and calls live in D1/KV.
+class SignalCycleDO {
+    constructor(state, env) {
+        this.state = state;
+        this.env = env;
+        this.running = null;
+    }
+
+    _json(data, status = 200) {
+        return new Response(JSON.stringify(data), {
+            status,
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
+    async fetch(request) {
+        const url = new URL(request.url);
+        const action = url.pathname.replace(/^\/+/, '');
+        if (request.method !== 'POST' || (action !== 'cycle' && action !== 'snapshot')) {
+            return this._json({ success: false, error: 'Not found' }, 404);
+        }
+        // A slow cycle (provider timeouts) must not overlap the next one.
+        if (this.running) return this._json({ success: true, skipped: 'already_running' }, 202);
+
+        this.running = (async () => {
+            if (action === 'snapshot') {
+                const snapshot = await buildSignalsSnapshot(this.env, true, { inlineFeedback: true });
+                return { success: true, snapshotUpdatedAt: Number(snapshot?.updatedAt || 0) || 0, stale: snapshot?.stale === true };
+            }
+            const status = await runSignalCycle(this.env, { inlineFeedback: true, runner: 'signal_cycle_do' });
+            await prewarmCallDerivedCaches(this.env).catch((e) => {
+                console.warn('Call cache prewarm failed:', e?.message || e);
+            });
+            return status;
+        })();
+        try {
+            // The cycle already recorded its outcome in the runtime status row.
+            return this._json(await this.running || { success: false });
+        } catch (e) {
+            console.error(`SignalCycleDO ${action} error:`, e);
+            return this._json({ success: false, error: 'Signal cycle failed' }, 500);
+        } finally {
+            this.running = null;
+        }
+    }
+}
+
+export { CallHistoryDO, LiquidationsDO, NotificationRegistryDO, SignalCycleDO };
 
 function buildPublicPrivacyPolicyHtml() {
     return `<!doctype html>
@@ -6459,7 +6878,12 @@ export default {
 
                 if (snapshotComplete && snapshot) {
                     if (ctx?.waitUntil) {
-                        ctx.waitUntil(buildSignalsSnapshot(env, true).catch((e) => {
+                        // The cron owns refreshes. When it is late, let one request
+                        // per minute (across all isolates) rebuild instead of each one.
+                        ctx.waitUntil((async () => {
+                            if (!(await tryAcquireRuntimeLock(env, SIGNALS_HTTP_REFRESH_LOCK_KEY, 60 * 1000))) return;
+                            if (!(await delegateToSignalCycleDO(env, 'snapshot'))) await buildSignalsSnapshot(env, true);
+                        })().catch((e) => {
                             console.error('Signals snapshot background refresh failed:', e);
                         }));
                     }
@@ -7616,11 +8040,11 @@ export default {
         if (path === '/calls/feedback' && request.method === 'GET') {
             try {
                 if (hasVisorD1(env)) {
-                    const calls = await d1ListCalls(env, { limit: 500 });
-                    if (calls.length > 0 || !env.CALL_HISTORY_DO) {
+                    const d1Feedback = await getD1CallFeedbackStats(env);
+                    if (d1Feedback || !env.CALL_HISTORY_DO) {
                         return new Response(JSON.stringify({
                             success: true,
-                            feedback: buildCallFeedbackStats(calls),
+                            feedback: d1Feedback || buildCallFeedbackStats([]),
                             source: 'd1',
                             storageVersion: 'd1_v1'
                         }), {
@@ -7671,14 +8095,14 @@ export default {
 
                 if (hasVisorD1(env)) {
                     try {
-                        const d1Payload = await d1GetCallsPayload(env, {
+                        const d1Page = await d1GetCallsPageCached(env, {
                             limit,
                             direction: filterDir
                         });
-                        if (d1Payload && (d1Payload.calls.length > 0 || !env.CALL_HISTORY_DO)) {
-                            return new Response(JSON.stringify(d1Payload), {
+                        if (d1Page && (d1Page.hasCalls || !env.CALL_HISTORY_DO)) {
+                            return new Response(d1Page.body, {
                                 status: 200,
-                                headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+                                headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Visor-Cache': d1Page.cache },
                             });
                         }
                     } catch (d1Err) {
@@ -7810,61 +8234,13 @@ export default {
         const FMP_API_KEY = getSecret(env, 'FMP_API_KEY');
         const FRED_API_KEY = getSecret(env, 'FRED_API_KEY');
 
-        // SINAIS: refresh first so the 5-minute app snapshot stays warm on the Free plan.
+        // SINAIS: the full cycle needs far more than the 10 ms of CPU a Free plan
+        // cron gets, so it runs in SignalCycleDO (30 s per request).
         if (runSignals) {
-        const signalRunStartedAt = Date.now();
-        const externalBudget = createExternalBudget(48);
-        try {
-            const snapshot = await buildSignalsSnapshot(env, true, { externalBudget });
-            const pushResult = snapshot?.stale === true
-                ? { sent: 0, skipped: Object.keys(snapshot?.results || {}).length, stale: true }
-                : await dispatchSignalPushes(env, snapshot, {
-                    topics: true,
-                    legacy: false,
-                    externalBudget
-                });
-            const previousSignalStatus = await d1ReadRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY).catch(() => null);
-            const pushError = Number(pushResult?.topicFailed || 0) > 0
-                ? `${Number(pushResult.topicFailed)}_topic_push_failed`
-                : '';
-            const signalStatus = {
-                success: snapshot?.stale !== true && !pushError,
-                updatedAt: Date.now(),
-                startedAt: signalRunStartedAt,
-                durationMs: Date.now() - signalRunStartedAt,
-                snapshotUpdatedAt: Number(snapshot?.updatedAt || 0) || 0,
-                snapshotStale: snapshot?.stale === true,
-                symbols: Object.keys(snapshot?.results || {}).length,
-                push: pushResult,
-                lastPushAt: Number(pushResult?.lastPushAt || previousSignalStatus?.lastPushAt || 0) || 0,
-                lastError: pushError,
-                externalRequestsUsed: Number(externalBudget.used || 0) || 0,
-                protocol: SIGNAL_TOPIC_PROTOCOL_VERSION,
-                strategyVersion: SIGNAL_STRATEGY_VERSION
-            };
-            await d1WriteRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY, signalStatus).catch(() => false);
-            console.log(
-                `Signal snapshot refreshed: ${Object.keys(snapshot?.results || {}).length} symbols, ` +
-                `topic sent=${pushResult.topicSent || 0}, legacy sent=${pushResult.legacySent || 0}, skipped=${pushResult.skipped || 0}`
-            );
-        } catch (e) {
-            console.error('Cron error (signals):', e);
-            const previousSignalStatus = await d1ReadRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY).catch(() => null);
-            await d1WriteRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY, {
-                success: false,
-                updatedAt: Date.now(),
-                startedAt: signalRunStartedAt,
-                durationMs: Date.now() - signalRunStartedAt,
-                error: String(e?.message || e || 'Signal cron failed').slice(0, 240),
-                lastError: String(e?.message || e || 'Signal cron failed').slice(0, 240),
-                lastPushAt: Number(previousSignalStatus?.lastPushAt || 0) || 0,
-                snapshotUpdatedAt: Number(previousSignalStatus?.snapshotUpdatedAt || 0) || 0,
-                externalRequestsUsed: Number(externalBudget.used || 0) || 0,
-                protocol: SIGNAL_TOPIC_PROTOCOL_VERSION,
-                strategyVersion: SIGNAL_STRATEGY_VERSION
-            }).catch(() => false);
-        }
-        return;
+            if (!(await delegateToSignalCycleDO(env, 'cycle'))) {
+                await runSignalCycle(env, { runner: 'cron_inline' });
+            }
+            return;
         }
 
         if (runLegacyPush) {

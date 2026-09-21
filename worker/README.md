@@ -91,6 +91,18 @@ wrangler deploy
 O `wrangler.toml` ja contem:
 - binding `CALL_HISTORY_DO`
 - migration tag `v1_call_history_do`
+- binding `SIGNAL_CYCLE_DO` + migration `v3_signal_cycle_do` (ver abaixo)
+
+Conta `loopsluchini`: `wrangler deploy -c wrangler-loopsluchini.toml`.
+
+### Limite de CPU do plano Free (10 ms por execucao)
+- O cron `*/5` so encaminha o ciclo de sinais para o `SignalCycleDO`
+  (Durable Object tem 30 s de CPU por requisicao). Sem esse binding, o ciclo
+  roda direto no cron, como antes.
+- Estatisticas de feedback e a pagina `GET /calls` ficam prontas em
+  `runtime_status` (D1), marcadas pela revisao `calls_revision`, que muda a cada
+  escrita na tabela `calls`. Quando mudam, o `CallHistoryDO` as reconstroi.
+- O token OAuth do FCM fica no KV (`fcm_access_token_v1`) por ~1 h.
 
 ### 4.1 Configurar segredos (obrigatorio)
 Nao deixe chaves no codigo. Configure via Wrangler Secrets:

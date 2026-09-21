@@ -24,6 +24,12 @@ class_name = "LiquidationsDO"
 name = "NOTIFICATION_REGISTRY_DO"
 class_name = "NotificationRegistryDO"
 
+# Runs the 5-minute signal cycle: a Durable Object request gets 30 s of CPU,
+# a Free plan cron only 10 ms.
+[[durable_objects.bindings]]
+name = "SIGNAL_CYCLE_DO"
+class_name = "SignalCycleDO"
+
 [[migrations]]
 tag = "v1_call_history_do"
 new_sqlite_classes = ["CallHistoryDO"]
@@ -31,6 +37,10 @@ new_sqlite_classes = ["CallHistoryDO"]
 [[migrations]]
 tag = "v2_free_first_scale_dos"
 new_sqlite_classes = ["LiquidationsDO", "NotificationRegistryDO"]
+
+[[migrations]]
+tag = "v3_signal_cycle_do"
+new_sqlite_classes = ["SignalCycleDO"]
 
 [triggers]
 crons = ["*/5 * * * *"]
