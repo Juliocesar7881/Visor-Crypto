@@ -3608,11 +3608,14 @@ async function runSignalCycle(env, options = {}) {
     }
 }
 
-async function delegateToSignalCycleDO(env, action) {
+async function delegateToSignalCycleDO(env, action, cronExpression = '') {
     if (!env?.SIGNAL_CYCLE_DO) return false;
     try {
-        const stub = env.SIGNAL_CYCLE_DO.get(env.SIGNAL_CYCLE_DO.idFromName('signals'));
-        const resp = await stub.fetch(`https://signal-cycle.internal/${action}`, { method: 'POST' });
+        // One object per cron so a slow run only blocks its own next tick.
+        const name = action === 'cron' ? `cron:${cronExpression}` : 'signals';
+        const query = action === 'cron' ? `?cron=${encodeURIComponent(cronExpression)}` : '';
+        const stub = env.SIGNAL_CYCLE_DO.get(env.SIGNAL_CYCLE_DO.idFromName(name));
+        const resp = await stub.fetch(`https://signal-cycle.internal/${action}${query}`, { method: 'POST' });
         if (!resp.ok) console.warn(`SignalCycleDO ${action} returned HTTP ${resp.status}`);
     } catch (e) {
         // Do not fall back inline: the object may already be mid-cycle, and the
@@ -3620,6 +3623,218 @@ async function delegateToSignalCycleDO(env, action) {
         console.error(`SignalCycleDO ${action} failed:`, e?.message || e);
     }
     return true;
+}
+
+// The non-signal crons (legacy pushes, market prewarm and call settlement,
+// calendar, liquidations). Runs inside SignalCycleDO like the signal cycle;
+// inline only when that binding is missing.
+async function runScheduledCron(env, cronExpression) {
+    const runLegacyPush = cronExpression === LEGACY_PUSH_CRON_EXPRESSION;
+    const runMarket = cronExpression === MARKET_CRON_EXPRESSION;
+    const runLiquidations = cronExpression === LIQUIDATIONS_CRON_EXPRESSION;
+    const runCalendar = cronExpression === CALENDAR_CRON_EXPRESSION;
+    const FMP_API_KEY = getSecret(env, 'FMP_API_KEY');
+    const FRED_API_KEY = getSecret(env, 'FRED_API_KEY');
+
+    if (runLegacyPush) {
+        const snapshot = await loadUsableCachedSignalsSnapshot(env).catch(() => null);
+        if (snapshot) {
+            const externalBudget = createExternalBudget(48);
+            const legacyResult = await dispatchSignalPushes(env, snapshot, {
+                topics: false,
+                legacy: true,
+                maxLegacyAttempts: 45,
+                externalBudget
+            }).catch((e) => ({ sent: 0, legacySent: 0, error: String(e?.message || e || 'Legacy push failed') }));
+            const previous = await d1ReadRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY).catch(() => null);
+            await d1WriteRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY, {
+                ...(previous || {}),
+                updatedAt: Number(previous?.updatedAt || 0) || Date.now(),
+                legacyLastRunAt: Date.now(),
+                legacy: legacyResult
+            }).catch(() => false);
+        }
+        return;
+    }
+
+    if (!runMarket && !runCalendar && !runLiquidations) return;
+
+    // Keep each scheduled invocation below the Workers Free external-subrequest cap.
+    if (runMarket) {
+    try {
+        const settlement = await d1SettleCalls(env, { maxCalls: 80, maxFetches: 5 });
+        if (settlement?.changed) {
+            console.log(`Call settlement refreshed: ${settlement.settledIntervals || 0} intervals`);
+        }
+    } catch (e) {
+        console.error('Cron error (call settlement):', e);
+    }
+
+    try {
+        const refreshed = await prewarmMarketCacheIfStale(env, {
+            key: MARKET_FED_RATE_KEY,
+            freshSeconds: FED_RATE_FRESH_SECONDS,
+            staleSeconds: FED_RATE_STALE_SECONDS,
+            builder: () => buildFedRateMarketPayload({ fredApiKey: FRED_API_KEY }),
+            isValid: (payload) => payload && payload.success !== false && Number(payload.updatedAt || 0) > 0,
+        });
+        if (refreshed) console.log('Fed rate cache refreshed');
+    } catch (e) {
+        console.error('Cron error (fed rate):', e);
+    }
+
+    try {
+        const refreshed = await prewarmMarketCacheIfStale(env, {
+            key: MARKET_FEDWATCH_KEY_PREFIX + 'next',
+            freshSeconds: FEDWATCH_FRESH_SECONDS,
+            staleSeconds: FEDWATCH_STALE_SECONDS,
+            builder: () => buildFedWatchPayload({ meetingDate: 'next', fredApiKey: FRED_API_KEY }),
+            isValid: (payload) => payload && payload.success !== false && Number(payload.updatedAt || 0) > 0,
+        });
+        if (refreshed) console.log('FedWatch cache refreshed');
+    } catch (e) {
+        console.error('Cron error (fedwatch):', e);
+    }
+
+    try {
+        const refreshed = await prewarmMarketCacheIfStale(env, {
+            key: MARKET_MACRO_QUOTES_KEY,
+            freshSeconds: MARKET_FRESH_SECONDS,
+            staleSeconds: MARKET_STALE_SECONDS,
+            builder: buildMacroQuotesPayload,
+            isValid: (payload) => payload && payload.success !== false && Object.keys(payload.prices || {}).length > 0,
+        });
+        if (refreshed) console.log('Macro quotes cache refreshed');
+    } catch (e) {
+        console.error('Cron error (macro quotes):', e);
+    }
+
+    try {
+        const refreshed = await prewarmMarketCacheIfStale(env, {
+            key: MARKET_NEWS_KEY,
+            freshSeconds: NEWS_FRESH_SECONDS,
+            staleSeconds: NEWS_STALE_SECONDS,
+            builder: buildNewsPayload,
+            isValid: (payload) => payload && payload.success !== false && Array.isArray(payload.articles),
+        });
+        if (refreshed) console.log('News cache refreshed');
+    } catch (e) {
+        console.error('Cron error (news):', e);
+    }
+
+    // ─── CALENDÁRIO: só atualiza a cada 3 horas ───
+    }
+
+    if (runCalendar) {
+    try {
+        let shouldRefreshCalendar = true;
+        if (env.CALENDAR_KV) {
+            const cached = await env.CALENDAR_KV.get(CACHE_KEY_CALENDAR, 'json');
+            if (cached && cached.lastUpdate) {
+                const elapsed = Date.now() - new Date(cached.lastUpdate).getTime();
+                if (elapsed < 3 * 60 * 60 * 1000) { // 3 horas
+                    shouldRefreshCalendar = false;
+                }
+            }
+        }
+
+        if (shouldRefreshCalendar) {
+            const events = await buildCalendar(FMP_API_KEY);
+            const now = new Date();
+            if (env.CALENDAR_KV) {
+                await env.CALENDAR_KV.put(
+                    CACHE_KEY_CALENDAR,
+                    JSON.stringify({
+                        events,
+                        lastUpdate: now.toISOString(),
+                        nextUpdate: new Date(now.getTime() + CACHE_TTL_SECONDS * 1000).toISOString(),
+                    }),
+                    { expirationTtl: CACHE_TTL_SECONDS }
+                );
+            }
+            const seriesIds = [...new Set(events.map(e => e.fredSeriesId).filter(Boolean))].slice(0, 30);
+            for (let i = 0; i < seriesIds.length; i += 4) {
+                const batch = seriesIds.slice(i, i + 4);
+                const results = await Promise.all(
+                    batch.map(id => fetchHistoryFromFRED(id, 12, FRED_API_KEY))
+                );
+                if (env.CALENDAR_KV) {
+                    await Promise.all(batch.map((id, idx) =>
+                        env.CALENDAR_KV.put(
+                            `history_${id}`,
+                            JSON.stringify(results[idx]),
+                            { expirationTtl: 24 * 60 * 60 }
+                        )
+                    ));
+                }
+            }
+            console.log(`Calendar refreshed: ${events.length} events, ${seriesIds.length} history series`);
+        }
+    } catch (e) {
+        console.error('Cron error (calendar):', e);
+    }
+    }
+
+    // ─── LIQUIDAÇÕES: acumula a cada execução (5 min) ───
+    // Escalável: KV compartilhado entre todos os usuários
+    if (runLiquidations) {
+    try {
+        // Símbolos base + símbolos dinâmicos adicionados por requisições de usuários
+        const baseSymbols = LIQUIDATIONS_BASE_SYMBOLS;
+
+        // Carregar símbolos dinâmicos (adicionados por requisições de usuários)
+        const dynamicSymbols = await getTrackedLiquidationSymbols(env);
+
+        const allSymbols = [...new Set([...baseSymbols, ...dynamicSymbols])].slice(0, 40);
+        let accumulated = 0;
+
+        for (const sym of allSymbols) {
+            try {
+                const binRes = await fetch(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${sym}&limit=1000`);
+                if (!binRes.ok) continue;
+                const orders = await binRes.json();
+                if (!Array.isArray(orders) || orders.length === 0) continue;
+
+                const now = Date.now();
+                const existingOrders = await getAccumulatedLiquidationOrders(env, sym);
+                const merged = mergeLiquidationOrders(existingOrders, orders, now);
+                await saveAccumulatedLiquidationOrders(env, sym, merged, now);
+                accumulated++;
+            } catch (symErr) {
+                console.warn(`Liq accumulate ${sym}:`, symErr.message);
+            }
+        }
+        console.log(`Liquidation accumulation: ${accumulated}/${allSymbols.length} symbols`);
+    } catch (e) {
+        console.error('Cron error (liquidations):', e);
+    }
+    }
+
+    // MARKET SNAPSHOT: preaquece fontes globais para todos os usuarios via KV/edge cache.
+    if (runMarket) {
+    try {
+        const refreshedGlobal = await prewarmMarketGlobalCache(env);
+        if (refreshedGlobal) console.log('Global market cache refreshed');
+    } catch (e) {
+        console.error('Cron error (market global):', e);
+    }
+
+    // ALTSEASON: preaquece a mesma fonte usada pelo endpoint para evitar cold miss.
+    try {
+        const refreshed = await prewarmAltseasonCache(env);
+        if (refreshed) console.log('Altseason cache refreshed');
+    } catch (e) {
+        console.error('Cron error (altseason):', e);
+    }
+
+    try {
+        const refreshedSnapshot = await prewarmMarketGlobalSnapshotCache(env);
+        if (refreshedSnapshot) console.log('Global market snapshot refreshed');
+    } catch (e) {
+        console.error('Cron error (market snapshot):', e);
+    }
+    }
+
 }
 
 // After each cycle, rebuild what the hot GET routes read (feedback stats and
@@ -6531,9 +6746,10 @@ class CallHistoryDO {
     }
 }
 
-// Runs the signal cycle for the 5-minute cron. A Free plan cron invocation gets
-// 10 ms of CPU; a Durable Object request gets 30 s, so the cron only forwards
-// here. It keeps no storage: the snapshot, status and calls live in D1/KV.
+// Runs the cron work: the 5-minute signal cycle and the other scheduled jobs.
+// A Free plan cron invocation gets 10 ms of CPU; a Durable Object request gets
+// 30 s, so the cron only forwards here. It keeps no storage: the snapshot,
+// status and calls live in D1/KV.
 class SignalCycleDO {
     constructor(state, env) {
         this.state = state;
@@ -6551,13 +6767,19 @@ class SignalCycleDO {
     async fetch(request) {
         const url = new URL(request.url);
         const action = url.pathname.replace(/^\/+/, '');
-        if (request.method !== 'POST' || (action !== 'cycle' && action !== 'snapshot')) {
+        const cronExpression = url.searchParams.get('cron') || '';
+        const knownCron = [LEGACY_PUSH_CRON_EXPRESSION, MARKET_CRON_EXPRESSION, LIQUIDATIONS_CRON_EXPRESSION, CALENDAR_CRON_EXPRESSION].includes(cronExpression);
+        if (request.method !== 'POST' || !(action === 'cycle' || action === 'snapshot' || (action === 'cron' && knownCron))) {
             return this._json({ success: false, error: 'Not found' }, 404);
         }
         // A slow cycle (provider timeouts) must not overlap the next one.
         if (this.running) return this._json({ success: true, skipped: 'already_running' }, 202);
 
         this.running = (async () => {
+            if (action === 'cron') {
+                await runScheduledCron(this.env, cronExpression);
+                return { success: true, cron: cronExpression };
+            }
             if (action === 'snapshot') {
                 const snapshot = await buildSignalsSnapshot(this.env, true, { inlineFeedback: true });
                 return { success: true, snapshotUpdatedAt: Number(snapshot?.updatedAt || 0) || 0, stale: snapshot?.stale === true };
@@ -8226,13 +8448,7 @@ export default {
     async scheduled(event, env, ctx) {
         const cronExpression = String(event?.cron || SIGNAL_CRON_EXPRESSION);
         const runSignals = cronExpression === SIGNAL_CRON_EXPRESSION;
-        const runLegacyPush = cronExpression === LEGACY_PUSH_CRON_EXPRESSION;
-        const runMarket = cronExpression === MARKET_CRON_EXPRESSION;
-        const runLiquidations = cronExpression === LIQUIDATIONS_CRON_EXPRESSION;
-        const runCalendar = cronExpression === CALENDAR_CRON_EXPRESSION;
         console.log('Cron triggered:', cronExpression, new Date().toISOString());
-        const FMP_API_KEY = getSecret(env, 'FMP_API_KEY');
-        const FRED_API_KEY = getSecret(env, 'FRED_API_KEY');
 
         // SINAIS: the full cycle needs far more than the 10 ms of CPU a Free plan
         // cron gets, so it runs in SignalCycleDO (30 s per request).
@@ -8243,205 +8459,11 @@ export default {
             return;
         }
 
-        if (runLegacyPush) {
-            const snapshot = await loadUsableCachedSignalsSnapshot(env).catch(() => null);
-            if (snapshot) {
-                const externalBudget = createExternalBudget(48);
-                const legacyResult = await dispatchSignalPushes(env, snapshot, {
-                    topics: false,
-                    legacy: true,
-                    maxLegacyAttempts: 45,
-                    externalBudget
-                }).catch((e) => ({ sent: 0, legacySent: 0, error: String(e?.message || e || 'Legacy push failed') }));
-                const previous = await d1ReadRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY).catch(() => null);
-                await d1WriteRuntimeStatus(env, SIGNAL_RUNTIME_STATUS_KEY, {
-                    ...(previous || {}),
-                    updatedAt: Number(previous?.updatedAt || 0) || Date.now(),
-                    legacyLastRunAt: Date.now(),
-                    legacy: legacyResult
-                }).catch(() => false);
-            }
-            return;
+        // The other crons also outgrow 10 ms of CPU (feeds, settlement, device
+        // lists), so they run in SignalCycleDO as well.
+        if (!(await delegateToSignalCycleDO(env, 'cron', cronExpression))) {
+            await runScheduledCron(env, cronExpression);
         }
-
-        if (!runMarket && !runCalendar && !runLiquidations) return;
-
-        // Keep each scheduled invocation below the Workers Free external-subrequest cap.
-        if (runMarket) {
-        try {
-            const settlement = await d1SettleCalls(env, { maxCalls: 80, maxFetches: 5 });
-            if (settlement?.changed) {
-                console.log(`Call settlement refreshed: ${settlement.settledIntervals || 0} intervals`);
-            }
-        } catch (e) {
-            console.error('Cron error (call settlement):', e);
-        }
-
-        try {
-            const refreshed = await prewarmMarketCacheIfStale(env, {
-                key: MARKET_FED_RATE_KEY,
-                freshSeconds: FED_RATE_FRESH_SECONDS,
-                staleSeconds: FED_RATE_STALE_SECONDS,
-                builder: () => buildFedRateMarketPayload({ fredApiKey: FRED_API_KEY }),
-                isValid: (payload) => payload && payload.success !== false && Number(payload.updatedAt || 0) > 0,
-            });
-            if (refreshed) console.log('Fed rate cache refreshed');
-        } catch (e) {
-            console.error('Cron error (fed rate):', e);
-        }
-
-        try {
-            const refreshed = await prewarmMarketCacheIfStale(env, {
-                key: MARKET_FEDWATCH_KEY_PREFIX + 'next',
-                freshSeconds: FEDWATCH_FRESH_SECONDS,
-                staleSeconds: FEDWATCH_STALE_SECONDS,
-                builder: () => buildFedWatchPayload({ meetingDate: 'next', fredApiKey: FRED_API_KEY }),
-                isValid: (payload) => payload && payload.success !== false && Number(payload.updatedAt || 0) > 0,
-            });
-            if (refreshed) console.log('FedWatch cache refreshed');
-        } catch (e) {
-            console.error('Cron error (fedwatch):', e);
-        }
-
-        try {
-            const refreshed = await prewarmMarketCacheIfStale(env, {
-                key: MARKET_MACRO_QUOTES_KEY,
-                freshSeconds: MARKET_FRESH_SECONDS,
-                staleSeconds: MARKET_STALE_SECONDS,
-                builder: buildMacroQuotesPayload,
-                isValid: (payload) => payload && payload.success !== false && Object.keys(payload.prices || {}).length > 0,
-            });
-            if (refreshed) console.log('Macro quotes cache refreshed');
-        } catch (e) {
-            console.error('Cron error (macro quotes):', e);
-        }
-
-        try {
-            const refreshed = await prewarmMarketCacheIfStale(env, {
-                key: MARKET_NEWS_KEY,
-                freshSeconds: NEWS_FRESH_SECONDS,
-                staleSeconds: NEWS_STALE_SECONDS,
-                builder: buildNewsPayload,
-                isValid: (payload) => payload && payload.success !== false && Array.isArray(payload.articles),
-            });
-            if (refreshed) console.log('News cache refreshed');
-        } catch (e) {
-            console.error('Cron error (news):', e);
-        }
-
-        // ─── CALENDÁRIO: só atualiza a cada 3 horas ───
-        }
-
-        if (runCalendar) {
-        try {
-            let shouldRefreshCalendar = true;
-            if (env.CALENDAR_KV) {
-                const cached = await env.CALENDAR_KV.get(CACHE_KEY_CALENDAR, 'json');
-                if (cached && cached.lastUpdate) {
-                    const elapsed = Date.now() - new Date(cached.lastUpdate).getTime();
-                    if (elapsed < 3 * 60 * 60 * 1000) { // 3 horas
-                        shouldRefreshCalendar = false;
-                    }
-                }
-            }
-
-            if (shouldRefreshCalendar) {
-                const events = await buildCalendar(FMP_API_KEY);
-                const now = new Date();
-                if (env.CALENDAR_KV) {
-                    await env.CALENDAR_KV.put(
-                        CACHE_KEY_CALENDAR,
-                        JSON.stringify({
-                            events,
-                            lastUpdate: now.toISOString(),
-                            nextUpdate: new Date(now.getTime() + CACHE_TTL_SECONDS * 1000).toISOString(),
-                        }),
-                        { expirationTtl: CACHE_TTL_SECONDS }
-                    );
-                }
-                const seriesIds = [...new Set(events.map(e => e.fredSeriesId).filter(Boolean))].slice(0, 30);
-                for (let i = 0; i < seriesIds.length; i += 4) {
-                    const batch = seriesIds.slice(i, i + 4);
-                    const results = await Promise.all(
-                        batch.map(id => fetchHistoryFromFRED(id, 12, FRED_API_KEY))
-                    );
-                    if (env.CALENDAR_KV) {
-                        await Promise.all(batch.map((id, idx) =>
-                            env.CALENDAR_KV.put(
-                                `history_${id}`,
-                                JSON.stringify(results[idx]),
-                                { expirationTtl: 24 * 60 * 60 }
-                            )
-                        ));
-                    }
-                }
-                console.log(`Calendar refreshed: ${events.length} events, ${seriesIds.length} history series`);
-            }
-        } catch (e) {
-            console.error('Cron error (calendar):', e);
-        }
-        }
-
-        // ─── LIQUIDAÇÕES: acumula a cada execução (5 min) ───
-        // Escalável: KV compartilhado entre todos os usuários
-        if (runLiquidations) {
-        try {
-            // Símbolos base + símbolos dinâmicos adicionados por requisições de usuários
-            const baseSymbols = LIQUIDATIONS_BASE_SYMBOLS;
-
-            // Carregar símbolos dinâmicos (adicionados por requisições de usuários)
-            const dynamicSymbols = await getTrackedLiquidationSymbols(env);
-
-            const allSymbols = [...new Set([...baseSymbols, ...dynamicSymbols])].slice(0, 40);
-            let accumulated = 0;
-
-            for (const sym of allSymbols) {
-                try {
-                    const binRes = await fetch(`https://fapi.binance.com/fapi/v1/allForceOrders?symbol=${sym}&limit=1000`);
-                    if (!binRes.ok) continue;
-                    const orders = await binRes.json();
-                    if (!Array.isArray(orders) || orders.length === 0) continue;
-
-                    const now = Date.now();
-                    const existingOrders = await getAccumulatedLiquidationOrders(env, sym);
-                    const merged = mergeLiquidationOrders(existingOrders, orders, now);
-                    await saveAccumulatedLiquidationOrders(env, sym, merged, now);
-                    accumulated++;
-                } catch (symErr) {
-                    console.warn(`Liq accumulate ${sym}:`, symErr.message);
-                }
-            }
-            console.log(`Liquidation accumulation: ${accumulated}/${allSymbols.length} symbols`);
-        } catch (e) {
-            console.error('Cron error (liquidations):', e);
-        }
-        }
-
-        // MARKET SNAPSHOT: preaquece fontes globais para todos os usuarios via KV/edge cache.
-        if (runMarket) {
-        try {
-            const refreshedGlobal = await prewarmMarketGlobalCache(env);
-            if (refreshedGlobal) console.log('Global market cache refreshed');
-        } catch (e) {
-            console.error('Cron error (market global):', e);
-        }
-
-        // ALTSEASON: preaquece a mesma fonte usada pelo endpoint para evitar cold miss.
-        try {
-            const refreshed = await prewarmAltseasonCache(env);
-            if (refreshed) console.log('Altseason cache refreshed');
-        } catch (e) {
-            console.error('Cron error (altseason):', e);
-        }
-
-        try {
-            const refreshedSnapshot = await prewarmMarketGlobalSnapshotCache(env);
-            if (refreshedSnapshot) console.log('Global market snapshot refreshed');
-        } catch (e) {
-            console.error('Cron error (market snapshot):', e);
-        }
-        }
-
     },
 };
 

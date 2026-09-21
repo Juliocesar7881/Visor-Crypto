@@ -93,12 +93,13 @@ O `wrangler.toml` ja contem:
 - migration tag `v1_call_history_do`
 - binding `SIGNAL_CYCLE_DO` + migration `v3_signal_cycle_do` (ver abaixo)
 
-Conta `loopsluchini`: `wrangler deploy -c wrangler-loopsluchini.toml`.
+Producao (conta `loopsluchini`, 5 crons): `wrangler deploy` com o `wrangler.toml`.
+`wrangler-loopsluchini.toml` tem so o cron `*/5`.
 
 ### Limite de CPU do plano Free (10 ms por execucao)
-- O cron `*/5` so encaminha o ciclo de sinais para o `SignalCycleDO`
-  (Durable Object tem 30 s de CPU por requisicao). Sem esse binding, o ciclo
-  roda direto no cron, como antes.
+- Os crons so encaminham o trabalho para o `SignalCycleDO` (Durable Object tem
+  30 s de CPU por requisicao): o `*/5` roda o ciclo de sinais e os demais rodam
+  `runScheduledCron`. Sem esse binding, tudo roda direto no cron, como antes.
 - Estatisticas de feedback e a pagina `GET /calls` ficam prontas em
   `runtime_status` (D1), marcadas pela revisao `calls_revision`, que muda a cada
   escrita na tabela `calls`. Quando mudam, o `CallHistoryDO` as reconstroi.
